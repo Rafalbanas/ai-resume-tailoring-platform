@@ -1,0 +1,10 @@
+.git
+.env
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+data/.drafts
+data/auth.json
+data/.auth-*.json
+data/generated

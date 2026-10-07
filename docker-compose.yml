@@ -1,0 +1,12 @@
+services:
+  cv-tailor:
+    build: .
+    container_name: cv-tailor
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${CV_TAILOR_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    security_opt:
+      - no-new-privileges:true

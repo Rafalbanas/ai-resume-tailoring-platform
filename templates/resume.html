@@ -1,0 +1,9 @@
+<article class="resume-document">
+  <header><h1>{{ personal.name or 'Candidate Name' }}</h1><p class="contact">{{ [personal.location, personal.email, personal.phone, personal.linkedin, personal.website, personal.github]|select|join(' · ') }}</p><p class="headline">{{ resume.headline }}</p></header>
+  {% if resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
+  {% if resume.core_skills %}<section><h2>Core Skills</h2><p class="skill-line">{{ resume.core_skills|join(' · ') }}</p></section>{% endif %}
+  {% if resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} — {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}
+  {% if resume.projects %}<section><h2>Selected Projects</h2>{% for item in resume.projects %}<div class="entry"><h3>{{ item.name }}</h3><p>{{ item.description }}</p>{% if item.technologies %}<p class="tech">{{ item.technologies|join(' · ') }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
+  {% if resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry-head"><h3>{{ item.qualification }} — {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% endfor %}</section>{% endif %}
+  {% if resume.certifications %}<section><h2>Certifications</h2><p>{{ resume.certifications|map(attribute='name')|join(' · ') }}</p></section>{% endif %}
+</article>

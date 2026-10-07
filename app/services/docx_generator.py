@@ -1,0 +1,51 @@
+from pathlib import Path
+
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt
+
+from app.models.candidate import CandidateProfile
+from app.models.resume import TailoredResume
+
+
+def generate_docx(resume: TailoredResume, profile: CandidateProfile, output: Path) -> None:
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = section.bottom_margin = Inches(0.55)
+    section.left_margin = section.right_margin = Inches(0.65)
+    styles = document.styles
+    styles["Normal"].font.name = "Arial"
+    styles["Normal"].font.size = Pt(9.5)
+    title = document.add_heading(profile.personal.name or "Candidate Name", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    contact = " · ".join(filter(None, [profile.personal.location, profile.personal.email, profile.personal.phone, profile.personal.linkedin, profile.personal.website, profile.personal.github]))
+    paragraph = document.add_paragraph(contact)
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    document.add_paragraph(resume.headline).alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if resume.professional_summary:
+        document.add_heading("Professional Summary", level=1)
+        document.add_paragraph(resume.professional_summary)
+    if resume.core_skills:
+        document.add_heading("Core Skills", level=1)
+        document.add_paragraph(" • ".join(resume.core_skills))
+    if resume.experience:
+        document.add_heading("Experience", level=1)
+        for item in resume.experience:
+            document.add_heading(f"{item.title} — {item.company}", level=2)
+            document.add_paragraph(item.dates)
+            for bullet in item.bullets:
+                document.add_paragraph(bullet.text, style="List Bullet")
+    if resume.projects:
+        document.add_heading("Selected Projects", level=1)
+        for item in resume.projects:
+            document.add_heading(item.name, level=2)
+            document.add_paragraph(item.description)
+    if resume.education:
+        document.add_heading("Education", level=1)
+        for item in resume.education:
+            document.add_paragraph(f"{item.qualification} — {item.institution} ({item.dates})")
+    if resume.certifications:
+        document.add_heading("Certifications", level=1)
+        for item in resume.certifications:
+            document.add_paragraph(" · ".join(filter(None, [item.name, item.issuer, item.date])))
+    document.save(output)

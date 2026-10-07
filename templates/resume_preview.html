@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}CV preview · CV Tailor{% endblock %}
+{% block content %}
+<div class="preview-head"><div><p class="eyebrow">READY TO USE</p><h1>{{ metadata.company }} · {{ metadata.role }}</h1><p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p></div><div class="actions"><a class="secondary button" href="/download/{{ slug }}/docx">Download DOCX</a><a class="primary button" href="/download/{{ slug }}/pdf">Download PDF</a></div></div>
+{% if metadata.warnings %}<details class="warnings"><summary>Truth Lock removed or replaced {{ metadata.warnings|length }} unsupported item(s)</summary><ul>{% for warning in metadata.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+<div class="paper-frame">{{ resume_html|safe }}</div>
+{% endblock %}

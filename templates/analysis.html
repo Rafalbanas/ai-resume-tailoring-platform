@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Match report · CV Tailor{% endblock %}
+{% block content %}
+<div class="report-head"><div><p class="eyebrow">MATCH REPORT</p><h1>{{ job.role }}</h1><p>{{ job.company }}</p></div><div class="score score-{{ analysis.match_level|lower }}"><small>Match</small><strong>{{ analysis.match_level }}</strong><span>{{ analysis.recommendation.replace('_',' ') }}</span></div></div>
+<div class="match-grid">
+  <section class="card"><h2><span class="dot good"></span>Strong matches</h2><div class="chips">{% for item in analysis.strong_matches %}<span>{{ item }}</span>{% else %}<em>No direct matches found</em>{% endfor %}</div></section>
+  <section class="card"><h2><span class="dot partial"></span>Partial matches</h2><div class="chips">{% for item in analysis.partial_matches %}<span>{{ item }}</span>{% else %}<em>None identified</em>{% endfor %}</div></section>
+  <section class="card"><h2><span class="dot missing"></span>Missing</h2><div class="chips">{% for item in analysis.missing_requirements %}<span>{{ item }}</span>{% else %}<em>No explicit gaps identified</em>{% endfor %}</div></section>
+</div>
+<section class="recommendation"><p class="eyebrow">WHY</p><p>{{ analysis.reasoning_summary }}</p></section>
+<div class="actions"><a class="secondary button" href="/">Edit job</a><form action="/generate/{{ draft_id }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary" type="submit">Generate CV</button></form></div>
+{% endblock %}

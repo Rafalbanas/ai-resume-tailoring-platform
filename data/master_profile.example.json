@@ -1,0 +1,58 @@
+{
+  "personal": {
+    "name": "Alex Example",
+    "location": "Example City",
+    "email": "alex@example.com",
+    "phone": "+00 000 000 000",
+    "linkedin": "https://www.linkedin.com/in/example-profile",
+    "website": "https://example.com",
+    "github": "https://github.com/example-user"
+  },
+  "summary_facts": [
+    "Builds reliable backend services and automation tools with Python.",
+    "Supports containerized applications and documents operational procedures."
+  ],
+  "skills": {
+    "programming": ["Python", "SQL"],
+    "backend": ["FastAPI", "REST APIs"],
+    "automation": ["n8n", "GitHub Actions"],
+    "infrastructure": ["Docker", "Linux"]
+  },
+  "experience": [
+    {
+      "company": "Northstar Example Systems",
+      "title": "Application Support Engineer",
+      "start": "2022",
+      "end": "Present",
+      "employment_note": "Fictional portfolio example",
+      "facts": [
+        "Automated a repeatable support workflow with Python.",
+        "Maintained operational documentation for containerized services."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Example Technical University",
+      "qualification": "BSc in Computer Science",
+      "dates": "2018–2021",
+      "facts": ["Completed a fictional capstone project on service monitoring."]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Example Operations Dashboard",
+      "description": "A fictional dashboard for tracking service health.",
+      "technologies": ["Python", "FastAPI", "Docker"],
+      "facts": ["Implemented health checks and structured event reporting."],
+      "url": "https://github.com/example-user/example-operations-dashboard"
+    }
+  ],
+  "certifications": [
+    {
+      "name": "Example Cloud Fundamentals",
+      "issuer": "Example Certification Authority",
+      "date": "2023"
+    }
+  ]
+}

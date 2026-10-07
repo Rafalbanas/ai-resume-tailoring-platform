@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}New match · CV Tailor{% endblock %}
+{% block content %}
+<section class="workspace-head">
+  <div><p class="eyebrow">PRIVATE WORKSPACE</p><h1>Match a role to your verified experience.</h1></div>
+  <div class="truth-badge"><span>✓</span><div><strong>Truth Lock active</strong><small>Only master profile facts can reach the CV</small></div></div>
+</section>
+{% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+<form action="/analyze" method="post" class="job-form" id="job-form" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <label>Company<input id="company" name="company" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC"></label>
+    <label>Role<input id="role" name="role" maxlength="150" placeholder="e.g. Application Support Engineer"></label>
+  </div>
+  <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
+  <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
+  <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…"></textarea></label>
+  <div class="form-foot"><span>Your text is sent only to your FastAPI backend and configured n8n workflow.</span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
+</form>
+{% endblock %}

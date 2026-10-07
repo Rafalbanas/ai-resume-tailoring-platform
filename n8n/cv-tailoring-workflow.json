@@ -1,0 +1,84 @@
+{
+  "name": "CV Tailoring — Gemini (Fact-Constrained)",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "cv-tailoring", "responseMode": "responseNode", "options": {}},
+      "id": "webhook", "name": "Webhook", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [-760, 0],
+      "webhookId": "cv-tailoring"
+    },
+    {
+      "parameters": {
+        "conditions": {"options": {"caseSensitive": true, "typeValidation": "strict"}, "conditions": [
+          {"leftValue": "={{ $json.headers['x-webhook-secret'] }}", "rightValue": "={{ $env.N8N_WEBHOOK_SECRET }}", "operator": {"type": "string", "operation": "equals"}}
+        ], "combinator": "and"}, "options": {}
+      },
+      "id": "secret-check", "name": "Validate Webhook Secret", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [-540, 0]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ { error: 'Unauthorized' } }}", "options": {"responseCode": 401}},
+      "id": "unauthorized", "name": "Reject Unauthorized", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.4, "position": [-300, 180]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the job against the candidate profile. Return only the requested structured object. Never claim a match unless the exact skill or fact is present in master_profile. Requirements absent from the profile belong in missing_requirements and unsupported_keywords. Do not invent numeric precision.\n\nJOB:\n{{ JSON.stringify($('Webhook').item.json.body.job) }}\n\nMASTER PROFILE (only source of truth):\n{{ JSON.stringify($('Webhook').item.json.body.master_profile) }}",
+        "hasOutputParser": true,
+        "options": {"systemMessage": "You are a conservative job matching engine. Treat candidate data as a closed-world fact set."}
+      },
+      "id": "analyze", "name": "Gemini — Analyze Job", "type": "@n8n/n8n-nodes-langchain.chainLlm", "typeVersion": 1.7, "position": [-260, -80]
+    },
+    {
+      "parameters": {"modelName": "models/gemini-2.5-flash", "options": {"temperature": 0.1}},
+      "id": "analysis-model", "name": "Gemini Model — Analysis", "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini", "typeVersion": 1, "position": [-320, 140]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"company\",\"role\",\"strong_matches\",\"partial_matches\",\"missing_requirements\",\"supported_keywords\",\"unsupported_keywords\",\"recommendation\",\"match_level\",\"reasoning_summary\"],\"properties\":{\"company\":{\"type\":\"string\"},\"role\":{\"type\":\"string\"},\"strong_matches\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"partial_matches\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"missing_requirements\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"supported_keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"unsupported_keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"recommendation\":{\"enum\":[\"APPLY\",\"REASONABLE_STRETCH\",\"SKIP\"]},\"match_level\":{\"enum\":[\"HIGH\",\"MEDIUM\",\"LOW\"]},\"reasoning_summary\":{\"type\":\"string\"}}}"
+      },
+      "id": "analysis-parser", "name": "JobAnalysis Schema", "type": "@n8n/n8n-nodes-langchain.outputParserStructured", "typeVersion": 1.3, "position": [-100, 140]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Create the strongest ATS-friendly resume selection for this job using ONLY master_profile. Output data, never HTML. Every summary sentence must cite summary_source_fact_ids such as summary:0. Every experience bullet must cite source_fact_ids like experience:0:fact:1. Every project must cite project:0:description or project:0:fact:0. Use only exact company/title/project/certification names and exact skills from the profile. If a fact has no source ID, omit it. Keep summary to at most 4 short source facts, at most 4 bullets per role, 18 skills, and 2 projects. The Python validator will discard unsupported content.\n\nJOB:\n{{ JSON.stringify($('Webhook').item.json.body.job) }}\n\nANALYSIS:\n{{ JSON.stringify($json.output) }}\n\nMASTER PROFILE:\n{{ JSON.stringify($('Webhook').item.json.body.master_profile) }}",
+        "hasOutputParser": true,
+        "options": {"systemMessage": "You select and organize verified candidate facts. You must not create, infer, quantify, or embellish any fact."}
+      },
+      "id": "tailor", "name": "Gemini — Tailor CV", "type": "@n8n/n8n-nodes-langchain.chainLlm", "typeVersion": 1.7, "position": [60, -80]
+    },
+    {
+      "parameters": {"modelName": "models/gemini-2.5-flash", "options": {"temperature": 0.1}},
+      "id": "tailor-model", "name": "Gemini Model — Tailoring", "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini", "typeVersion": 1, "position": [20, 140]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"headline\",\"professional_summary\",\"summary_source_fact_ids\",\"core_skills\",\"experience\",\"education\",\"projects\",\"certifications\"],\"properties\":{\"headline\":{\"type\":\"string\"},\"professional_summary\":{\"type\":\"string\"},\"summary_source_fact_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"core_skills\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"experience\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"company\",\"title\",\"dates\",\"bullets\"],\"properties\":{\"company\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"dates\":{\"type\":\"string\"},\"bullets\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"text\",\"source_fact_ids\"],\"properties\":{\"text\":{\"type\":\"string\"},\"source_fact_ids\":{\"type\":\"array\",\"minItems\":1,\"items\":{\"type\":\"string\"}}}}}}},\"education\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"institution\",\"qualification\",\"dates\"],\"properties\":{\"institution\":{\"type\":\"string\"},\"qualification\":{\"type\":\"string\"},\"dates\":{\"type\":\"string\"}}}},\"projects\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"description\",\"technologies\",\"source_fact_ids\"],\"properties\":{\"name\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"technologies\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"source_fact_ids\":{\"type\":\"array\",\"minItems\":1,\"items\":{\"type\":\"string\"}}}}},\"certifications\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"issuer\",\"date\"],\"properties\":{\"name\":{\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"date\":{\"type\":\"string\"}}}}}}"
+      },
+      "id": "resume-parser", "name": "TailoredResume Schema", "type": "@n8n/n8n-nodes-langchain.outputParserStructured", "typeVersion": 1.3, "position": [230, 140]
+    },
+    {
+      "parameters": {"jsCode": "const analysis = $('Gemini — Analyze Job').item.json.output; const resume = $('Gemini — Tailor CV').item.json.output; return [{ json: { analysis, resume } }];"},
+      "id": "compose", "name": "Compose Validated JSON", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [370, -80]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {"responseCode": 200}},
+      "id": "respond", "name": "Respond to Webhook", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.4, "position": [600, -80]
+    }
+  ],
+  "connections": {
+    "Webhook": {"main": [[{"node": "Validate Webhook Secret", "type": "main", "index": 0}]]},
+    "Validate Webhook Secret": {"main": [[{"node": "Gemini — Analyze Job", "type": "main", "index": 0}], [{"node": "Reject Unauthorized", "type": "main", "index": 0}]]},
+    "Gemini Model — Analysis": {"ai_languageModel": [[{"node": "Gemini — Analyze Job", "type": "ai_languageModel", "index": 0}]]},
+    "JobAnalysis Schema": {"ai_outputParser": [[{"node": "Gemini — Analyze Job", "type": "ai_outputParser", "index": 0}]]},
+    "Gemini — Analyze Job": {"main": [[{"node": "Gemini — Tailor CV", "type": "main", "index": 0}]]},
+    "Gemini Model — Tailoring": {"ai_languageModel": [[{"node": "Gemini — Tailor CV", "type": "ai_languageModel", "index": 0}]]},
+    "TailoredResume Schema": {"ai_outputParser": [[{"node": "Gemini — Tailor CV", "type": "ai_outputParser", "index": 0}]]},
+    "Gemini — Tailor CV": {"main": [[{"node": "Compose Validated JSON", "type": "main", "index": 0}]]},
+    "Compose Validated JSON": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1", "saveDataSuccessExecution": "none", "saveDataErrorExecution": "all", "timezone": "Europe/Warsaw"}
+}

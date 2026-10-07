@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}History · CV Tailor{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">APPLICATION ARCHIVE</p><h1>Generated CVs</h1></div><a class="primary button" href="/">New match</a></div>
+<div class="history-list">
+{% for row in rows %}<article class="history-row"><div><strong>{{ row.company }}</strong><span>{{ row.role }}</span>{% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div><div class="history-meta"><span>{{ row.date }}</span><span class="pill">{{ row.match_level }}</span><span>{{ row.recommendation.replace('_',' ') }}</span></div><div class="row-actions"><a href="/preview/{{ row.slug }}">Preview</a>{% if row.has_pdf %}<a href="/download/{{ row.slug }}/pdf">PDF</a>{% endif %}{% if row.has_docx %}<a href="/download/{{ row.slug }}/docx">DOCX</a>{% endif %}</div></article>
+{% else %}<div class="empty"><h2>No generated CVs yet</h2><p>Your completed applications will appear here.</p><a class="primary button" href="/">Analyze a role</a></div>{% endfor %}
+</div>
+{% endblock %}
