@@ -98,14 +98,22 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
 
     result = await provider(httpx.MockTransport(handler)).tailor(job(), profile)
 
-    assert result.analysis.strong_matches == ["Python"]
+    assert result.analysis.strong_matches == ["Python", "Linux"]
     assert result.resume.core_skills == ["Python"]
     assert [request["messages"][1]["content"] for request in requests]
     assert json.loads(requests[0]["messages"][1]["content"])["stage"] == "analyze_job"
     assert json.loads(requests[1]["messages"][1]["content"])["stage"] == "tailor_resume"
     assert all(request["format"]["type"] == "object" for request in requests)
     assert all(request["stream"] is False for request in requests)
-    assert all("MASTER PROFILE IS THE ONLY SOURCE OF FACTS" in request["messages"][0]["content"] for request in requests)
+    assert all(request["options"]["num_predict"] == 8192 for request in requests)
+    assert all(request["options"]["num_ctx"] == 32768 for request in requests)
+    assert all(
+        "MASTER PROFILE IS THE ONLY SOURCE OF FACTS" in request["messages"][0]["content"] for request in requests
+    )
+    resume_schema = requests[1]["format"]
+    assert resume_schema["properties"]["summary_source_fact_ids"]["minItems"] == 1
+    assert resume_schema["properties"]["core_skills"]["items"]["enum"] == ["Python", "n8n", "Linux"]
+    assert resume_schema["$defs"]["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"]
 
 
 @pytest.mark.asyncio
@@ -177,6 +185,7 @@ async def test_truth_lock_still_removes_unsupported_ollama_facts(profile):
     result = FactValidator(profile).validate(response.resume, job())
 
     assert "Kubernetes" not in result.resume.core_skills
-    assert not result.resume.experience
+    assert result.resume.experience[0].company == "Example Ltd"
+    assert result.resume.experience[0].title == "Support Engineer"
     assert any("Kubernetes" in warning for warning in result.warnings)
-    assert any("Invented Corp" in warning for warning in result.warnings)
+    assert any("replaced" in warning for warning in result.warnings)

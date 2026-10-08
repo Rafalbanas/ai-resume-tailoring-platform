@@ -7,6 +7,7 @@ from app.models.candidate import CandidateProfile
 from app.models.job import JobRequest
 from app.models.resume import WorkflowResponse
 from app.services.ai_provider import AIProvider
+from app.services.fact_catalog import FactCatalog
 
 
 class N8NGeminiProvider(AIProvider):
@@ -23,6 +24,7 @@ class N8NGeminiProvider(AIProvider):
         payload = {
             "job": job.model_dump(mode="json"),
             "master_profile": profile.model_dump(mode="json"),
+            "source_catalog": FactCatalog(profile).for_prompt(),
             "schemas": {
                 "analysis": WorkflowResponse.model_json_schema()["$defs"]["JobAnalysis"],
                 "response": WorkflowResponse.model_json_schema(),

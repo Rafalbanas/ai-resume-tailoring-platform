@@ -11,7 +11,9 @@ from app.core.security import require_basic_auth, validate_csrf
 from app.models.job import JobExtraction, JobRequest, JobUrlRequest
 from app.models.resume import TailoredResume
 from app.services.ai_provider import AIProviderError
+from app.services.analysis_validator import AnalysisValidator
 from app.services.fact_validator import FactValidator
+from app.services.resume_editor import apply_resume_edits
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -66,20 +68,26 @@ async def analyze(
         job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description)
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
-            "index.html", context(request, error="Check the form fields and paste a complete job description."), status_code=422
+            "index.html",
+            context(request, error="Check the form fields and paste a complete job description."),
+            status_code=422,
         )
     started = time.perf_counter()
     try:
         response = await request.app.state.provider.tailor(job, request.app.state.profile)
+        response.analysis = AnalysisValidator(request.app.state.profile).validate(response.analysis)
     except AIProviderError as exc:
-        logger.warning("AI provider failed", extra={"stage": "ai_provider", "provider": request.app.state.provider.name})
+        logger.warning(
+            "AI provider failed", extra={"stage": "ai_provider", "provider": request.app.state.provider.name}
+        )
         return request.app.state.templates.TemplateResponse(
             "index.html", context(request, error=str(exc)), status_code=502
         )
     except Exception:
         logger.exception("AI workflow failed", extra={"stage": "n8n_or_mock"})
         return request.app.state.templates.TemplateResponse(
-            "index.html", context(request, error="The AI provider did not return a valid response. Try again."),
+            "index.html",
+            context(request, error="The AI provider did not return a valid response. Try again."),
             status_code=502,
         )
     draft_id = request.app.state.storage.save_draft(job, response)
@@ -106,7 +114,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     )
     warnings = result.warnings + layout_warnings
     slug, folder = request.app.state.storage.save_application(
-        job, response.analysis, fitted_resume, warnings, layout_guide
+        job, response.analysis, fitted_resume, warnings, layout_guide, draft_id
     )
     request.app.state.pdf_generator.generate(
         fitted_resume, request.app.state.profile, folder / "resume.pdf", layout_guide
@@ -126,11 +134,9 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
 @router.get("/preview/{slug}", response_class=HTMLResponse)
 async def preview(request: Request, slug: str):
     guard(request)
-    folder = request.app.state.settings.data_dir / "generated" / slug
     try:
-        resume = TailoredResume.model_validate_json((folder / "resume.json").read_text(encoding="utf-8"))
-        metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
-    except (OSError, ValidationError, json.JSONDecodeError) as exc:
+        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     resume_html = request.app.state.pdf_generator.render_html(
         resume, request.app.state.profile, metadata.get("layout_guide")
@@ -140,12 +146,108 @@ async def preview(request: Request, slug: str):
     )
 
 
+@router.get("/edit/{slug}", response_class=HTMLResponse)
+async def edit_resume(request: Request, slug: str):
+    guard(request)
+    try:
+        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    return request.app.state.templates.TemplateResponse(
+        "resume_edit.html",
+        context(request, slug=slug, metadata=metadata, resume=resume),
+    )
+
+
+def _regenerate_artifacts(request: Request, slug: str, job: JobRequest, resume: TailoredResume) -> list[str]:
+    result = FactValidator(request.app.state.profile).validate(resume, job)
+    layout_guide = request.app.state.reference_library.layout_guide()
+    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+        result.resume, request.app.state.profile, layout_guide
+    )
+    warnings = result.warnings + layout_warnings
+    folder = request.app.state.storage.save_current_resume(slug, fitted_resume, warnings)
+    request.app.state.pdf_generator.generate(
+        fitted_resume, request.app.state.profile, folder / "resume.pdf", layout_guide
+    )
+    request.app.state.docx_generator(fitted_resume, request.app.state.profile, folder / "resume.docx")
+    return warnings
+
+
+@router.post("/edit/{slug}")
+async def save_resume_edit(request: Request, slug: str):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    form = await request.form()
+    validate_csrf(
+        str(form.get("csrf_token", "")),
+        request.cookies.get("csrf_token", ""),
+        request.app.state.settings.csrf_secret,
+    )
+    try:
+        job, resume, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    try:
+        edited = apply_resume_edits(resume, form)
+        _regenerate_artifacts(request, slug, job, edited)
+    except (OSError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    except ValidationError as exc:
+        return request.app.state.templates.TemplateResponse(
+            "resume_edit.html",
+            context(
+                request,
+                slug=slug,
+                metadata=metadata,
+                resume=resume,
+                error=f"The edited CV is invalid: {exc.errors()[0]['msg']}",
+            ),
+            status_code=422,
+        )
+    return RedirectResponse(f"/preview/{slug}", status_code=303)
+
+
+@router.post("/reset/{slug}")
+async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        job, _, generated, _ = request.app.state.storage.load_application(slug)
+        _regenerate_artifacts(request, slug, job, generated)
+    except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    return RedirectResponse(f"/preview/{slug}", status_code=303)
+
+
 @router.get("/history", response_class=HTMLResponse)
 async def history(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
         "history.html", context(request, rows=request.app.state.storage.history())
     )
+
+
+@router.post("/history/{slug}/delete")
+async def delete_history_item(request: Request, slug: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.storage.delete_application(slug)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Generated CV not found") from exc
+    return RedirectResponse("/history", status_code=303)
+
+
+@router.post("/history/clear")
+async def clear_history(request: Request, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    request.app.state.storage.clear_history()
+    return RedirectResponse("/history", status_code=303)
 
 
 @router.get("/references", response_class=HTMLResponse)
@@ -240,13 +342,25 @@ async def download(request: Request, slug: str, kind: str):
         path = request.app.state.storage.artifact(slug, filename)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
-    media_type = "application/pdf" if kind == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    media_type = (
+        "application/pdf"
+        if kind == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
     return FileResponse(path, media_type=media_type, filename=f"{slug}.{kind}")
 
 
 @router.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health(request: Request):
+    return {
+        "status": "ok",
+        "profile": request.app.state.profile_status.public(),
+    }
+
+
+@router.get("/health/profile")
+async def profile_health(request: Request):
+    return {"status": "ok", **request.app.state.profile_status.public()}
 
 
 @router.get("/health/provider")

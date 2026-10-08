@@ -1,0 +1,33 @@
+from collections.abc import Mapping
+from copy import deepcopy
+
+from app.models.resume import TailoredResume
+
+
+def _split_values(value: object) -> list[str]:
+    return [item.strip() for line in str(value or "").splitlines() for item in line.split(",") if item.strip()]
+
+
+def apply_resume_edits(resume: TailoredResume, form: Mapping[str, object]) -> TailoredResume:
+    draft = deepcopy(resume)
+    draft.headline = str(form.get("headline", draft.headline)).strip()
+    draft.professional_summary = str(form.get("professional_summary", draft.professional_summary)).strip()
+    draft.core_skills = _split_values(form.get("core_skills", "\n".join(draft.core_skills)))
+
+    for exp_index, experience in enumerate(draft.experience):
+        clean_bullets = []
+        for bullet_index, bullet in enumerate(experience.bullets):
+            key = f"experience_{exp_index}_bullet_{bullet_index}"
+            text = str(form.get(key, bullet.text)).strip()
+            if text:
+                bullet.text = text
+                clean_bullets.append(bullet)
+        experience.bullets = clean_bullets
+
+    for project_index, project in enumerate(draft.projects):
+        project.description = str(form.get(f"project_{project_index}_description", project.description)).strip()
+        technologies = form.get(f"project_{project_index}_technologies")
+        if technologies is not None:
+            project.technologies = _split_values(technologies)
+
+    return TailoredResume.model_validate(draft.model_dump())

@@ -9,7 +9,6 @@ from fastapi.templating import Jinja2Templates
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
 from app.core.security import FixedWindowLimiter, new_csrf_token
-from app.models.candidate import CandidateProfile
 from app.routes.web import router
 from app.services.auth_store import AuthStore
 from app.services.docx_generator import generate_docx
@@ -18,6 +17,7 @@ from app.services.mock_provider import MockAIProvider
 from app.services.n8n_provider import N8NGeminiProvider
 from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
+from app.services.profile_loader import load_master_profile
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.storage import Storage
 
@@ -29,11 +29,12 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    profile = CandidateProfile.model_validate_json(settings.master_profile_path.read_text(encoding="utf-8"))
+    profile, profile_status = load_master_profile(settings)
     auth_store = AuthStore(settings.auth_file_path, settings.app_username, settings.app_password)
     auth_store.initialize()
     app.state.settings = settings
     app.state.profile = profile
+    app.state.profile_status = profile_status
     app.state.auth_store = auth_store
     app.state.storage = Storage(settings.data_dir)
     app.state.reference_library = ReferenceCVLibrary(settings.reference_cvs_path, settings.reference_cv_max_bytes)

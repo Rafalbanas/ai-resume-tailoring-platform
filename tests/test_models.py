@@ -9,7 +9,7 @@ from app.models.resume import TailoredResume
 
 
 def test_master_profile_validation():
-    profile = CandidateProfile.model_validate_json(Path("data/master_profile.json").read_text())
+    profile = CandidateProfile.model_validate_json(Path("data/master_profile.example.json").read_text())
     assert "kubernetes" not in profile.skill_set()
 
 

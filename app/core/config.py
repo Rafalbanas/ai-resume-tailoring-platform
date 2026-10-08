@@ -16,10 +16,13 @@ class Settings(BaseSettings):
     n8n_webhook_url: str = ""
     n8n_webhook_secret: str = ""
     ai_provider: str = Field(default="mock", pattern="^(mock|n8n|ollama)$")
+    profile_mode: str = Field(default="production", pattern="^(production|sample)$")
     request_timeout_seconds: float = 60.0
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:9b"
     ollama_timeout_seconds: float = 300.0
+    ollama_num_predict: int = 8192
+    ollama_num_ctx: int = 32768
     reference_cv_max_bytes: int = 10_000_000
     max_job_description_chars: int = 30_000
     rate_limit_per_minute: int = 20

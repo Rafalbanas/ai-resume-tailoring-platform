@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Edit CV · CV Tailor{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">EDIT CV</p><h1>{{ metadata.company }} · {{ metadata.role }}</h1></div>
+  <a class="secondary button" href="/preview/{{ slug }}">Cancel</a>
+</div>
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+<form class="job-form resume-edit-form" action="/edit/{{ slug }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Role title<input name="headline" maxlength="140" required value="{{ resume.headline }}"></label>
+  <label>Professional summary<textarea name="professional_summary" maxlength="700" required>{{ resume.professional_summary }}</textarea></label>
+  <label>Skills <small>One per line or comma-separated</small><textarea name="core_skills">{{ resume.core_skills|join('\n') }}</textarea></label>
+
+  <h2>Professional experience</h2>
+  {% for item in resume.experience %}
+  {% set experience_index = loop.index0 %}
+  <fieldset>
+    <legend>{{ item.title }} · {{ item.company }} <small>{{ item.dates }}</small></legend>
+    {% for bullet in item.bullets %}
+    <label>Bullet {{ loop.index }}<textarea name="experience_{{ experience_index }}_bullet_{{ loop.index0 }}">{{ bullet.text }}</textarea></label>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+
+  {% if resume.projects %}<h2>Technical projects</h2>{% endif %}
+  {% for project in resume.projects %}
+  <fieldset>
+    <legend>{{ project.name }}</legend>
+    <label>Description<textarea name="project_{{ loop.index0 }}_description">{{ project.description }}</textarea></label>
+    <label>Technologies<input name="project_{{ loop.index0 }}_technologies" value="{{ project.technologies|join(', ') }}"></label>
+  </fieldset>
+  {% endfor %}
+
+  <div class="actions">
+    <a class="secondary button" href="/preview/{{ slug }}">Cancel</a>
+    <button class="primary" type="submit">Save changes</button>
+  </div>
+</form>
+<form class="reset-form" action="/reset/{{ slug }}" method="post" onsubmit="return confirm('Reset to generated version?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="secondary" type="submit">Reset to generated version</button>
+</form>
+{% endblock %}

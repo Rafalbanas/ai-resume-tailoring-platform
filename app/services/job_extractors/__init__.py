@@ -41,10 +41,16 @@ class JobExtractorService:
         self.generic = GenericHtmlExtractor()
 
     def _extract_html(self, url: str, html: str) -> tuple[ExtractionCandidate, str]:
+        adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
         structured = self.jsonld.extract(html)
+        if adapter and adapter.prefer_over_jsonld:
+            extracted = adapter.extract(html)
+            if extracted.usable:
+                extracted.company = extracted.company or structured.company
+                extracted.role = extracted.role or structured.role
+                return extracted, "html"
         if structured.usable:
             return structured, "jsonld"
-        adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
         extracted = adapter.extract(html) if adapter else self.generic.extract(html)
         if not extracted.usable and adapter:
             extracted = self.generic.extract(html)

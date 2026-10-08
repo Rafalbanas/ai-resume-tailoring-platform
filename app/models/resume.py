@@ -24,6 +24,7 @@ class ResumeEducation(BaseModel):
     institution: str
     qualification: str = ""
     dates: str = ""
+    source_fact_ids: list[str] = Field(default_factory=list)
 
 
 class ResumeCertification(BaseModel):

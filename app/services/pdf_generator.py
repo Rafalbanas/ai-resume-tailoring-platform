@@ -16,6 +16,8 @@ class PDFGenerator:
         self.data_dir = data_dir
 
     def render_html(self, resume: TailoredResume, profile: CandidateProfile, layout_guide: dict | None = None) -> str:
+        if not profile.personal.name.strip():
+            raise ValueError("Candidate name is missing from the active master profile.")
         guide = layout_guide or {}
         order = guide.get("section_order", ["summary", "experience", "education", "projects", "certifications"])
         markup = self.env.get_template("resume.html").render(
@@ -77,9 +79,9 @@ class PDFGenerator:
 
         for item in fitted.experience:
             item.bullets = item.bullets[:1]
-        fitted.projects = []
+        fitted.projects = fitted.projects[:1]
         fitted.certifications = fitted.certifications[:2]
-        warnings.append("Layout fit kept one verified bullet per role and removed projects")
+        warnings.append("Layout fit kept one verified bullet per role and one project")
         if self._fits_one_page(fitted, profile, guide):
             return fitted, warnings
 

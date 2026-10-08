@@ -10,7 +10,7 @@
     {% if resume.core_skills %}<section class="sidebar-section"><h2>Skills</h2><ul class="skill-list">{% for skill in resume.core_skills %}<li>{{ skill }}</li>{% endfor %}</ul></section>{% endif %}
   </aside>
   <main class="resume-main">
-    <header><p class="candidate-name">{{ personal.name or 'Candidate Name' }}</p><h1>{{ resume.headline }}</h1></header>
+    <header><p class="candidate-name">{{ personal.name }}</p><h1>{{ resume.headline }}</h1></header>
     <div class="main-sections">
       {% for section_name in section_order %}
         {% if section_name == 'summary' and resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}

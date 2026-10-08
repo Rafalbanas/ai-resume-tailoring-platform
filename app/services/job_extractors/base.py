@@ -18,6 +18,7 @@ class ExtractionCandidate:
 
 class BaseExtractor:
     domains: tuple[str, ...] = ()
+    prefer_over_jsonld = False
 
     def matches(self, url: str) -> bool:
         hostname = (urlparse(url).hostname or "").lower().rstrip(".")
@@ -46,7 +47,11 @@ NOISE_TERMS = (
 def normalized_text(value: str | Tag | None) -> str:
     if value is None:
         return ""
-    raw = value.get_text("\n", strip=True) if isinstance(value, Tag) else BeautifulSoup(value, "html.parser").get_text("\n")
+    raw = (
+        value.get_text("\n", strip=True)
+        if isinstance(value, Tag)
+        else BeautifulSoup(value, "html.parser").get_text("\n")
+    )
     lines: list[str] = []
     for line in raw.splitlines():
         clean = re.sub(r"\s+", " ", line).strip()
@@ -60,9 +65,7 @@ def cleaned_soup(html: str) -> BeautifulSoup:
     for node in soup.select("script, style, noscript, nav, footer, aside, form, svg, canvas, button"):
         node.decompose()
     for node in list(soup.find_all(True)):
-        marker = " ".join(
-            [str(node.get("id", "")), *(str(item) for item in node.get("class", []))]
-        ).lower()
+        marker = " ".join([str(node.get("id", "")), *(str(item) for item in node.get("class", []))]).lower()
         if any(term in marker for term in NOISE_TERMS):
             node.decompose()
     cookie_phrases = ("accept all cookies", "manage cookies", "cookie policy", "ustawienia plików cookie")

@@ -9,6 +9,8 @@ from app.models.resume import TailoredResume
 
 
 def generate_docx(resume: TailoredResume, profile: CandidateProfile, output: Path) -> None:
+    if not profile.personal.name.strip():
+        raise ValueError("Candidate name is missing from the active master profile.")
     document = Document()
     section = document.sections[0]
     section.top_margin = section.bottom_margin = Inches(0.55)
@@ -16,9 +18,21 @@ def generate_docx(resume: TailoredResume, profile: CandidateProfile, output: Pat
     styles = document.styles
     styles["Normal"].font.name = "Arial"
     styles["Normal"].font.size = Pt(9.5)
-    title = document.add_heading(profile.personal.name or "Candidate Name", level=0)
+    title = document.add_heading(profile.personal.name, level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    contact = " · ".join(filter(None, [profile.personal.location, profile.personal.email, profile.personal.phone, profile.personal.linkedin, profile.personal.website, profile.personal.github]))
+    contact = " · ".join(
+        filter(
+            None,
+            [
+                profile.personal.location,
+                profile.personal.email,
+                profile.personal.phone,
+                profile.personal.linkedin,
+                profile.personal.website,
+                profile.personal.github,
+            ],
+        )
+    )
     paragraph = document.add_paragraph(contact)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     document.add_paragraph(resume.headline).alignment = WD_ALIGN_PARAGRAPH.CENTER

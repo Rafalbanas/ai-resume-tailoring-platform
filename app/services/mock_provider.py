@@ -12,6 +12,7 @@ from app.models.resume import (
     WorkflowResponse,
 )
 from app.services.ai_provider import AIProvider
+from app.services.fact_catalog import FactCatalog
 
 
 class MockAIProvider(AIProvider):
@@ -20,12 +21,15 @@ class MockAIProvider(AIProvider):
     name = "mock"
 
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
+        catalog = FactCatalog(profile)
         description = job.job_description.casefold()
         all_skills = [s for values in profile.skills.values() for s in values]
         matches = [s for s in all_skills if re.search(rf"\b{re.escape(s.casefold())}\b", description)]
         partial = [s for s in all_skills if s not in matches][:4]
         known_terms = ["kubernetes", "terraform", "aws", "azure", "ccna", "docker", "python", "linux"]
-        missing = [term.title() for term in known_terms if term in description and term.casefold() not in profile.skill_set()]
+        missing = [
+            term.title() for term in known_terms if term in description and term.casefold() not in profile.skill_set()
+        ]
         level = MatchLevel.HIGH if len(matches) >= 5 else MatchLevel.MEDIUM if matches else MatchLevel.LOW
         recommendation = {
             MatchLevel.HIGH: Recommendation.APPLY,
@@ -38,6 +42,9 @@ class MockAIProvider(AIProvider):
             strong_matches=matches[:8],
             partial_matches=partial,
             missing_requirements=missing,
+            match_sources={
+                match: catalog.direct_sources(match) for match in matches + partial if catalog.direct_sources(match)
+            },
             supported_keywords=matches[:12],
             unsupported_keywords=missing,
             recommendation=recommendation,
@@ -47,13 +54,15 @@ class MockAIProvider(AIProvider):
                 "it is qualitative rather than a fabricated precision score."
             ),
         )
-        summary_ids = [f"summary:{i}" for i in range(min(3, len(profile.summary_facts)))]
+        summary_ids = [entry.source_id for entry in catalog.prompt_entries if entry.kind == "summary"][:3]
         experience = []
         for exp_index, item in enumerate(profile.experience[:3]):
-            bullets = [
-                ResumeBullet(text=fact, source_fact_ids=[f"experience:{exp_index}:fact:{fact_index}"])
-                for fact_index, fact in enumerate(item.facts[:4])
-            ]
+            entries = [
+                entry
+                for entry in catalog.prompt_entries
+                if entry.kind == "experience" and entry.owner_index == exp_index
+            ][:4]
+            bullets = [ResumeBullet(text=entry.text, source_fact_ids=[entry.source_id]) for entry in entries]
             experience.append(
                 ResumeExperience(
                     company=item.company,
@@ -62,22 +71,42 @@ class MockAIProvider(AIProvider):
                     bullets=bullets,
                 )
             )
-        projects = [
-            ResumeProject(
-                name=project.name,
-                description=project.description,
-                technologies=project.technologies,
-                source_fact_ids=[f"project:{i}:fact:{j}" for j in range(len(project.facts))] or [f"project:{i}:description"],
+        projects = []
+        for index, project in enumerate(profile.projects[:2]):
+            entries = [
+                entry for entry in catalog.prompt_entries if entry.kind == "project" and entry.owner_index == index
+            ]
+            projects.append(
+                ResumeProject(
+                    name=project.name,
+                    description=project.description,
+                    technologies=project.technologies,
+                    source_fact_ids=[entry.source_id for entry in entries],
+                )
             )
-            for i, project in enumerate(profile.projects[:2])
-        ]
+        education = []
+        for index, item in enumerate(profile.education):
+            source = next(
+                (
+                    entry.source_id
+                    for entry in catalog.prompt_entries
+                    if entry.kind == "education" and entry.owner_index == index and ":fact:" not in entry.source_id
+                ),
+                "",
+            )
+            education.append(
+                ResumeEducation(
+                    **item.model_dump(exclude={"facts"}),
+                    source_fact_ids=[source] if source else [],
+                )
+            )
         resume = TailoredResume(
             headline=f"{job.role} | {' • '.join(matches[:3] or all_skills[:3])}",
             professional_summary=" ".join(profile.summary_facts[:3]),
             summary_source_fact_ids=summary_ids,
             core_skills=(matches + [s for s in all_skills if s not in matches])[:12],
             experience=experience,
-            education=[ResumeEducation(**item.model_dump(exclude={"facts"})) for item in profile.education],
+            education=education,
             projects=projects,
             certifications=[ResumeCertification(**item.model_dump()) for item in profile.certifications],
         )

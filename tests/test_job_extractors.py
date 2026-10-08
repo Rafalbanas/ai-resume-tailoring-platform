@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -103,3 +105,192 @@ async def test_timeout_returns_manual_fallback():
     result = await service.extract("https://jobs.example.test/slow")
     assert result.extraction_method == "manual_required"
     assert result.job_description == ""
+
+
+@pytest.mark.asyncio
+async def test_nofluff_uses_full_named_sections_instead_of_jsonld_description():
+    html = Path("tests/fixtures/nofluff_unix_admin.html").read_text(encoding="utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+
+    settings = Settings(_env_file=None, job_fetch_playwright_enabled=False)
+    service = JobExtractorService(settings)
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+    result = await service.extract("https://nofluffjobs.com/job/unix-admin-mindbox-krakow")
+
+    assert result.extraction_method == "html"
+    assert result.role == "Unix Admin"
+    assert result.company == "Mindbox Sp. z o.o."
+    assert result.job_description.startswith("MUST HAVE\n")
+    for expected in ("5+ years", "RHEL 6–9", "Bash", "Ansible", "YUM/DNF", "performance tuning", "on-call"):
+        assert expected in result.job_description
+    for noise in ("What you get in return", "Multisport", "technology image"):
+        assert noise not in result.job_description
+
+
+@pytest.mark.asyncio
+async def test_justjoin_preserves_technical_sections_and_removes_ui_noise():
+    html = Path("tests/fixtures/justjoin_trainee_data_engineer.html").read_text(encoding="utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+
+    settings = Settings(_env_file=None, job_fetch_playwright_enabled=False)
+    service = JobExtractorService(settings)
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+    result = await service.extract(
+        "https://justjoin.it/job-offer/vertex-recruitments-trainee-data-engineer-warszawa-data"
+    )
+
+    assert result.extraction_method == "html"
+    assert result.role == "Trainee Data Engineer"
+    assert result.company == "Vertex Recruitments"
+    assert result.job_description
+    for expected in (
+        "Junior",
+        "Remote",
+        "JOB DESCRIPTION",
+        "Co będziesz robić?",
+        "Nasze oczekiwania",
+        "TECH STACK",
+        "SQL",
+        "Python",
+        "ETL/ELT",
+        "Data Lake",
+        "Big Data",
+        "Spark",
+        "PySpark",
+        "Databricks",
+        "CI/CD",
+        "Docker",
+        "Kubernetes",
+        "Apache Airflow",
+        "Terraform",
+        "Infrastructure as Code / IaC",
+        "Apache Kafka",
+        "English B2",
+        "Polish C2",
+    ):
+        assert expected in result.job_description
+    assert any(cloud in result.job_description for cloud in ("AWS", "GCP", "Azure"))
+    for noise in (
+        "OFFICE LOCATION",
+        "Job offers Vertex Recruitments",
+        "company profile",
+        "Apply",
+        "Save",
+        "Similar offers",
+        "Private medical coverage",
+    ):
+        assert noise not in result.job_description
+
+
+@pytest.mark.asyncio
+async def test_justjoin_next_payload_uses_full_html_and_jsonld_metadata_fallback():
+    html = Path("tests/fixtures/justjoin_platform_engineer_next.html").read_text(encoding="utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+
+    settings = Settings(_env_file=None, job_fetch_playwright_enabled=False)
+    service = JobExtractorService(settings)
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+    result = await service.extract(
+        "https://justjoin.it/job-offer/alois-technologies-spolka-z-oo-platform-engineer-wroclaw-devops"
+    )
+
+    assert result.extraction_method == "html"
+    assert result.role == "Platform Engineer"
+    assert result.company == "ALOIS TECHNOLOGIES SPÓŁKA Z OO"
+    for expected in (
+        "6+ years",
+        "PostgreSQL",
+        "Bash",
+        "Linux / Unix",
+        "Azure Data Factory",
+        "GitLab CI/CD",
+        "Elasticsearch",
+        "Cloudera",
+        "Java",
+    ):
+        assert expected in result.job_description
+    for noise in ("Why this one is worth a look", "Competitive daily B2B rate", "Apply today"):
+        assert noise not in result.job_description
+
+
+@pytest.mark.asyncio
+async def test_workday_preserves_requirements_and_removes_corporate_boilerplate():
+    html = Path("tests/fixtures/workday_windows_automation_engineer.html").read_text(encoding="utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+
+    settings = Settings(_env_file=None, job_fetch_playwright_enabled=False)
+    service = JobExtractorService(settings)
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+    result = await service.extract(
+        "https://motorolasolutions.wd5.myworkdayjobs.com/Careers/job/Krakow-Poland/Windows-Automation-Engineer_R64920"
+    )
+
+    assert result.extraction_method == "html"
+    assert result.role == "Windows Automation Engineer"
+    assert result.company == "Motorola Solutions"
+    assert result.job_description
+    for expected in (
+        "Krakow, Poland",
+        "R64920",
+        "DEPARTMENT OVERVIEW",
+        "JOB DESCRIPTION",
+        "RESPONSIBILITIES",
+        "BASIC REQUIREMENTS",
+        "WHAT YOU NEED TO SUCCEED",
+        "BONUS POINTS IF YOU HAVE",
+        "Windows Server",
+        "Windows Client OS",
+        "Active Directory",
+        "automated installation and configuration",
+        "automation",
+        "programming/scripting concepts",
+        "variables",
+        "control structures",
+        "loops",
+        "error handling",
+        "Python",
+        "Bash",
+        "PowerShell",
+        "Git",
+        "CI/CD",
+        "Agile",
+        "TCP/IP",
+        "TLS",
+        "PKI",
+    ):
+        assert expected in result.job_description
+    for noise in (
+        "Company Overview",
+        "Competitive salary package",
+        "Private medical coverage",
+        "Employee Pension Plan",
+        "Life insurance",
+        "Employee Stock Purchase Plan",
+        "parking",
+        "volleyball",
+        "grill",
+        "wellness benefits",
+        "Travel Requirements",
+        "Relocation Provided",
+        "Position Type",
+        "Referral Payment Plan",
+        "EEO Statement",
+        "equal opportunity employer",
+    ):
+        assert noise not in result.job_description

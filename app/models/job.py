@@ -43,6 +43,7 @@ class JobAnalysis(BaseModel):
     strong_matches: list[str]
     partial_matches: list[str]
     missing_requirements: list[str]
+    match_sources: dict[str, list[str]] = Field(default_factory=dict)
     supported_keywords: list[str]
     unsupported_keywords: list[str]
     recommendation: Recommendation

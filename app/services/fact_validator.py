@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from app.models.candidate import CandidateProfile
 from app.models.job import JobRequest
 from app.models.resume import (
+    ResumeBullet,
     ResumeCertification,
     ResumeEducation,
     ResumeExperience,
     ResumeProject,
     TailoredResume,
 )
+from app.services.fact_catalog import FactCatalog
 
 
 @dataclass
@@ -23,97 +25,192 @@ class FactValidator:
 
     def __init__(self, profile: CandidateProfile):
         self.profile = profile
-        self.catalog = self._catalog(profile)
-
-    @staticmethod
-    def _catalog(profile: CandidateProfile) -> dict[str, str]:
-        catalog: dict[str, str] = {}
-        for i, fact in enumerate(profile.summary_facts):
-            catalog[f"summary:{i}"] = fact
-        for i, exp in enumerate(profile.experience):
-            for j, fact in enumerate(exp.facts):
-                catalog[f"experience:{i}:fact:{j}"] = fact
-        for i, project in enumerate(profile.projects):
-            catalog[f"project:{i}:description"] = project.description
-            for j, fact in enumerate(project.facts):
-                catalog[f"project:{i}:fact:{j}"] = fact
-        return catalog
+        self.catalog = FactCatalog(profile)
 
     def validate(self, candidate: TailoredResume, job: JobRequest) -> ValidationResult:
         draft = deepcopy(candidate)
         warnings: list[str] = []
 
-        allowed_skills = {value.casefold(): value for values in self.profile.skills.values() for value in values}
+        def skill_key(value: str) -> str:
+            return " ".join(value.casefold().replace("(basic)", "").replace("/", " ").replace("-", " ").split())
+
+        allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values}
         clean_skills = []
         for skill in draft.core_skills:
-            if skill.casefold() in allowed_skills:
-                canonical = allowed_skills[skill.casefold()]
+            key = skill_key(skill)
+            if key in allowed_skills:
+                canonical = allowed_skills[key]
                 if canonical not in clean_skills:
                     clean_skills.append(canonical)
             else:
                 warnings.append(f"Unsupported AI fact removed: {skill}")
+        if not clean_skills:
+            job_text = job.job_description.casefold()
+            relevant = [
+                canonical
+                for key, canonical in allowed_skills.items()
+                if key and (key in job_text or canonical.casefold() in job_text)
+            ]
+            clean_skills = relevant or list(dict.fromkeys(allowed_skills.values()))[:10]
         draft.core_skills = clean_skills[:18]
 
-        valid_summary_ids = [key for key in draft.summary_source_fact_ids if key.startswith("summary:") and key in self.catalog]
-        if len(valid_summary_ids) != len(draft.summary_source_fact_ids):
-            warnings.append("Unsupported AI summary content was replaced with source facts")
-        draft.summary_source_fact_ids = valid_summary_ids[:4]
-        draft.professional_summary = " ".join(self.catalog[key] for key in draft.summary_source_fact_ids)
-        draft.headline = f"{job.role} | {' • '.join(draft.core_skills[:3])}".rstrip(" |")
+        summary_entries = self.catalog.valid(draft.summary_source_fact_ids, kind="summary")[:4]
+        if not summary_entries:
+            summary_entries = [entry for entry in self.catalog.prompt_entries if entry.kind == "summary"][:3]
+        summary_ids = [entry.source_id for entry in summary_entries]
+        if not self.catalog.supports_paraphrase(draft.professional_summary, summary_ids):
+            if draft.professional_summary:
+                warnings.append("Unsupported AI summary content was replaced with source facts")
+            draft.professional_summary = " ".join(entry.text for entry in summary_entries)
+        draft.summary_source_fact_ids = summary_ids
+        if not draft.headline.strip() or "candidate name" in draft.headline.casefold():
+            draft.headline = job.role
 
         clean_experience: list[ResumeExperience] = []
-        exp_lookup = {(item.company.casefold(), item.title.casefold()): (i, item) for i, item in enumerate(self.profile.experience)}
         for exp in draft.experience:
-            match = exp_lookup.get((exp.company.casefold(), exp.title.casefold()))
-            if not match:
+            bullets = []
+            exp_index: int | None = None
+            for bullet in exp.bullets:
+                entries = self.catalog.valid(bullet.source_fact_ids, kind="experience")
+                owner_indexes = {entry.owner_index for entry in entries}
+                if len(owner_indexes) != 1:
+                    warnings.append(f"Unsupported AI bullet removed from {exp.company}")
+                    continue
+                bullet_index = owner_indexes.pop()
+                if bullet_index is None or (exp_index is not None and bullet_index != exp_index):
+                    warnings.append(f"Unsupported AI bullet removed from {exp.company}")
+                    continue
+                exp_index = bullet_index
+                valid_ids = [entry.source_id for entry in entries]
+                if not self.catalog.supports_paraphrase(bullet.text, valid_ids):
+                    warnings.append(f"Unsupported AI bullet replaced in {self.profile.experience[exp_index].company}")
+                    bullet.text = " ".join(entry.text for entry in entries)
+                bullet.source_fact_ids = valid_ids
+                bullets.append(bullet)
+            if exp_index is None or not bullets:
                 warnings.append(f"Unsupported AI experience removed: {exp.company} — {exp.title}")
                 continue
-            exp_index, source = match
-            bullets = []
-            for bullet in exp.bullets:
-                valid_ids = [
-                    key for key in bullet.source_fact_ids
-                    if key.startswith(f"experience:{exp_index}:fact:") and key in self.catalog
-                ]
-                if not valid_ids:
-                    warnings.append(f"Unsupported AI bullet removed from {source.company}")
+            source = self.profile.experience[exp_index]
+            exp.company = source.company
+            exp.title = source.title
+            exp.dates = " – ".join(filter(None, [source.start, source.end]))
+            exp.bullets = bullets[:4]
+            clean_experience.append(exp)
+        if not clean_experience:
+            for exp_index, source in enumerate(self.profile.experience):
+                entries = [
+                    entry
+                    for entry in self.catalog.prompt_entries
+                    if entry.kind == "experience" and entry.owner_index == exp_index
+                ][:2]
+                if not entries:
                     continue
-                bullet.source_fact_ids = valid_ids
-                bullet.text = " ".join(self.catalog[key] for key in valid_ids)
-                bullets.append(bullet)
-            if bullets:
-                exp.company = source.company
-                exp.title = source.title
-                exp.dates = " – ".join(filter(None, [source.start, source.end]))
-                exp.bullets = bullets[:4]
-                clean_experience.append(exp)
+                clean_experience.append(
+                    ResumeExperience(
+                        company=source.company,
+                        title=source.title,
+                        dates=" – ".join(filter(None, [source.start, source.end])),
+                        bullets=[ResumeBullet(text=entry.text, source_fact_ids=[entry.source_id]) for entry in entries],
+                    )
+                )
         draft.experience = clean_experience
 
-        project_lookup = {project.name.casefold(): (i, project) for i, project in enumerate(self.profile.projects)}
         clean_projects: list[ResumeProject] = []
         for project in draft.projects:
-            match = project_lookup.get(project.name.casefold())
-            if not match:
+            entries = self.catalog.valid(project.source_fact_ids, kind="project")
+            owner_indexes = {entry.owner_index for entry in entries}
+            if len(owner_indexes) != 1:
                 warnings.append(f"Unsupported AI project removed: {project.name}")
                 continue
-            index, source = match
-            valid_ids = [key for key in project.source_fact_ids if key.startswith(f"project:{index}:") and key in self.catalog]
-            if not valid_ids:
+            index = owner_indexes.pop()
+            if index is None:
                 warnings.append(f"Unsupported AI project content removed: {project.name}")
                 continue
+            source = self.profile.projects[index]
+            valid_ids = [entry.source_id for entry in entries]
             project.name = source.name
-            project.description = " ".join(self.catalog[key] for key in valid_ids if self.catalog[key])
-            project.technologies = [tech for tech in source.technologies if tech.casefold() in allowed_skills]
+            if not self.catalog.supports_paraphrase(project.description, valid_ids):
+                if project.description:
+                    warnings.append(f"Unsupported AI project content replaced: {project.name}")
+                project.description = " ".join(entry.text for entry in entries)
+            project.technologies = [
+                allowed_skills[skill_key(tech)] for tech in source.technologies if skill_key(tech) in allowed_skills
+            ]
             project.source_fact_ids = valid_ids
             clean_projects.append(project)
+        if not clean_projects:
+            for index, source in enumerate(self.profile.projects[:2]):
+                entries = [
+                    entry
+                    for entry in self.catalog.prompt_entries
+                    if entry.kind == "project" and entry.owner_index == index
+                ]
+                content = next((entry for entry in entries if ":description:" in entry.source_id), None)
+                content = content or next(iter(entries), None)
+                if content:
+                    clean_projects.append(
+                        ResumeProject(
+                            name=source.name,
+                            description=content.text,
+                            technologies=[
+                                allowed_skills[skill_key(tech)]
+                                for tech in source.technologies
+                                if skill_key(tech) in allowed_skills
+                            ],
+                            source_fact_ids=[content.source_id],
+                        )
+                    )
         draft.projects = clean_projects[:2]
 
-        education_lookup = {item.institution.casefold(): item for item in self.profile.education}
-        draft.education = [
-            ResumeEducation(**education_lookup[item.institution.casefold()].model_dump(exclude={"facts"}))
-            for item in draft.education
-            if item.institution.casefold() in education_lookup
-        ]
+        clean_education = []
+        education_lookup = {
+            item.institution.casefold(): (index, item) for index, item in enumerate(self.profile.education)
+        }
+        for item in draft.education:
+            entries = self.catalog.valid(item.source_fact_ids, kind="education")
+            index = entries[0].owner_index if entries else None
+            if index is None:
+                match = education_lookup.get(item.institution.casefold())
+                index = match[0] if match else None
+            if index is None:
+                warnings.append(f"Unsupported AI education removed: {item.institution}")
+                continue
+            source = self.profile.education[index]
+            main_entry = next(
+                (
+                    entry
+                    for entry in self.catalog.prompt_entries
+                    if entry.kind == "education" and entry.owner_index == index and ":fact:" not in entry.source_id
+                ),
+                None,
+            )
+            clean_education.append(
+                ResumeEducation(
+                    institution=source.institution,
+                    qualification=source.qualification,
+                    dates=source.dates,
+                    source_fact_ids=[main_entry.source_id] if main_entry else [],
+                )
+            )
+        if not clean_education:
+            for index, source in enumerate(self.profile.education):
+                main_entry = next(
+                    (
+                        entry
+                        for entry in self.catalog.prompt_entries
+                        if entry.kind == "education" and entry.owner_index == index and ":fact:" not in entry.source_id
+                    ),
+                    None,
+                )
+                clean_education.append(
+                    ResumeEducation(
+                        institution=source.institution,
+                        qualification=source.qualification,
+                        dates=source.dates,
+                        source_fact_ids=[main_entry.source_id] if main_entry else [],
+                    )
+                )
+        draft.education = clean_education
         cert_lookup = {item.name.casefold(): item for item in self.profile.certifications}
         clean_certs = []
         for cert in draft.certifications:

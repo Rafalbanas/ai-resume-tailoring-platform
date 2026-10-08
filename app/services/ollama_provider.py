@@ -9,6 +9,8 @@ from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import AIProvider, AIProviderError
+from app.services.analysis_validator import AnalysisValidator
+from app.services.fact_catalog import FactCatalog
 from app.services.reference_cvs import ReferenceCVLibrary
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -34,16 +36,59 @@ class OllamaProvider(AIProvider):
             settings.ollama_timeout_seconds,
             connect=min(settings.ollama_timeout_seconds, 10.0),
         )
+        self.num_predict = settings.ollama_num_predict
+        self.num_ctx = settings.ollama_num_ctx
         self.transport = transport
         self.reference_library = reference_library
 
-    async def _chat(self, response_model: type[ModelT], system_prompt: str, payload: dict) -> ModelT:
+    async def _chat(
+        self,
+        response_model: type[ModelT],
+        system_prompt: str,
+        payload: dict,
+        *,
+        source_catalog: list[dict[str, str]] | None = None,
+        allowed_skills: list[str] | None = None,
+    ) -> ModelT:
+        schema = response_model.model_json_schema()
+        if response_model is TailoredResume and source_catalog is not None:
+            ids_by_type = {
+                kind: [
+                    entry["source_id"]
+                    for entry in source_catalog
+                    if entry["type"] == kind
+                ]
+                for kind in ("summary", "experience", "education", "project")
+            }
+            properties = schema["properties"]
+            definitions = schema["$defs"]
+            properties["summary_source_fact_ids"]["items"]["enum"] = ids_by_type["summary"]
+            properties["summary_source_fact_ids"]["minItems"] = 1
+            properties["core_skills"]["items"]["enum"] = allowed_skills or []
+            properties["core_skills"]["minItems"] = 1
+            definitions["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type[
+                "experience"
+            ]
+            definitions["ResumeProject"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type["project"]
+            definitions["ResumeEducation"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type[
+                "education"
+            ]
+            if ids_by_type["experience"]:
+                properties["experience"]["minItems"] = 1
+            if ids_by_type["education"]:
+                properties["education"]["minItems"] = 1
+            if ids_by_type["project"]:
+                properties["projects"]["minItems"] = 1
         request = {
             "model": self.model,
             "stream": False,
             "think": False,
-            "format": response_model.model_json_schema(),
-            "options": {"temperature": 0},
+            "format": schema,
+            "options": {
+                "temperature": 0,
+                "num_predict": self.num_predict,
+                "num_ctx": self.num_ctx,
+            },
             "messages": [
                 {"role": "system", "content": f"{TRUTH_RULES}\n\n{system_prompt}"},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -75,17 +120,22 @@ class OllamaProvider(AIProvider):
             raise AIProviderError("Ollama returned invalid structured JSON. Try again.") from exc
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
-        return await self._chat(
+        analysis = await self._chat(
             JobAnalysis,
             """Analyze the job against the master profile. Strong matches, partial matches, and supported keywords
 must be supported by the master profile. Missing and unsupported requirements must come from the job description.
+For every strong or partial match, populate match_sources with one or more exact source_id values from source_catalog.
+A strong match requires direct evidence. A partial match requires related transferable evidence. Never describe the
+master profile as a template or infer a fact from the job description or reference CV.
 Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or SKIP recommendation.""",
             {
                 "stage": "analyze_job",
                 "job": job.model_dump(mode="json"),
                 "master_profile": profile.model_dump(mode="json"),
+                "source_catalog": FactCatalog(profile).for_prompt(),
             },
         )
+        return AnalysisValidator(profile).validate(analysis)
 
     async def tailor_resume(
         self,
@@ -95,13 +145,18 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
     ) -> TailoredResume:
         references = self.reference_library.select(job.role, job.job_description) if self.reference_library else []
         layout_guide = self.reference_library.layout_guide() if self.reference_library else {}
+        catalog = FactCatalog(profile).for_prompt()
+        allowed_skills = [skill for values in profile.skills.values() for skill in values]
         return await self._chat(
             TailoredResume,
-            """Select and tailor a resume for the job. Every summary statement must reference summary:N.
-Every experience bullet must reference experience:N:fact:M and must use the matching employer and title.
-Every project must reference project:N:description or project:N:fact:M and use the matching project name.
+            """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
+Every summary must reference summary source IDs. Every experience bullet must reference experience source IDs.
+Every project must reference project source IDs and every education item must reference its education source ID.
+Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
+Select each skill as one exact value from master_profile.skills; do not combine several skills into one string.
+The source IDs, not string equality, bind paraphrased wording to verified facts.
 Only include skills, education, and certifications present in the master profile. Source IDs are mandatory because
-an independent Truth Lock will resolve them back to the exact source facts and remove unsupported content.
+an independent Truth Lock will resolve them back to verified facts and reject unsupported content.
 Reference CVs are style examples only. Never copy their people, employers, facts, metrics, skills, education,
 certifications, projects, or responsibilities unless the same fact exists in the master profile.""",
             {
@@ -109,9 +164,12 @@ certifications, projects, or responsibilities unless the same fact exists in the
                 "job": job.model_dump(mode="json"),
                 "analysis": analysis.model_dump(mode="json"),
                 "master_profile": profile.model_dump(mode="json"),
+                "source_catalog": catalog,
                 "reference_cvs_style_only": references,
                 "layout_constraints": layout_guide,
             },
+            source_catalog=catalog,
+            allowed_skills=allowed_skills,
         )
 
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
