@@ -6,7 +6,9 @@ flowchart LR
     F -->|single supplied URL| E[SSRF-safe job extractor]
     E --> H[httpx + JSON-LD / HTML adapters]
     E -. JavaScript fallback .-> PW[Playwright]
-    F -->|secret header| N[Existing n8n webhook]
+    F -->|direct local API| O[Ollama]
+    O -->|structured JSON| P
+    F -. optional secret header .-> N[Existing n8n webhook]
     N --> G[Google Gemini]
     G --> N
     N -->|structured JSON| P[Pydantic validation]
@@ -17,7 +19,7 @@ flowchart LR
     V --> FS[Local application history]
 ```
 
-The provider boundary is `AIProvider`; production uses `N8NGeminiProvider`, while a deterministic mock supports local development. FastAPI never receives a Gemini credential.
+The provider boundary is `AIProvider`; production uses direct local `OllamaProvider`, `N8NGeminiProvider` remains available, and a deterministic mock supports local development. FastAPI never receives a Gemini credential.
 
 ## Truth Lock
 

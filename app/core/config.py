@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     n8n_webhook_url: str = ""
     n8n_webhook_secret: str = ""
-    ai_provider: str = Field(default="mock", pattern="^(mock|n8n)$")
+    ai_provider: str = Field(default="mock", pattern="^(mock|n8n|ollama)$")
     request_timeout_seconds: float = 60.0
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3.5:9b"
+    ollama_timeout_seconds: float = 300.0
     max_job_description_chars: int = 30_000
     rate_limit_per_minute: int = 20
     job_fetch_timeout_seconds: float = 12.0

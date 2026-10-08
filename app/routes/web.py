@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.core.security import require_basic_auth, validate_csrf
 from app.models.job import JobExtraction, JobRequest, JobUrlRequest
 from app.models.resume import TailoredResume
+from app.services.ai_provider import AIProviderError
 from app.services.fact_validator import FactValidator
 
 router = APIRouter()
@@ -70,11 +71,15 @@ async def analyze(
     started = time.perf_counter()
     try:
         response = await request.app.state.provider.tailor(job, request.app.state.profile)
+    except AIProviderError as exc:
+        logger.warning("AI provider failed", extra={"stage": "ai_provider", "provider": request.app.state.provider.name})
+        return request.app.state.templates.TemplateResponse(
+            "index.html", context(request, error=str(exc)), status_code=502
+        )
     except Exception:
         logger.exception("AI workflow failed", extra={"stage": "n8n_or_mock"})
         return request.app.state.templates.TemplateResponse(
-            "index.html",
-            context(request, error="The analysis service did not return a valid response. Check n8n and try again."),
+            "index.html", context(request, error="The AI provider did not return a valid response. Try again."),
             status_code=502,
         )
     draft_id = request.app.state.storage.save_draft(job, response)
@@ -184,3 +189,11 @@ async def download(request: Request, slug: str, kind: str):
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.get("/health/provider")
+async def provider_health(request: Request):
+    try:
+        return await request.app.state.provider.health()
+    except AIProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -4,8 +4,12 @@ services:
     container_name: cv-tailor
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "127.0.0.1:${CV_TAILOR_PORT:-8000}:8000"
+    # Linux VPS: host networking lets the container reach Ollama on host loopback.
+    # Uvicorn remains bound to loopback, so the configured port is not exposed publicly.
+    network_mode: host
+    command: ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "${CV_TAILOR_PORT:-8000}", "--proxy-headers", "--forwarded-allow-ips=*"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CV_TAILOR_PORT:-8000}/health')\""]
     volumes:
       - ./data:/app/data
     security_opt:

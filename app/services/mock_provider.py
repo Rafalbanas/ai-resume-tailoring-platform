@@ -17,6 +17,8 @@ from app.services.ai_provider import AIProvider
 class MockAIProvider(AIProvider):
     """Deterministic local provider for development and end-to-end smoke tests."""
 
+    name = "mock"
+
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
         description = job.job_description.casefold()
         all_skills = [s for values in profile.skills.values() for s in values]

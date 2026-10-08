@@ -16,6 +16,7 @@ from app.services.docx_generator import generate_docx
 from app.services.job_extractors import JobExtractorService
 from app.services.mock_provider import MockAIProvider
 from app.services.n8n_provider import N8NGeminiProvider
+from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
 from app.services.storage import Storage
 
@@ -39,7 +40,12 @@ async def lifespan(app: FastAPI):
     app.state.pdf_generator = PDFGenerator(BASE_DIR / "templates", BASE_DIR / "static")
     app.state.docx_generator = generate_docx
     app.state.limiter = FixedWindowLimiter(settings.rate_limit_per_minute)
-    app.state.provider = N8NGeminiProvider(settings) if settings.ai_provider == "n8n" else MockAIProvider()
+    providers = {
+        "mock": lambda: MockAIProvider(),
+        "n8n": lambda: N8NGeminiProvider(settings),
+        "ollama": lambda: OllamaProvider(settings),
+    }
+    app.state.provider = providers[settings.ai_provider]()
     yield
 
 

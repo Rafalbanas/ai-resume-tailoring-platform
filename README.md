@@ -24,16 +24,17 @@ flowchart LR
     FastAPI -->|single supplied URL| Extractor[SSRF-safe job extractor]
     Extractor --> HTTPX[httpx + JSON-LD / HTML adapters]
     Extractor -. JS fallback .-> PW[Playwright]
-    FastAPI -->|secret webhook| n8n
-    n8n --> Gemini
-    Gemini --> n8n
-    n8n -->|structured JSON| Pydantic
+    FastAPI -->|direct local API| Ollama
+    FastAPI -. optional secret webhook .-> n8n
+    n8n -.-> Gemini
+    Ollama -->|structured JSON| Pydantic
+    n8n -. structured JSON .-> Pydantic
     Pydantic --> Validator[Fact Validator]
     Validator --> PDF
     Validator --> DOCX
 ```
 
-FastAPI never knows `GEMINI_API_KEY`. Gemini credentials remain exclusively in n8n. `AIProvider` isolates the application from the current vendor, with `N8NGeminiProvider` for production and `MockAIProvider` for offline development.
+`AIProvider` isolates the application from the model runtime. Production can use `OllamaProvider` directly against a local Ollama API, while `N8NGeminiProvider` remains available and `MockAIProvider` supports offline development. FastAPI never needs a Gemini key.
 
 ## Quick start
 
@@ -76,9 +77,12 @@ For a useful demo, replace the explicitly fictional example with verified facts 
 | `CSRF_SECRET` | Signs the double-submit CSRF token |
 | `BASE_URL` | Public application URL; enables Secure cookies under HTTPS |
 | `DATA_DIR` | Master profile and generated application storage |
-| `AI_PROVIDER` | `n8n` in production, `mock` for offline verification |
+| `AI_PROVIDER` | `ollama` for direct local inference, `n8n` for the webhook, or `mock` for offline verification |
+| `OLLAMA_BASE_URL` | Local Ollama API base URL (default `http://127.0.0.1:11434`) |
+| `OLLAMA_MODEL` | Ollama model used for both structured stages (default `qwen3.5:9b`) |
+| `OLLAMA_TIMEOUT_SECONDS` | Timeout for each local inference stage (default `300`) |
 | `REQUEST_TIMEOUT_SECONDS` | n8n request timeout |
-| `CV_TAILOR_PORT` | Loopback host port used by Docker Compose (default `8000`) |
+| `CV_TAILOR_PORT` | Loopback port used by Uvicorn under Docker host networking (default `8000`) |
 | `JOB_FETCH_TIMEOUT_SECONDS` | Timeout for a single job-page fetch |
 | `JOB_FETCH_MAX_BYTES` | Maximum downloaded/rendered job page size |
 | `JOB_FETCH_MAX_REDIRECTS` | Maximum redirects followed after validating each target |
@@ -94,7 +98,11 @@ docker compose exec cv-tailor python -m app.cli reset-password
 
 The CLI prompts twice without echoing the password. The persistent credential file contains an Argon2id hash, is written atomically, and has mode `0600`.
 
-## n8n and Gemini
+## Ollama, n8n, and Gemini
+
+The default production configuration calls Ollama twice through `POST /api/chat`: first for `JobAnalysis`, then for `TailoredResume`. Each request supplies the corresponding JSON Schema. Pydantic validates both responses and the independent Python Fact Validator remains the final boundary before export.
+
+On a Linux VPS, Docker Compose uses host networking so `http://127.0.0.1:11434` refers to the host Ollama service. Uvicorn is explicitly bound to `127.0.0.1:${CV_TAILOR_PORT:-8000}`. Check readiness without sending profile data at `GET /health/provider`.
 
 Import [`n8n/cv-tailoring-workflow.json`](n8n/cv-tailoring-workflow.json), select the existing Gemini credential in both model nodes, configure the matching webhook secret in n8n, activate the workflow, and place its production URL in `.env`. Full steps are in [`docs/n8n-setup.md`](docs/n8n-setup.md).
 
@@ -105,7 +113,7 @@ The workflow uses two controlled chains: job analysis and resume selection. Both
 1. Run `ruff check .` and `pytest -q`.
 2. Start with `AI_PROVIDER=mock`; analyze a description containing a known skill and an unknown one such as Kubernetes.
 3. Generate the CV and confirm the unknown skill appears under Missing but not in preview, `resume.json`, PDF, or DOCX.
-4. Switch to `AI_PROVIDER=n8n`, start the app, repeat the job, and inspect the n8n execution.
+4. Switch to `AI_PROVIDER=ollama`, confirm `/health/provider`, start the app, and repeat the job with the local model.
 5. Download both exports and verify the PDF is selectable text and the DOCX is editable.
 6. Repeat from a phone-sized browser viewport and confirm all actions remain reachable.
 

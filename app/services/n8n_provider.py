@@ -10,6 +10,8 @@ from app.services.ai_provider import AIProvider
 
 
 class N8NGeminiProvider(AIProvider):
+    name = "n8n"
+
     def __init__(self, settings: Settings):
         if not settings.n8n_webhook_url or not settings.n8n_webhook_secret:
             raise RuntimeError("N8N_WEBHOOK_URL and N8N_WEBHOOK_SECRET are required for the n8n provider")

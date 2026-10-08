@@ -7,4 +7,5 @@ __pycache__
 data/.drafts
 data/auth.json
 data/.auth-*.json
+data/master_profile.json
 data/generated
