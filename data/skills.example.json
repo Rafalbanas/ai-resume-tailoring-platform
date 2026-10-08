@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "skill_example_python",
+      "name": "Example Python",
+      "category": "Example Engineering",
+      "level": "hands_on",
+      "verified": true,
+      "allowed_in_cv": true,
+      "enabled": true,
+      "priority": 7,
+      "aliases": ["Example scripting"],
+      "evidence": [{"source_type": "manual_verified", "source_id": "manual:example_python", "description": "Fictional example verification"}],
+      "notes": "Fictional public sample only",
+      "cv_wording": "Hands-on example Python"
+    },
+    {
+      "id": "skill_example_rag",
+      "name": "Example Retrieval-Augmented Generation",
+      "category": "Example AI / ML",
+      "level": "learning",
+      "verified": false,
+      "allowed_in_cv": false,
+      "enabled": true,
+      "priority": 3,
+      "aliases": ["Example RAG"],
+      "evidence": [],
+      "notes": "Learning-only fictional example",
+      "cv_wording": ""
+    }
+  ]
+}

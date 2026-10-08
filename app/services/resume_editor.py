@@ -12,7 +12,10 @@ def apply_resume_edits(resume: TailoredResume, form: Mapping[str, object]) -> Ta
     draft = deepcopy(resume)
     draft.headline = str(form.get("headline", draft.headline)).strip()
     draft.professional_summary = str(form.get("professional_summary", draft.professional_summary)).strip()
-    draft.core_skills = _split_values(form.get("core_skills", "\n".join(draft.core_skills)))
+    if "core_skills" in form:
+        draft.core_skills = _split_values(form.get("core_skills"))
+        # A manual list replaces the model selection; Truth Lock resolves it back to bank IDs.
+        draft.selected_skill_ids = []
 
     for exp_index, experience in enumerate(draft.experience):
         clean_bullets = []

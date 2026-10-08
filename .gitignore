@@ -20,6 +20,7 @@ htmlcov/
 data/auth.json
 data/.auth-*.json
 data/master_profile.json
+data/skills.json
 data/profile_photo.*
 data/reference_cvs/
 data/.drafts/

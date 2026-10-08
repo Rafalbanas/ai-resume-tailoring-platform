@@ -44,6 +44,11 @@ class JobAnalysis(BaseModel):
     partial_matches: list[str]
     missing_requirements: list[str]
     match_sources: dict[str, list[str]] = Field(default_factory=dict)
+    strong_skill_ids: list[str] = Field(default_factory=list)
+    partial_skill_ids: list[str] = Field(default_factory=list)
+    learning_skill_ids: list[str] = Field(default_factory=list)
+    learning_matches: list[str] = Field(default_factory=list)
+    match_evidence: dict[str, list[str]] = Field(default_factory=dict)
     supported_keywords: list[str]
     unsupported_keywords: list[str]
     recommendation: Recommendation

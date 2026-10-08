@@ -12,6 +12,7 @@ from app.models.resume import (
     TailoredResume,
 )
 from app.services.fact_catalog import FactCatalog
+from app.services.skills_bank import SkillsBank
 
 
 @dataclass
@@ -23,9 +24,10 @@ class ValidationResult:
 class FactValidator:
     """Turns model output into profile-backed data; prompts are never the trust boundary."""
 
-    def __init__(self, profile: CandidateProfile):
+    def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None):
         self.profile = profile
         self.catalog = FactCatalog(profile)
+        self.skills_bank = skills_bank
 
     def validate(self, candidate: TailoredResume, job: JobRequest) -> ValidationResult:
         draft = deepcopy(candidate)
@@ -36,23 +38,47 @@ class FactValidator:
 
         allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values}
         clean_skills = []
-        for skill in draft.core_skills:
-            key = skill_key(skill)
-            if key in allowed_skills:
-                canonical = allowed_skills[key]
-                if canonical not in clean_skills:
-                    clean_skills.append(canonical)
-            else:
-                warnings.append(f"Unsupported AI fact removed: {skill}")
-        if not clean_skills:
-            job_text = job.job_description.casefold()
-            relevant = [
-                canonical
-                for key, canonical in allowed_skills.items()
-                if key and (key in job_text or canonical.casefold() in job_text)
-            ]
-            clean_skills = relevant or list(dict.fromkeys(allowed_skills.values()))[:10]
-        draft.core_skills = clean_skills[:18]
+        if self.skills_bank:
+            manual_skill_list = bool(draft.core_skills) and not draft.selected_skill_ids
+            requested_ids = list(draft.selected_skill_ids)
+            for value in draft.core_skills:
+                skill = self.skills_bank.find(value)
+                if skill and self.skills_bank.eligible(skill):
+                    requested_ids.append(skill.id)
+                elif value.strip():
+                    warnings.append(f"Unsupported AI fact removed: {value}")
+            selected = self.skills_bank.select_for_job(
+                list(dict.fromkeys(requested_ids)),
+                f"{job.role}\n{job.job_description}",
+                minimum=0 if manual_skill_list else 8,
+                maximum=16,
+            )
+            draft.selected_skill_ids = [skill.id for skill in selected]
+            draft.core_skills = [self.skills_bank.wording(skill) for skill in selected]
+            allowed_skills = {
+                skill_key(alias): self.skills_bank.wording(skill)
+                for skill in self.skills_bank.skills
+                if self.skills_bank.eligible(skill)
+                for alias in self.skills_bank.aliases_for(skill)
+            }
+        else:
+            for skill in draft.core_skills:
+                key = skill_key(skill)
+                if key in allowed_skills:
+                    canonical = allowed_skills[key]
+                    if canonical not in clean_skills:
+                        clean_skills.append(canonical)
+                else:
+                    warnings.append(f"Unsupported AI fact removed: {skill}")
+            if not clean_skills:
+                job_text = job.job_description.casefold()
+                relevant = [
+                    canonical
+                    for key, canonical in allowed_skills.items()
+                    if key and (key in job_text or canonical.casefold() in job_text)
+                ]
+                clean_skills = relevant or list(dict.fromkeys(allowed_skills.values()))[:10]
+            draft.core_skills = clean_skills[:18]
 
         summary_entries = self.catalog.valid(draft.summary_source_fact_ids, kind="summary")[:4]
         if not summary_entries:

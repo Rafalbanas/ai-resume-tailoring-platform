@@ -45,6 +45,7 @@ flowchart LR
 cp .env.example .env
 # Set unique secrets in .env
 cp data/master_profile.example.json data/master_profile.json
+cp data/skills.example.json data/skills.json
 # Replace the fictional profile with verified facts
 docker compose up -d --build
 curl http://127.0.0.1:8000/health
@@ -63,6 +64,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 # Set initial auth values, AI_PROVIDER=mock, BASE_URL=http://localhost:8000, DATA_DIR=data
 cp data/master_profile.example.json data/master_profile.json
+cp data/skills.example.json data/skills.json
 uvicorn app.main:app --reload
 ```
 
@@ -104,6 +106,12 @@ The CLI prompts twice without echoing the password. The persistent credential fi
 
 The default production configuration calls Ollama twice through `POST /api/chat`: first for `JobAnalysis`, then for `TailoredResume`. Each request supplies the corresponding JSON Schema. Pydantic validates both responses and the independent Python Fact Validator remains the final boundary before export.
 
+## Verified skills and evidence
+
+The private `data/skills.json` bank is the only production source for CV skills. A verified skill must have existing master-profile evidence or an explicitly confirmed `manual_verified` record. Learning, disabled, unverified, and not-allowed skills are excluded by Python even if a model returns them. Ollama selects only supplied IDs; it cannot create evidence. The app selects 8–16 job-relevant skills and exposes the bank under **Skills & Evidence**.
+
+Production never falls back to `data/skills.example.json`. For an existing private profile, create the initial private bank once with `PYTHONPATH=. python scripts/bootstrap_skills.py`; the command refuses to overwrite an existing file. `/health/skills` reports only source, mode, validity, and counts, without evidence or personal data.
+
 ## Private reference CVs and layout
 
 Authenticated users can upload multiple PDF/DOCX files under **Reference CVs**. Files and the generated `data/reference_cvs/index.json` stay inside the ignored private data directory. Ingestion extracts role, summary, skills, experience-bullet examples, and section order. Ollama receives at most two similar references as style-only examples; the verified master profile remains the only permitted source of facts, and Truth Lock still rewrites/removes unsupported output.
@@ -142,10 +150,12 @@ GitHub Actions runs lint and tests on pushes and pull requests. It does not depl
 - `app/models/` — candidate, job-analysis, and resume contracts.
 - `app/services/job_extractors/` — SSRF-safe fetching, JSON-LD parsing, portal adapters, and Playwright fallback.
 - `app/services/fact_validator.py` — independent Truth Lock enforcement.
+- `app/services/skills_bank.py` — private verified-skill selection and evidence resolution.
 - `app/services/n8n_provider.py` — timeout-bound n8n integration.
 - `templates/` and `static/` — mobile UI and deterministic A4 resume.
 - `data/master_profile.json` — the only candidate source of truth.
 - `data/master_profile.example.json` — fictional public example; the real profile is intentionally ignored by Git.
+- `data/skills.example.json` — fictional public skills schema; `data/skills.json` is private and ignored.
 - `n8n/` — importable Gemini workflow.
 - `tests/` — schemas, adversarial fact checks, PDF, storage, and filenames.
 - `docs/` — architecture, n8n setup, and VPS deployment.

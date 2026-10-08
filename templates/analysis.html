@@ -3,8 +3,8 @@
 {% block content %}
 <div class="report-head"><div><p class="eyebrow">MATCH REPORT</p><h1>{{ job.role }}</h1><p>{{ job.company }}</p></div><div class="score score-{{ analysis.match_level|lower }}"><small>Match</small><strong>{{ analysis.match_level }}</strong><span>{{ analysis.recommendation.replace('_',' ') }}</span></div></div>
 <div class="match-grid">
-  <section class="card"><h2><span class="dot good"></span>Strong matches</h2><div class="chips">{% for item in analysis.strong_matches %}<span>{{ item }}</span>{% else %}<em>No direct matches found</em>{% endfor %}</div></section>
-  <section class="card"><h2><span class="dot partial"></span>Partial matches</h2><div class="chips">{% for item in analysis.partial_matches %}<span>{{ item }}</span>{% else %}<em>None identified</em>{% endfor %}</div></section>
+  <section class="card"><h2><span class="dot good"></span>Strong matches</h2><div class="chips">{% for item in analysis.strong_matches %}<span>{{ item }}{% if analysis.match_evidence.get(item) %}<small>Verified · {{ analysis.match_evidence[item]|join(', ') }}</small>{% endif %}</span>{% else %}<em>No direct matches found</em>{% endfor %}</div></section>
+  <section class="card"><h2><span class="dot partial"></span>Partial matches</h2><div class="chips">{% for item in analysis.partial_matches %}<span>{{ item }}{% if analysis.match_evidence.get(item) %}<small>Verified · {{ analysis.match_evidence[item]|join(', ') }}</small>{% endif %}</span>{% else %}<em>None identified</em>{% endfor %}</div></section>
   <section class="card"><h2><span class="dot missing"></span>Missing</h2><div class="chips">{% for item in analysis.missing_requirements %}<span>{{ item }}</span>{% else %}<em>No explicit gaps identified</em>{% endfor %}</div></section>
 </div>
 <section class="recommendation"><p class="eyebrow">WHY</p><p>{{ analysis.reasoning_summary }}</p></section>

@@ -12,11 +12,14 @@ from app.services.ai_provider import AIProvider, AIProviderError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.fact_catalog import FactCatalog
 from app.services.reference_cvs import ReferenceCVLibrary
+from app.services.skills_bank import SkillsBank
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 TRUTH_RULES = """MASTER PROFILE IS THE ONLY SOURCE OF FACTS.
 Do not invent skills, technologies, certifications, employers, education, projects, metrics, or responsibilities.
+The verified skills bank is an evidence-backed index of master-profile facts. Select only supplied skill IDs;
+never create a skill, change its trust state, or create evidence.
 You may only select facts, change their order, shorten them, paraphrase them, and adapt wording to the job description.
 Return only JSON matching the supplied schema. Do not return markdown or additional text."""
 
@@ -29,6 +32,7 @@ class OllamaProvider(AIProvider):
         settings: Settings,
         transport: httpx.AsyncBaseTransport | None = None,
         reference_library: ReferenceCVLibrary | None = None,
+        skills_bank: SkillsBank | None = None,
     ):
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
@@ -40,6 +44,7 @@ class OllamaProvider(AIProvider):
         self.num_ctx = settings.ollama_num_ctx
         self.transport = transport
         self.reference_library = reference_library
+        self.skills_bank = skills_bank
 
     async def _chat(
         self,
@@ -49,8 +54,17 @@ class OllamaProvider(AIProvider):
         *,
         source_catalog: list[dict[str, str]] | None = None,
         allowed_skills: list[str] | None = None,
+        allowed_skill_ids: list[str] | None = None,
     ) -> ModelT:
         schema = response_model.model_json_schema()
+        if response_model is JobAnalysis and self.skills_bank:
+            properties = schema["properties"]
+            all_ids = [skill.id for skill in self.skills_bank.skills if skill.enabled]
+            eligible_ids = [skill.id for skill in self.skills_bank.skills if self.skills_bank.eligible(skill)]
+            learning_ids = [skill.id for skill in self.skills_bank.skills if skill.level == "learning"]
+            properties["strong_skill_ids"]["items"]["enum"] = eligible_ids
+            properties["partial_skill_ids"]["items"]["enum"] = all_ids
+            properties["learning_skill_ids"]["items"]["enum"] = learning_ids
         if response_model is TailoredResume and source_catalog is not None:
             ids_by_type = {
                 kind: [
@@ -65,7 +79,9 @@ class OllamaProvider(AIProvider):
             properties["summary_source_fact_ids"]["items"]["enum"] = ids_by_type["summary"]
             properties["summary_source_fact_ids"]["minItems"] = 1
             properties["core_skills"]["items"]["enum"] = allowed_skills or []
-            properties["core_skills"]["minItems"] = 1
+            properties["selected_skill_ids"]["items"]["enum"] = allowed_skill_ids or []
+            properties["selected_skill_ids"]["minItems"] = min(8, len(allowed_skill_ids or []))
+            properties["selected_skill_ids"]["maxItems"] = 16
             definitions["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type[
                 "experience"
             ]
@@ -124,7 +140,9 @@ class OllamaProvider(AIProvider):
             JobAnalysis,
             """Analyze the job against the master profile. Strong matches, partial matches, and supported keywords
 must be supported by the master profile. Missing and unsupported requirements must come from the job description.
-For every strong or partial match, populate match_sources with one or more exact source_id values from source_catalog.
+For skill matches, select exact IDs from skills_bank into strong_skill_ids, partial_skill_ids, or learning_skill_ids.
+Never create a skill or evidence. A learning/unverified/disabled skill is Missing/Learning, never Strong. A basic
+verified skill is Partial. For non-skill matches, populate match_sources with exact source_id values.
 A strong match requires direct evidence. A partial match requires related transferable evidence. Never describe the
 master profile as a template or infer a fact from the job description or reference CV.
 Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or SKIP recommendation.""",
@@ -133,9 +151,10 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
                 "job": job.model_dump(mode="json"),
                 "master_profile": profile.model_dump(mode="json"),
                 "source_catalog": FactCatalog(profile).for_prompt(),
+                "skills_bank": self.skills_bank.for_prompt() if self.skills_bank else [],
             },
         )
-        return AnalysisValidator(profile).validate(analysis)
+        return AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}")
 
     async def tailor_resume(
         self,
@@ -146,14 +165,21 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
         references = self.reference_library.select(job.role, job.job_description) if self.reference_library else []
         layout_guide = self.reference_library.layout_guide() if self.reference_library else {}
         catalog = FactCatalog(profile).for_prompt()
-        allowed_skills = [skill for values in profile.skills.values() for skill in values]
+        eligible = [skill for skill in self.skills_bank.skills if self.skills_bank.eligible(skill)] if self.skills_bank else []
+        allowed_skills = (
+            list(dict.fromkeys(value for skill in eligible for value in (skill.name, self.skills_bank.wording(skill))))
+            if self.skills_bank
+            else [skill for values in profile.skills.values() for skill in values]
+        )
         return await self._chat(
             TailoredResume,
             """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
 Every summary must reference summary source IDs. Every experience bullet must reference experience source IDs.
 Every project must reference project source IDs and every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
-Select each skill as one exact value from master_profile.skills; do not combine several skills into one string.
+Select 8-16 relevant existing skill IDs in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
+unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
+AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
 The source IDs, not string equality, bind paraphrased wording to verified facts.
 Only include skills, education, and certifications present in the master profile. Source IDs are mandatory because
 an independent Truth Lock will resolve them back to verified facts and reject unsupported content.
@@ -165,11 +191,13 @@ certifications, projects, or responsibilities unless the same fact exists in the
                 "analysis": analysis.model_dump(mode="json"),
                 "master_profile": profile.model_dump(mode="json"),
                 "source_catalog": catalog,
+                "skills_bank": self.skills_bank.for_prompt() if self.skills_bank else [],
                 "reference_cvs_style_only": references,
                 "layout_constraints": layout_guide,
             },
             source_catalog=catalog,
             allowed_skills=allowed_skills,
+            allowed_skill_ids=[skill.id for skill in eligible],
         )
 
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:

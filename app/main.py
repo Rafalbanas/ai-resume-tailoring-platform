@@ -19,6 +19,7 @@ from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
 from app.services.profile_loader import load_master_profile
 from app.services.reference_cvs import ReferenceCVLibrary
+from app.services.skills_bank import SkillsBank
 from app.services.storage import Storage
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -35,6 +36,8 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.profile = profile
     app.state.profile_status = profile_status
+    app.state.skills_bank = SkillsBank(settings.skills_path, profile, settings.profile_mode)
+    app.state.skills_status = app.state.skills_bank.status
     app.state.auth_store = auth_store
     app.state.storage = Storage(settings.data_dir)
     app.state.reference_library = ReferenceCVLibrary(settings.reference_cvs_path, settings.reference_cv_max_bytes)
@@ -45,9 +48,11 @@ async def lifespan(app: FastAPI):
     app.state.docx_generator = generate_docx
     app.state.limiter = FixedWindowLimiter(settings.rate_limit_per_minute)
     providers = {
-        "mock": lambda: MockAIProvider(),
-        "n8n": lambda: N8NGeminiProvider(settings),
-        "ollama": lambda: OllamaProvider(settings, reference_library=app.state.reference_library),
+        "mock": lambda: MockAIProvider(app.state.skills_bank),
+        "n8n": lambda: N8NGeminiProvider(settings, app.state.skills_bank),
+        "ollama": lambda: OllamaProvider(
+            settings, reference_library=app.state.reference_library, skills_bank=app.state.skills_bank
+        ),
     }
     app.state.provider = providers[settings.ai_provider]()
     yield

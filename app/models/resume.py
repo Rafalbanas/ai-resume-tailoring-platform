@@ -40,6 +40,7 @@ class TailoredResume(BaseModel):
     professional_summary: str = Field(max_length=700)
     summary_source_fact_ids: list[str] = Field(default_factory=list)
     core_skills: list[str] = Field(max_length=18)
+    selected_skill_ids: list[str] = Field(default_factory=list, max_length=16)
     experience: list[ResumeExperience]
     education: list[ResumeEducation] = Field(default_factory=list)
     projects: list[ResumeProject] = Field(default_factory=list, max_length=2)

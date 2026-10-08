@@ -36,6 +36,10 @@ class Settings(BaseSettings):
         return self.data_dir / "master_profile.json"
 
     @property
+    def skills_path(self) -> Path:
+        return self.data_dir / "skills.json"
+
+    @property
     def auth_file_path(self) -> Path:
         return self.data_dir / "auth.json"
 

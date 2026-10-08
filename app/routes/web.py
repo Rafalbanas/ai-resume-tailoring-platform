@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from typing import Annotated
 
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 from app.core.security import require_basic_auth, validate_csrf
 from app.models.job import JobExtraction, JobRequest, JobUrlRequest
 from app.models.resume import TailoredResume
+from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.fact_validator import FactValidator
@@ -25,6 +27,35 @@ def context(request: Request, **values):
 
 def guard(request: Request) -> None:
     require_basic_auth(request)
+
+
+def _skill_id(name: str) -> str:
+    return "skill_" + "_".join(re.findall(r"[a-z0-9]+", name.casefold()))
+
+
+def _evidence_options(request: Request) -> list[dict[str, str]]:
+    return request.app.state.skills_bank.catalog.for_prompt()
+
+
+def _skill_from_form(form, existing: VerifiedSkill | None = None) -> VerifiedSkill:
+    evidence = list(existing.evidence) if existing else []
+    source_type = str(form.get("evidence_source_type", "")).strip()
+    source_id = str(form.get("evidence_source_id", "")).strip()
+    description = str(form.get("evidence_description", "")).strip()
+    if source_type and source_id and description:
+        if source_type == "manual_verified" and form.get("manual_confirm") != "on":
+            raise ValueError("Manual verification must be explicitly confirmed.")
+        evidence.append(SkillEvidence(source_type=source_type, source_id=source_id, description=description))
+    name = str(form.get("name", "")).strip()
+    aliases = [item.strip() for item in str(form.get("aliases", "")).replace(",", "\n").splitlines() if item.strip()]
+    return VerifiedSkill(
+        id=existing.id if existing else _skill_id(name), name=name,
+        category=str(form.get("category", "")).strip(), subcategory=str(form.get("subcategory", "")).strip(),
+        level=str(form.get("level", "basic")), verified=form.get("verified") == "on",
+        allowed_in_cv=form.get("allowed_in_cv") == "on", enabled=existing.enabled if existing else True,
+        priority=int(form.get("priority", 5)), aliases=aliases, evidence=evidence,
+        notes=str(form.get("notes", "")).strip(), cv_wording=str(form.get("cv_wording", "")).strip(),
+    )
 
 
 @router.post("/api/extract-job-url", response_model=JobExtraction)
@@ -75,7 +106,9 @@ async def analyze(
     started = time.perf_counter()
     try:
         response = await request.app.state.provider.tailor(job, request.app.state.profile)
-        response.analysis = AnalysisValidator(request.app.state.profile).validate(response.analysis)
+        response.analysis = AnalysisValidator(request.app.state.profile, request.app.state.skills_bank).validate(
+            response.analysis, f"{job.role}\n{job.job_description}"
+        )
     except AIProviderError as exc:
         logger.warning(
             "AI provider failed", extra={"stage": "ai_provider", "provider": request.app.state.provider.name}
@@ -107,7 +140,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=404, detail="Draft not found") from exc
     started = time.perf_counter()
-    result = FactValidator(request.app.state.profile).validate(response.resume, job)
+    result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(response.resume, job)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide
@@ -160,7 +193,7 @@ async def edit_resume(request: Request, slug: str):
 
 
 def _regenerate_artifacts(request: Request, slug: str, job: JobRequest, resume: TailoredResume) -> list[str]:
-    result = FactValidator(request.app.state.profile).validate(resume, job)
+    result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resume, job)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide
@@ -297,6 +330,125 @@ async def remove_reference(request: Request, reference_id: str, csrf_token: Anno
     return RedirectResponse("/references", status_code=303)
 
 
+@router.get("/skills", response_class=HTMLResponse)
+async def skills(request: Request):
+    guard(request)
+    groups: dict[str, list[VerifiedSkill]] = {}
+    for skill in request.app.state.skills_bank.skills:
+        groups.setdefault(skill.category, []).append(skill)
+    return request.app.state.templates.TemplateResponse("skills.html", context(request, groups=groups))
+
+
+@router.get("/skills/new", response_class=HTMLResponse)
+async def new_skill(request: Request):
+    guard(request)
+    return request.app.state.templates.TemplateResponse(
+        "skill_form.html", context(request, skill=None, evidence_options=_evidence_options(request))
+    )
+
+
+@router.get("/skills/{skill_id}/edit", response_class=HTMLResponse)
+async def edit_skill(request: Request, skill_id: str):
+    guard(request)
+    skill = request.app.state.skills_bank.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return request.app.state.templates.TemplateResponse(
+        "skill_form.html", context(request, skill=skill, evidence_options=_evidence_options(request))
+    )
+
+
+@router.post("/skills/save", response_class=HTMLResponse)
+async def save_skill(request: Request):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    form = await request.form()
+    validate_csrf(str(form.get("csrf_token", "")), request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    existing_id = str(form.get("existing_id", "")).strip()
+    existing = request.app.state.skills_bank.get(existing_id) if existing_id else None
+    try:
+        skill = _skill_from_form(form, existing)
+        request.app.state.skills_bank.update(existing.id, skill) if existing else request.app.state.skills_bank.add(skill)
+    except (ValueError, ValidationError, KeyError) as exc:
+        return request.app.state.templates.TemplateResponse(
+            "skill_form.html", context(request, skill=existing, evidence_options=_evidence_options(request), error=str(exc)),
+            status_code=422,
+        )
+    return RedirectResponse("/skills", status_code=303)
+
+
+@router.post("/skills/{skill_id}/toggle")
+async def toggle_skill(request: Request, skill_id: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.skills_bank.toggle(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    return RedirectResponse("/skills", status_code=303)
+
+
+@router.post("/skills/{skill_id}/delete")
+async def delete_skill(request: Request, skill_id: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.skills_bank.delete(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    return RedirectResponse("/skills", status_code=303)
+
+
+@router.get("/skills/{skill_id}/evidence", response_class=HTMLResponse)
+async def skill_evidence(request: Request, skill_id: str):
+    guard(request)
+    skill = request.app.state.skills_bank.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return request.app.state.templates.TemplateResponse(
+        "skill_evidence.html", context(request, skill=skill, evidence_options=_evidence_options(request))
+    )
+
+
+@router.post("/skills/{skill_id}/evidence")
+async def add_skill_evidence(request: Request, skill_id: str):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    form = await request.form()
+    validate_csrf(str(form.get("csrf_token", "")), request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        source_type = str(form.get("source_type", ""))
+        if source_type == "manual_verified" and form.get("manual_confirm") != "on":
+            raise ValueError("Manual verification must be explicitly confirmed.")
+        request.app.state.skills_bank.add_evidence(skill_id, SkillEvidence(
+            source_type=source_type, source_id=str(form.get("source_id", "")),
+            description=str(form.get("description", "")),
+        ))
+    except (ValueError, ValidationError, KeyError) as exc:
+        skill = request.app.state.skills_bank.get(skill_id)
+        if not skill:
+            raise HTTPException(status_code=404, detail="Skill not found") from exc
+        return request.app.state.templates.TemplateResponse(
+            "skill_evidence.html", context(request, skill=skill, evidence_options=_evidence_options(request), error=str(exc)),
+            status_code=422,
+        )
+    return RedirectResponse(f"/skills/{skill_id}/evidence", status_code=303)
+
+
+@router.post("/skills/{skill_id}/evidence/{index}/remove")
+async def remove_skill_evidence(request: Request, skill_id: str, index: int, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.skills_bank.remove_evidence(skill_id, index)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Evidence not found") from exc
+    return RedirectResponse(f"/skills/{skill_id}/evidence", status_code=303)
+
+
 @router.get("/account/password", response_class=HTMLResponse)
 async def password_form(request: Request):
     guard(request)
@@ -355,12 +507,18 @@ async def health(request: Request):
     return {
         "status": "ok",
         "profile": request.app.state.profile_status.public(),
+        "skills": request.app.state.skills_status.public(),
     }
 
 
 @router.get("/health/profile")
 async def profile_health(request: Request):
     return {"status": "ok", **request.app.state.profile_status.public()}
+
+
+@router.get("/health/skills")
+async def skills_health(request: Request):
+    return {"status": "ok", **request.app.state.skills_status.public()}
 
 
 @router.get("/health/provider")
