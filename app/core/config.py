@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:9b"
     ollama_timeout_seconds: float = 300.0
+    reference_cv_max_bytes: int = 10_000_000
     max_job_description_chars: int = 30_000
     rate_limit_per_minute: int = 20
     job_fetch_timeout_seconds: float = 12.0
@@ -34,6 +35,10 @@ class Settings(BaseSettings):
     @property
     def auth_file_path(self) -> Path:
         return self.data_dir / "auth.json"
+
+    @property
+    def reference_cvs_path(self) -> Path:
+        return self.data_dir / "reference_cvs"
 
 
 @lru_cache

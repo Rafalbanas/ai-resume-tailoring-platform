@@ -18,6 +18,7 @@ from app.services.mock_provider import MockAIProvider
 from app.services.n8n_provider import N8NGeminiProvider
 from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
+from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.storage import Storage
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -35,15 +36,17 @@ async def lifespan(app: FastAPI):
     app.state.profile = profile
     app.state.auth_store = auth_store
     app.state.storage = Storage(settings.data_dir)
+    app.state.reference_library = ReferenceCVLibrary(settings.reference_cvs_path, settings.reference_cv_max_bytes)
+    app.state.reference_library.refresh()
     app.state.job_extractor = JobExtractorService(settings)
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
-    app.state.pdf_generator = PDFGenerator(BASE_DIR / "templates", BASE_DIR / "static")
+    app.state.pdf_generator = PDFGenerator(BASE_DIR / "templates", BASE_DIR / "static", settings.data_dir)
     app.state.docx_generator = generate_docx
     app.state.limiter = FixedWindowLimiter(settings.rate_limit_per_minute)
     providers = {
         "mock": lambda: MockAIProvider(),
         "n8n": lambda: N8NGeminiProvider(settings),
-        "ollama": lambda: OllamaProvider(settings),
+        "ollama": lambda: OllamaProvider(settings, reference_library=app.state.reference_library),
     }
     app.state.provider = providers[settings.ai_provider]()
     yield

@@ -10,4 +10,5 @@ beautifulsoup4==4.14.2
 playwright==1.55.0
 weasyprint==66.0
 python-docx==1.2.0
+pypdf==6.1.1
 argon2-cffi==25.1.0

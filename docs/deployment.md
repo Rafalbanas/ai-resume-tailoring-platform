@@ -8,5 +8,6 @@
 6. Configure the existing reverse proxy so your HTTPS hostname forwards to `http://127.0.0.1:8000` and preserves `Host`/forwarded headers. A sanitized example is provided in `deploy/nginx/cv.example.com.conf`.
 7. Terminate TLS at the reverse proxy. Compose uses host networking so the container can reach host-loopback Ollama, while Uvicorn itself remains bound to loopback.
 8. Back up the `data/` directory; it contains the master profile and generated applications.
+9. Upload private reference CVs through the authenticated **Reference CVs** screen. Optionally place a private headshot at `data/profile_photo.jpg`. Neither path is included in Git or the Docker image.
 
 No production deployment is performed by CI.

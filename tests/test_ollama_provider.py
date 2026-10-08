@@ -59,7 +59,7 @@ def resume_payload(*, unsupported: bool = False) -> dict:
     }
 
 
-def provider(transport: httpx.AsyncBaseTransport) -> OllamaProvider:
+def provider(transport: httpx.AsyncBaseTransport, reference_library=None) -> OllamaProvider:
     settings = Settings(
         _env_file=None,
         ai_provider="ollama",
@@ -67,7 +67,23 @@ def provider(transport: httpx.AsyncBaseTransport) -> OllamaProvider:
         ollama_model="qwen3.5:9b",
         ollama_timeout_seconds=30,
     )
-    return OllamaProvider(settings, transport=transport)
+    return OllamaProvider(settings, transport=transport, reference_library=reference_library)
+
+
+class FakeReferenceLibrary:
+    def select(self, role, description):
+        return [
+            {
+                "target_role": "Reference Platform Engineer",
+                "summary_example": "Reference-only wording.",
+                "skills_example": ["Unsupported Reference Skill"],
+                "experience_bullet_examples": ["Reference-only employer fact."],
+                "section_order": ["summary", "experience"],
+            }
+        ]
+
+    def layout_guide(self):
+        return {"summary_max_chars": 400, "max_skills": 10, "max_bullets_per_role": 3}
 
 
 @pytest.mark.asyncio
@@ -90,6 +106,23 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     assert all(request["format"]["type"] == "object" for request in requests)
     assert all(request["stream"] is False for request in requests)
     assert all("MASTER PROFILE IS THE ONLY SOURCE OF FACTS" in request["messages"][0]["content"] for request in requests)
+
+
+@pytest.mark.asyncio
+async def test_ollama_receives_reference_cvs_as_style_only(profile):
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        payload = analysis_payload() if len(requests) == 1 else resume_payload()
+        return httpx.Response(200, json={"message": {"content": json.dumps(payload)}})
+
+    await provider(httpx.MockTransport(handler), FakeReferenceLibrary()).tailor(job(), profile)
+    resume_request = json.loads(requests[1]["messages"][1]["content"])
+
+    assert resume_request["reference_cvs_style_only"][0]["target_role"] == "Reference Platform Engineer"
+    assert resume_request["layout_constraints"]["max_skills"] == 10
+    assert "Never copy their people" in requests[1]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio

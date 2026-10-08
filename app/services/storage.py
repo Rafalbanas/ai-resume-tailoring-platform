@@ -36,7 +36,12 @@ class Storage:
         return JobRequest.model_validate(payload["job"]), WorkflowResponse.model_validate(payload["response"])
 
     def save_application(
-        self, job: JobRequest, analysis: JobAnalysis, resume: TailoredResume, warnings: list[str]
+        self,
+        job: JobRequest,
+        analysis: JobAnalysis,
+        resume: TailoredResume,
+        warnings: list[str],
+        layout_guide: dict | None = None,
     ) -> tuple[str, Path]:
         date = datetime.now(timezone.utc).date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
@@ -58,6 +63,7 @@ class Storage:
             "match_level": analysis.match_level,
             "recommendation": analysis.recommendation,
             "warnings": warnings,
+            "layout_guide": layout_guide or {},
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder

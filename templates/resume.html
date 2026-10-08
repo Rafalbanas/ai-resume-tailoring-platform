@@ -1,9 +1,25 @@
-<article class="resume-document">
-  <header><h1>{{ personal.name or 'Candidate Name' }}</h1><p class="contact">{{ [personal.location, personal.email, personal.phone, personal.linkedin, personal.website, personal.github]|select|join(' · ') }}</p><p class="headline">{{ resume.headline }}</p></header>
-  {% if resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
-  {% if resume.core_skills %}<section><h2>Core Skills</h2><p class="skill-line">{{ resume.core_skills|join(' · ') }}</p></section>{% endif %}
-  {% if resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} — {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}
-  {% if resume.projects %}<section><h2>Selected Projects</h2>{% for item in resume.projects %}<div class="entry"><h3>{{ item.name }}</h3><p>{{ item.description }}</p>{% if item.technologies %}<p class="tech">{{ item.technologies|join(' · ') }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
-  {% if resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry-head"><h3>{{ item.qualification }} — {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% endfor %}</section>{% endif %}
-  {% if resume.certifications %}<section><h2>Certifications</h2><p>{{ resume.certifications|map(attribute='name')|join(' · ') }}</p></section>{% endif %}
+<article class="resume-document modern-sidebar">
+  <aside class="resume-sidebar">
+    <div class="portrait">
+      {% if photo_data_uri %}<img src="{{ photo_data_uri }}" alt="">{% else %}<span>{{ personal.name[:1] or 'C' }}</span>{% endif %}
+    </div>
+    <section class="sidebar-section contact-block">
+      <h2>Contact</h2>
+      {% for value in [personal.location, personal.email, personal.phone, personal.linkedin, personal.website, personal.github] %}{% if value %}<p>{{ value }}</p>{% endif %}{% endfor %}
+    </section>
+    {% if resume.core_skills %}<section class="sidebar-section"><h2>Skills</h2><ul class="skill-list">{% for skill in resume.core_skills %}<li>{{ skill }}</li>{% endfor %}</ul></section>{% endif %}
+  </aside>
+  <main class="resume-main">
+    <header><p class="candidate-name">{{ personal.name or 'Candidate Name' }}</p><h1>{{ resume.headline }}</h1></header>
+    <div class="main-sections">
+      {% for section_name in section_order %}
+        {% if section_name == 'summary' and resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
+        {% if section_name == 'experience' and resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} · {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}
+        {% if section_name == 'education' and resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry-head"><h3>{{ item.qualification }} · {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% endfor %}</section>{% endif %}
+        {% if section_name == 'projects' and resume.projects %}<section><h2>Projects</h2>{% for item in resume.projects %}<div class="entry"><h3>{{ item.name }}</h3><p>{{ item.description }}</p>{% if item.technologies %}<p class="tech">{{ item.technologies|join(' · ') }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
+        {% if section_name == 'certifications' and resume.certifications %}<section><h2>Certifications</h2><p>{{ resume.certifications|map(attribute='name')|join(' · ') }}</p></section>{% endif %}
+      {% endfor %}
+    </div>
+    <footer>I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
+  </main>
 </article>

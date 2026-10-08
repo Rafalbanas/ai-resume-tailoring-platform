@@ -14,6 +14,7 @@ A private, mobile-first application that fetches or accepts a job description, c
 - Shows a qualitative HIGH / MEDIUM / LOW match report with APPLY / REASONABLE STRETCH / SKIP guidance.
 - Renders a deterministic, single-column A4 resume with Jinja2 and WeasyPrint.
 - Exports an editable, ATS-friendly DOCX and keeps local application history.
+- Maintains a private PDF/DOCX reference-CV library for local style examples and deterministic layout guidance.
 - Protects the private UI with HTTP Basic Auth backed by an Argon2id hash, CSRF validation, input limits, rate limiting, safe paths, timeouts, and secret-authenticated n8n calls.
 
 ## Architecture
@@ -81,6 +82,7 @@ For a useful demo, replace the explicitly fictional example with verified facts 
 | `OLLAMA_BASE_URL` | Local Ollama API base URL (default `http://127.0.0.1:11434`) |
 | `OLLAMA_MODEL` | Ollama model used for both structured stages (default `qwen3.5:9b`) |
 | `OLLAMA_TIMEOUT_SECONDS` | Timeout for each local inference stage (default `300`) |
+| `REFERENCE_CV_MAX_BYTES` | Maximum size of one private reference PDF/DOCX (default `10000000`) |
 | `REQUEST_TIMEOUT_SECONDS` | n8n request timeout |
 | `CV_TAILOR_PORT` | Loopback port used by Uvicorn under Docker host networking (default `8000`) |
 | `JOB_FETCH_TIMEOUT_SECONDS` | Timeout for a single job-page fetch |
@@ -101,6 +103,12 @@ The CLI prompts twice without echoing the password. The persistent credential fi
 ## Ollama, n8n, and Gemini
 
 The default production configuration calls Ollama twice through `POST /api/chat`: first for `JobAnalysis`, then for `TailoredResume`. Each request supplies the corresponding JSON Schema. Pydantic validates both responses and the independent Python Fact Validator remains the final boundary before export.
+
+## Private reference CVs and layout
+
+Authenticated users can upload multiple PDF/DOCX files under **Reference CVs**. Files and the generated `data/reference_cvs/index.json` stay inside the ignored private data directory. Ingestion extracts role, summary, skills, experience-bullet examples, and section order. Ollama receives at most two similar references as style-only examples; the verified master profile remains the only permitted source of facts, and Truth Lock still rewrites/removes unsupported output.
+
+PDFs use the deterministic one-page `modern_sidebar` Jinja2/CSS template: navy sidebar, optional private `data/profile_photo.jpg` (also ignored), contacts and skills on the left, content on the right, and a fixed GDPR footer. The page-fit pass shortens bullets first, then removes lower-priority skills, without reducing the base font below 8 pt.
 
 On a Linux VPS, Docker Compose uses host networking so `http://127.0.0.1:11434` refers to the host Ollama service. Uvicorn is explicitly bound to `127.0.0.1:${CV_TAILOR_PORT:-8000}`. Check readiness without sending profile data at `GET /health/provider`.
 

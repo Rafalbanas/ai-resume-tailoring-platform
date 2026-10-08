@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
@@ -100,15 +100,24 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         raise HTTPException(status_code=404, detail="Draft not found") from exc
     started = time.perf_counter()
     result = FactValidator(request.app.state.profile).validate(response.resume, job)
-    slug, folder = request.app.state.storage.save_application(job, response.analysis, result.resume, result.warnings)
-    request.app.state.pdf_generator.generate(result.resume, request.app.state.profile, folder / "resume.pdf")
-    request.app.state.docx_generator(result.resume, request.app.state.profile, folder / "resume.docx")
+    layout_guide = request.app.state.reference_library.layout_guide()
+    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+        result.resume, request.app.state.profile, layout_guide
+    )
+    warnings = result.warnings + layout_warnings
+    slug, folder = request.app.state.storage.save_application(
+        job, response.analysis, fitted_resume, warnings, layout_guide
+    )
+    request.app.state.pdf_generator.generate(
+        fitted_resume, request.app.state.profile, folder / "resume.pdf", layout_guide
+    )
+    request.app.state.docx_generator(fitted_resume, request.app.state.profile, folder / "resume.docx")
     logger.info(
         "Resume generated",
         extra={
             "stage": "generate",
             "duration_ms": int((time.perf_counter() - started) * 1000),
-            "warning_count": len(result.warnings),
+            "warning_count": len(warnings),
         },
     )
     return RedirectResponse(f"/preview/{slug}", status_code=303)
@@ -123,7 +132,9 @@ async def preview(request: Request, slug: str):
         metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, ValidationError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    resume_html = request.app.state.pdf_generator.render_html(resume, request.app.state.profile)
+    resume_html = request.app.state.pdf_generator.render_html(
+        resume, request.app.state.profile, metadata.get("layout_guide")
+    )
     return request.app.state.templates.TemplateResponse(
         "resume_preview.html", context(request, slug=slug, metadata=metadata, resume_html=resume_html)
     )
@@ -135,6 +146,53 @@ async def history(request: Request):
     return request.app.state.templates.TemplateResponse(
         "history.html", context(request, rows=request.app.state.storage.history())
     )
+
+
+@router.get("/references", response_class=HTMLResponse)
+async def references(request: Request):
+    guard(request)
+    return request.app.state.templates.TemplateResponse(
+        "references.html", context(request, references=request.app.state.reference_library.list())
+    )
+
+
+@router.post("/references/upload", response_class=HTMLResponse)
+async def upload_references(
+    request: Request,
+    files: Annotated[list[UploadFile], File()],
+    csrf_token: Annotated[str, Form()],
+):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    errors = []
+    for upload in files[:20]:
+        try:
+            content = await upload.read(request.app.state.settings.reference_cv_max_bytes + 1)
+            request.app.state.reference_library.upload(upload.filename or "reference", content)
+        except ValueError as exc:
+            errors.append(f"{upload.filename}: {exc}")
+        finally:
+            await upload.close()
+    if errors:
+        return request.app.state.templates.TemplateResponse(
+            "references.html",
+            context(request, references=request.app.state.reference_library.list(), errors=errors),
+            status_code=422,
+        )
+    return RedirectResponse("/references", status_code=303)
+
+
+@router.post("/references/{reference_id}/remove")
+async def remove_reference(request: Request, reference_id: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.reference_library.remove(reference_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Reference CV not found") from exc
+    return RedirectResponse("/references", status_code=303)
 
 
 @router.get("/account/password", response_class=HTMLResponse)

@@ -9,6 +9,7 @@ from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import AIProvider, AIProviderError
+from app.services.reference_cvs import ReferenceCVLibrary
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -21,7 +22,12 @@ Return only JSON matching the supplied schema. Do not return markdown or additio
 class OllamaProvider(AIProvider):
     name = "ollama"
 
-    def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        transport: httpx.AsyncBaseTransport | None = None,
+        reference_library: ReferenceCVLibrary | None = None,
+    ):
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
         self.timeout = httpx.Timeout(
@@ -29,6 +35,7 @@ class OllamaProvider(AIProvider):
             connect=min(settings.ollama_timeout_seconds, 10.0),
         )
         self.transport = transport
+        self.reference_library = reference_library
 
     async def _chat(self, response_model: type[ModelT], system_prompt: str, payload: dict) -> ModelT:
         request = {
@@ -86,18 +93,24 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
         profile: CandidateProfile,
         analysis: JobAnalysis,
     ) -> TailoredResume:
+        references = self.reference_library.select(job.role, job.job_description) if self.reference_library else []
+        layout_guide = self.reference_library.layout_guide() if self.reference_library else {}
         return await self._chat(
             TailoredResume,
             """Select and tailor a resume for the job. Every summary statement must reference summary:N.
 Every experience bullet must reference experience:N:fact:M and must use the matching employer and title.
 Every project must reference project:N:description or project:N:fact:M and use the matching project name.
 Only include skills, education, and certifications present in the master profile. Source IDs are mandatory because
-an independent Truth Lock will resolve them back to the exact source facts and remove unsupported content.""",
+an independent Truth Lock will resolve them back to the exact source facts and remove unsupported content.
+Reference CVs are style examples only. Never copy their people, employers, facts, metrics, skills, education,
+certifications, projects, or responsibilities unless the same fact exists in the master profile.""",
             {
                 "stage": "tailor_resume",
                 "job": job.model_dump(mode="json"),
                 "analysis": analysis.model_dump(mode="json"),
                 "master_profile": profile.model_dump(mode="json"),
+                "reference_cvs_style_only": references,
+                "layout_constraints": layout_guide,
             },
         )
 

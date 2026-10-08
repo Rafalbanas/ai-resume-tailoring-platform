@@ -14,12 +14,16 @@ flowchart LR
     N -->|structured JSON| P[Pydantic validation]
     P --> V[Fact Validator]
     V --> J[Jinja2 deterministic template]
+    R[Private reference CV index] --> O
+    R --> J
     J --> PDF[WeasyPrint PDF]
     V --> DOCX[python-docx]
     V --> FS[Local application history]
 ```
 
 The provider boundary is `AIProvider`; production uses direct local `OllamaProvider`, `N8NGeminiProvider` remains available, and a deterministic mock supports local development. FastAPI never receives a Gemini credential.
+
+Reference PDFs/DOCX and their derived index live only in ignored `data/reference_cvs/`. They influence example wording, density, and section order, never candidate facts. The rendered PDF uses the fixed `modern_sidebar` template and a deterministic one-page fitting sequence.
 
 ## Truth Lock
 
