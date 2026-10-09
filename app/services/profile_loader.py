@@ -71,3 +71,22 @@ def load_master_profile(settings: Settings) -> tuple[CandidateProfile, ProfileSt
                 "The application will not fall back to data/master_profile.example.json."
             )
     return profile, ProfileStatus(source=source, profile_kind=kind, valid=True)
+
+
+def save_master_profile(profile: CandidateProfile, settings: Settings) -> None:
+    import os
+    import tempfile
+
+    path = settings.master_profile_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=".profile-", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(profile.model_dump_json(indent=2))
+            handle.write("\n")
+        os.chmod(temp_name, 0o600)
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+

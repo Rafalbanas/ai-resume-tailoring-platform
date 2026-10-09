@@ -9,12 +9,15 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import ValidationError
 
 from app.core.security import require_basic_auth, validate_csrf
+from app.models.candidate import Interest
 from app.models.job import JobExtraction, JobRequest, JobUrlRequest
 from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
 from app.services.analysis_validator import AnalysisValidator
+from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
+from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 
@@ -25,8 +28,8 @@ logger = logging.getLogger(__name__)
 def context(request: Request, **values):
     return {
         "request": request,
-        "csrf_token": request.state.csrf_token,
-        "asset_version": request.app.state.settings.app_build_sha,
+        "csrf_token": getattr(request.state, "csrf_token", ""),
+        "asset_version": getattr(getattr(request.app.state, "settings", None), "app_build_sha", ""),
         **values,
     }
 
@@ -259,14 +262,28 @@ def _validate_ajax_csrf(request: Request) -> None:
 
 
 @router.post("/preview/{slug}/photo")
-async def upload_preview_photo(request: Request, slug: str, photo: Annotated[UploadFile, File()]):
+async def upload_preview_photo(
+    request: Request,
+    slug: str,
+    photo: Annotated[UploadFile, File()],
+    crop_x: Annotated[float, Form()] = 50.0,
+    crop_y: Annotated[float, Form()] = 50.0,
+    crop_zoom: Annotated[float, Form()] = 1.0,
+):
     guard(request)
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
     _validate_ajax_csrf(request)
     try:
         request.app.state.storage.application_folder(slug)
         content = await photo.read(request.app.state.settings.profile_photo_max_bytes + 1)
-        request.app.state.profile_photo.save(photo.filename or "photo", photo.content_type or "", content)
+        request.app.state.profile_photo.save(
+            photo.filename or "photo",
+            photo.content_type or "",
+            content,
+            crop_x=crop_x,
+            crop_y=crop_y,
+            crop_zoom=crop_zoom,
+        )
         enabled = _refresh_photo_artifacts(request, slug, photo_enabled=True)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
@@ -632,8 +649,90 @@ async def remove_skill_evidence(request: Request, skill_id: str, index: int, csr
 async def candidate_profile(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        "profile.html", context(request, has_photo=request.app.state.profile_photo.exists())
+        "profile.html",
+        context(
+            request,
+            has_photo=request.app.state.profile_photo.exists(),
+            interests=request.app.state.profile.interests,
+        ),
     )
+
+
+@router.post("/profile/interests/add")
+async def add_interest(
+    request: Request,
+    name: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()],
+    category: Annotated[str, Form()] = "General",
+    allowed_in_cv: Annotated[str | None, Form()] = None,
+    enabled: Annotated[str | None, Form()] = None,
+):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    name = name.strip()
+    if not name:
+        return RedirectResponse("/profile", status_code=303)
+    interest_id = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"interest_{len(request.app.state.profile.interests) + 1}"
+    profile = request.app.state.profile
+    if not any(i.id == interest_id for i in profile.interests):
+        new_interest = Interest(
+            id=interest_id,
+            name=name,
+            category=category.strip() or "General",
+            verified=True,
+            allowed_in_cv=allowed_in_cv == "on" or allowed_in_cv is True,
+            enabled=enabled == "on" or enabled is True,
+        )
+        updated_interests = [*profile.interests, new_interest]
+        updated_profile = profile.model_copy(update={"interests": updated_interests})
+        save_master_profile(updated_profile, request.app.state.settings)
+        request.app.state.profile = updated_profile
+        if hasattr(request.app.state, "skills_bank"):
+            request.app.state.skills_bank.profile = updated_profile
+            request.app.state.skills_bank.catalog = FactCatalog(updated_profile)
+    return RedirectResponse("/profile", status_code=303)
+
+
+@router.post("/profile/interests/{interest_id}/toggle")
+async def toggle_interest(request: Request, interest_id: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    profile = request.app.state.profile
+    updated_interests = []
+    found = False
+    for item in profile.interests:
+        if item.id == interest_id:
+            updated_interests.append(item.model_copy(update={"enabled": not item.enabled}))
+            found = True
+        else:
+            updated_interests.append(item)
+    if found:
+        updated_profile = profile.model_copy(update={"interests": updated_interests})
+        save_master_profile(updated_profile, request.app.state.settings)
+        request.app.state.profile = updated_profile
+        if hasattr(request.app.state, "skills_bank"):
+            request.app.state.skills_bank.profile = updated_profile
+            request.app.state.skills_bank.catalog = FactCatalog(updated_profile)
+    return RedirectResponse("/profile", status_code=303)
+
+
+@router.post("/profile/interests/{interest_id}/delete")
+async def delete_interest(request: Request, interest_id: str, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    profile = request.app.state.profile
+    updated_interests = [item for item in profile.interests if item.id != interest_id]
+    if len(updated_interests) != len(profile.interests):
+        updated_profile = profile.model_copy(update={"interests": updated_interests})
+        save_master_profile(updated_profile, request.app.state.settings)
+        request.app.state.profile = updated_profile
+        if hasattr(request.app.state, "skills_bank"):
+            request.app.state.skills_bank.profile = updated_profile
+            request.app.state.skills_bank.catalog = FactCatalog(updated_profile)
+    return RedirectResponse("/profile", status_code=303)
 
 
 @router.get("/profile/photo/content")

@@ -14,4 +14,70 @@
   </form>
   {% if has_photo %}<form action="/profile/photo/remove" method="post" onsubmit="return confirm('Remove the profile photo?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}
 </section>
+
+<div class="page-head" style="margin-top: 2.5rem;">
+  <div>
+    <p class="eyebrow">CANDIDATE / PROFILE</p>
+    <h1>Interests & Passions</h1>
+    <p>Personal verified interests displayed in the Modern Sidebar when layout space permits.</p>
+  </div>
+</div>
+<section class="job-form interests-panel">
+  {% if interests and interests|length > 0 %}
+  <div class="interests-table-wrap">
+    <table class="history-table" style="width: 100%; margin-bottom: 1.5rem;">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Category</th>
+          <th>CV allowed</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in interests %}
+        <tr>
+          <td><strong>{{ item.name }}</strong></td>
+          <td>{{ item.category }}</td>
+          <td>{{ 'Yes' if item.allowed_in_cv else 'No' }}</td>
+          <td>
+            <span class="badge {{ 'badge-active' if item.enabled else 'badge-inactive' }}">
+              {{ 'Enabled' if item.enabled else 'Disabled' }}
+            </span>
+          </td>
+          <td style="display: flex; gap: 0.5rem;">
+            <form action="/profile/interests/{{ item.id }}/toggle" method="post" style="display:inline; margin:0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">{{ 'Disable' if item.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/profile/interests/{{ item.id }}/delete" method="post" style="display:inline; margin:0;" onsubmit="return confirm('Delete this interest?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-state">No interests added yet.</p>
+  {% endif %}
+
+  <h3>Add new interest</h3>
+  <form action="/profile/interests/add" method="post" style="margin-top: 1rem;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <label>Interest name<input name="name" placeholder="e.g. Gravel cycling" required></label>
+      <label>Category<input name="category" placeholder="e.g. Sports / Outdoors" value="General"></label>
+    </div>
+    <div class="form-grid" style="margin-top: 0.5rem;">
+      <label class="toggle-label"><input type="checkbox" name="allowed_in_cv" checked> Allowed in CV</label>
+      <label class="toggle-label"><input type="checkbox" name="enabled" checked> Enabled</label>
+    </div>
+    <button class="primary" type="submit" style="margin-top: 1rem;">Add interest</button>
+  </form>
+</section>
 {% endblock %}
+

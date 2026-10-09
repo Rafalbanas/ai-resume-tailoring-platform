@@ -33,4 +33,12 @@ def apply_resume_edits(resume: TailoredResume, form: Mapping[str, object]) -> Ta
         if technologies is not None:
             project.technologies = _split_values(technologies)
 
+    if "interests" in form:
+        draft.interests = _split_values(form.get("interests"))
+    elif form.get("interests_enabled") == "off" or (
+        "interests_enabled" in form and form.get("interests_enabled") != "on"
+    ):
+        draft.interests = []
+
     return TailoredResume.model_validate(draft.model_dump())
+

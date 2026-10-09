@@ -24,6 +24,13 @@ class Education(BaseModel):
     institution: str
     qualification: str = ""
     dates: str = ""
+    degree: str = ""
+    university: str = ""
+    year: str = ""
+    specialisation: str = ""
+    thesis_title: str = ""
+    thesis_summary: str = ""
+    thesis_project_id: str = ""
     facts: list[str] = Field(default_factory=list)
 
 
@@ -41,6 +48,14 @@ class Certification(BaseModel):
     date: str = ""
 
 
+class Interest(BaseModel):
+    id: str
+    name: str
+    verified: bool = True
+    allowed_in_cv: bool = True
+    enabled: bool = True
+
+
 class CandidateProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +66,7 @@ class CandidateProfile(BaseModel):
     education: list[Education] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
     certifications: list[Certification] = Field(default_factory=list)
+    interests: list[Interest] = Field(default_factory=list)
 
     def skill_set(self) -> set[str]:
         return {skill.casefold() for values in self.skills.values() for skill in values}

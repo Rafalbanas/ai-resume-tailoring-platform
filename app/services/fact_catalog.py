@@ -107,6 +107,17 @@ class FactCatalog:
                     ),
                     f"education:{index}:fact:{fact_index}",
                 )
+            if education.thesis_title:
+                self._add(
+                    FactEntry(
+                        f"education:{owner}:thesis:{_digest(education.thesis_title)}",
+                        "education",
+                        f"Thesis: {education.thesis_title}",
+                        index,
+                        education.institution,
+                    ),
+                    f"education:{index}:thesis",
+                )
         for index, project in enumerate(self.profile.projects):
             owner = _digest(project.name)
             if project.description:
@@ -151,6 +162,17 @@ class FactCatalog:
                     index,
                     certification.name,
                 )
+            )
+        for index, interest in enumerate(self.profile.interests):
+            self._add(
+                FactEntry(
+                    f"interest:{interest.id}",
+                    "interest",
+                    interest.name,
+                    index,
+                    "Interests",
+                ),
+                f"interest:{index}",
             )
 
     def get(self, source_id: str) -> FactEntry | None:

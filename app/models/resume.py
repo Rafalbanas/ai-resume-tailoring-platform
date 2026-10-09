@@ -24,6 +24,8 @@ class ResumeEducation(BaseModel):
     institution: str
     qualification: str = ""
     dates: str = ""
+    specialisation: str = ""
+    thesis_subline: str = ""
     source_fact_ids: list[str] = Field(default_factory=list)
 
 
@@ -43,8 +45,10 @@ class TailoredResume(BaseModel):
     selected_skill_ids: list[str] = Field(default_factory=list, max_length=16)
     experience: list[ResumeExperience]
     education: list[ResumeEducation] = Field(default_factory=list)
-    projects: list[ResumeProject] = Field(default_factory=list, max_length=2)
+    projects: list[ResumeProject] = Field(default_factory=list, max_length=3)
     certifications: list[ResumeCertification] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list)
+    selected_interest_ids: list[str] = Field(default_factory=list)
 
 
 class WorkflowResponse(BaseModel):

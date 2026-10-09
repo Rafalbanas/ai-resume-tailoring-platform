@@ -54,5 +54,6 @@
       "issuer": "Example Certification Authority",
       "date": "2023"
     }
-  ]
+  ],
+  "interests": []
 }

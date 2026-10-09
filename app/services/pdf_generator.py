@@ -98,19 +98,45 @@ class PDFGenerator:
             item.bullets = item.bullets[:4]
         original = deepcopy(fitted)
 
-        # 1. Spacing tightened
+        # 1. Remove Interests as first priority upon overflow
+        if not self._fits_one_page(fitted, profile, guide) and fitted.interests:
+            fitted.interests = []
+
+        # 2. Shorten minor project descriptions
+        for limit in (190, 140):
+            if self._fits_one_page(fitted, profile, guide):
+                break
+            for project in sorted(fitted.projects, key=lambda item: len(item.description), reverse=True):
+                project.description = self._shorten(project.description, limit)
+                if self._fits_one_page(fitted, profile, guide):
+                    break
+
+        # Trim 3rd project if present and overflowing
+        if not self._fits_one_page(fitted, profile, guide) and len(fitted.projects) > 2:
+            fitted.projects = fitted.projects[:2]
+
+        # 3. Reduce lower-priority skills gradually
+        for min_skills in (14, 12, 10):
+            if self._fits_one_page(fitted, profile, guide):
+                break
+            while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > min_skills:
+                fitted.core_skills.pop()
+                if fitted.selected_skill_ids:
+                    fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
+
+        # 4. Spacing tightened
         if not self._fits_one_page(fitted, profile, guide):
             guide["compact_spacing"] = True
 
-        # 2. Bullet spacing tightened
+        # Bullet spacing tightened
         if not self._fits_one_page(fitted, profile, guide):
             guide["compact_bullets"] = True
 
-        # 3. Heading spacing tightened
+        # Heading spacing tightened
         if not self._fits_one_page(fitted, profile, guide):
             guide["compact_headings"] = True
 
-        # 4. Shorten overly long summary in stages
+        # 5. Shorten overly long summary in stages
         summary_target = max(350, min(500, int(guide.get("summary_max_chars", 500))))
         for target in (summary_target, 420, 360, 320):
             if self._fits_one_page(fitted, profile, guide):
@@ -118,7 +144,7 @@ class PDFGenerator:
             if len(fitted.professional_summary) > target:
                 fitted.professional_summary = self._shorten_summary(fitted.professional_summary, target)
 
-        # 5. Shorten longest bullets
+        # Shorten longest bullets
         for limit in (230, 195, 165):
             if self._fits_one_page(fitted, profile, guide):
                 break
@@ -130,25 +156,7 @@ class PDFGenerator:
             for bullet in longest:
                 bullet.text = self._shorten(bullet.text, limit)
 
-        # 6. Reduce lower-priority skills gradually
-        for min_skills in (14, 12, 10):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > min_skills:
-                fitted.core_skills.pop()
-                if fitted.selected_skill_ids:
-                    fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
-
-        # 7. Shorten project descriptions
-        for limit in (190, 140):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            for project in sorted(fitted.projects, key=lambda item: len(item.description), reverse=True):
-                project.description = self._shorten(project.description, limit)
-                if self._fits_one_page(fitted, profile, guide):
-                    break
-
-        # 8. Remove lowest-relevance bullets as a last resort
+        # 6. Remove lowest-relevance bullets as a last resort
         preferred_minimums = [2, 1, 2, 2]
         while not self._fits_one_page(fitted, profile, guide):
             removable = [
@@ -343,6 +351,15 @@ class PDFGenerator:
                 if expanded:
                     break
 
+            # 6. Restore interests if removed and space permits
+            if original.interests and not fitted.interests:
+                candidate = deepcopy(fitted)
+                candidate.interests = list(original.interests)
+                if self._fits_one_page(candidate, profile, guide):
+                    fitted = candidate
+                    expanded = True
+                    continue
+
             if not expanded:
                 break
 
@@ -383,8 +400,12 @@ class PDFGenerator:
         )
         if removed_bullets:
             warnings.append(f"Adaptive layout removed {removed_bullets} experience bullet(s) as a last resort")
+        if original.interests and not fitted.interests:
+            warnings.append("Adaptive layout removed interests section to fit page")
         if len(fitted.projects) < len(original.projects):
-            warnings.append("Adaptive layout removed the less relevant project as an extreme overflow fallback")
+            warnings.append(
+                f"Adaptive layout removed {len(original.projects) - len(fitted.projects)} lower-priority project(s) to fit page"
+            )
         if len(fitted.experience) < len(original.experience):
             warnings.append("Adaptive layout removed older experience as an extreme overflow fallback")
         return warnings

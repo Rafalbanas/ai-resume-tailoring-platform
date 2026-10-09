@@ -212,7 +212,12 @@ class FactValidator:
                         source_fact_ids=[content.source_id],
                     )
                 )
-        draft.projects = self._rank_projects(clean_projects, job)[:2]
+        ranked_projects = self._rank_projects(clean_projects, job)
+        if len(ranked_projects) > 2 and self._project_relevance(ranked_projects[2], job) > 0:
+            draft.projects = ranked_projects[:3]
+        else:
+            draft.projects = ranked_projects[:2]
+        thesis_in_projects = any("thesis" in p.name.casefold() for p in draft.projects)
 
         clean_education = []
         education_lookup = {
@@ -236,11 +241,19 @@ class FactValidator:
                 ),
                 None,
             )
+            thesis_subline = ""
+            specialisation = ""
+            if not thesis_in_projects and getattr(source, "thesis_title", None):
+                thesis_subline = f"Thesis: {source.thesis_title}"
+            if getattr(source, "specialisation", None):
+                specialisation = f"Specialisation: {source.specialisation}"
             clean_education.append(
                 ResumeEducation(
                     institution=source.institution,
                     qualification=source.qualification,
                     dates=source.dates,
+                    specialisation=specialisation,
+                    thesis_subline=thesis_subline,
                     source_fact_ids=[main_entry.source_id] if main_entry else [],
                 )
             )
@@ -254,15 +267,48 @@ class FactValidator:
                     ),
                     None,
                 )
+                thesis_subline = ""
+                specialisation = ""
+                if not thesis_in_projects and getattr(source, "thesis_title", None):
+                    thesis_subline = f"Thesis: {source.thesis_title}"
+                if getattr(source, "specialisation", None):
+                    specialisation = f"Specialisation: {source.specialisation}"
                 clean_education.append(
                     ResumeEducation(
                         institution=source.institution,
                         qualification=source.qualification,
                         dates=source.dates,
+                        specialisation=specialisation,
+                        thesis_subline=thesis_subline,
                         source_fact_ids=[main_entry.source_id] if main_entry else [],
                     )
                 )
         draft.education = clean_education
+
+        allowed_interests = {
+            interest.name.casefold(): interest
+            for interest in getattr(self.profile, "interests", [])
+            if interest.verified and interest.allowed_in_cv and interest.enabled
+        }
+        clean_interests = []
+        selected_interest_ids = []
+        if draft.interests:
+            for item in draft.interests:
+                canonical = allowed_interests.get(item.casefold())
+                if canonical and canonical.name not in clean_interests:
+                    clean_interests.append(canonical.name)
+                    selected_interest_ids.append(canonical.id)
+                elif not canonical:
+                    warnings.append(f"Unsupported interest removed: {item}")
+        else:
+            for interest in allowed_interests.values():
+                if interest.name not in clean_interests:
+                    clean_interests.append(interest.name)
+                    selected_interest_ids.append(interest.id)
+
+        draft.interests = clean_interests
+        draft.selected_interest_ids = selected_interest_ids
+
         cert_lookup = {item.name.casefold(): item for item in self.profile.certifications}
         clean_certs = []
         for cert in draft.certifications:
@@ -334,7 +380,7 @@ class FactValidator:
         text = value.strip()
         return text if not text or text[-1] in ".!?" else f"{text}."
 
-    def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
+    def _project_relevance(self, project: ResumeProject, job: JobRequest) -> int:
         job_tokens = normalized_tokens(f"{job.role} {job.job_description}")
         role_tokens = normalized_tokens(job.role)
         generic = {
@@ -354,17 +400,25 @@ class FactValidator:
             "using",
             "workflows",
         }
+        profile_projects = {p.name.casefold(): p for p in self.profile.projects}
+        source = profile_projects.get(project.name.casefold())
+        technologies = source.technologies if source else project.technologies
+        facts = source.facts if source else [project.description]
+        tech_tokens = normalized_tokens(" ".join(technologies))
+        fact_tokens = normalized_tokens(" ".join(facts)) - generic
+        tech_role_overlap = len(role_tokens & tech_tokens)
+        tech_job_overlap = len(job_tokens & tech_tokens)
+        fact_overlap = len(job_tokens & fact_tokens)
+        return 8 * tech_role_overlap + 4 * tech_job_overlap + 2 * fact_overlap
+
+    def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
         profile_projects = {project.name.casefold(): project for project in self.profile.projects}
 
-        def score(project: ResumeProject) -> tuple[int, str]:
+        def score(project: ResumeProject) -> tuple[int, int, str]:
             source = profile_projects.get(project.name.casefold())
             technologies = source.technologies if source else project.technologies
-            facts = source.facts if source else [project.description]
-            identity_tokens = normalized_tokens(f"{project.name} {' '.join(technologies)}")
-            fact_tokens = normalized_tokens(" ".join(facts)) - generic
-            relevance = 6 * len(role_tokens & identity_tokens)
-            relevance += 4 * len(job_tokens & identity_tokens)
-            relevance += len(job_tokens & fact_tokens)
-            return relevance, project.name
+            relevance = self._project_relevance(project, job)
+            return relevance, len(technologies), project.name
 
         return sorted(projects, key=score, reverse=True)
+

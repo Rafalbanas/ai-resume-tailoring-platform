@@ -1,14 +1,15 @@
 <article class="resume-document {{ template_name|replace('_', '-') }} {{ layout_classes }}">
   {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">
-    {% if interactive_photo %}<button class="portrait portrait-control" id="quick-photo-avatar" type="button" title="Change profile photo" aria-label="Change profile photo" data-photo-available="{{ 'true' if photo_available else 'false' }}" data-photo-enabled="{{ 'true' if photo_enabled else 'false' }}">{% else %}<div class="portrait">{% endif %}
+    {% if interactive_photo %}{% if photo_available %}<button class="portrait portrait-control" id="quick-photo-avatar" type="button" title="Change profile photo" aria-label="Change profile photo" data-photo-available="true" data-photo-enabled="{{ 'true' if photo_enabled else 'false' }}">{% else %}<label class="portrait portrait-control" id="quick-photo-avatar" for="quick-photo-file" tabindex="0" role="button" title="Change profile photo" aria-label="Change profile photo" data-photo-available="false" data-photo-enabled="false">{% endif %}{% else %}<div class="portrait">{% endif %}
       {% if photo_enabled and photo_data_uri %}<img src="{{ photo_data_uri }}" alt="Profile photo">{% else %}<span>{{ initials }}</span>{% endif %}
-      {% if interactive_photo %}<span class="portrait-edit" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M8.5 5 10 3h4l1.5 2H19a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h3.5ZM12 8a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z"/></svg></span></button>{% else %}</div>{% endif %}
+      {% if interactive_photo %}<span class="portrait-edit" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M8.5 5 10 3h4l1.5 2H19a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h3.5ZM12 8a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z"/></svg></span>{% if photo_available %}</button>{% else %}</label>{% endif %}{% else %}</div>{% endif %}
     <section class="sidebar-section contact-block">
       <h2>Contact</h2>
       {% for value in [personal.location, personal.email, personal.phone, personal.linkedin, personal.website, personal.github] %}{% if value %}<p>{{ value }}</p>{% endif %}{% endfor %}
     </section>
     {% if resume.core_skills %}<section class="sidebar-section"><h2>Skills</h2><ul class="skill-list">{% for skill in resume.core_skills %}<li>{{ skill }}</li>{% endfor %}</ul></section>{% endif %}
+    {% if resume.interests and resume.interests|length > 0 %}<section class="sidebar-section interests-block"><h2>Interests</h2><ul class="skill-list interest-list">{% for interest in resume.interests %}<li>{{ interest }}</li>{% endfor %}</ul></section>{% endif %}
   </aside>
   {% endif %}
   <main class="resume-main">
@@ -18,7 +19,7 @@
       {% for section_name in section_order %}
         {% if section_name == 'summary' and resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
         {% if section_name == 'experience' and resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} · {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}
-        {% if section_name == 'education' and resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry-head"><h3>{{ item.qualification }} · {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% endfor %}</section>{% endif %}
+        {% if section_name == 'education' and resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry"><div class="entry-head"><h3>{{ item.qualification }} · {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% if item.specialisation %}<p class="education-subline">{{ item.specialisation }}</p>{% endif %}{% if item.thesis_subline %}<p class="education-subline">{{ item.thesis_subline }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
         {% if section_name == 'projects' and resume.projects %}<section><h2>Projects</h2>{% for item in resume.projects %}<div class="entry"><h3>{{ item.name }}</h3><p>{{ item.description }}</p>{% if item.technologies %}<p class="tech">{{ item.technologies|join(' · ') }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
         {% if section_name == 'certifications' and resume.certifications %}<section><h2>Certifications</h2><p>{{ resume.certifications|map(attribute='name')|join(' · ') }}</p></section>{% endif %}
       {% endfor %}

@@ -46,8 +46,28 @@ class ProfilePhotoStore:
     def exists(self) -> bool:
         return self.webp_path.is_file() or self.jpg_path.is_file() or self.legacy_path.is_file()
 
-    def save(self, filename: str, content_type: str, content: bytes, crop_x: int = 50, crop_y: int = 50) -> Path:
+    def save(
+        self,
+        filename: str,
+        content_type: str,
+        content: bytes,
+        crop_x: float = 50.0,
+        crop_y: float = 50.0,
+        crop_zoom: float = 1.0,
+    ) -> Path:
         suffix = Path(filename).suffix.casefold() if filename else ""
+        if not suffix and content_type:
+            ct = content_type.lower()
+            if "jpeg" in ct or "jpg" in ct:
+                suffix = ".jpg"
+            elif "png" in ct:
+                suffix = ".png"
+            elif "webp" in ct:
+                suffix = ".webp"
+            elif "heic" in ct or "heif" in ct:
+                suffix = ".heic"
+            elif "tiff" in ct or "tif" in ct:
+                suffix = ".tif"
         if suffix and suffix not in self.ALLOWED_EXTENSIONS:
             raise ProfilePhotoError("Upload a JPG, JPEG, PNG, WEBP, or HEIC image.")
         if not content or len(content) > self.max_bytes:
@@ -68,7 +88,9 @@ class ProfilePhotoStore:
                     raise ProfilePhotoError("The image is too large to process safely.")
                 image = ImageOps.exif_transpose(source)
                 image = image.convert("RGB")
-                normalized = self._crop(image, crop_x, crop_y).resize((600, 600), Image.Resampling.LANCZOS)
+                normalized = self._crop(image, crop_x, crop_y, crop_zoom).resize(
+                    (600, 600), Image.Resampling.LANCZOS
+                )
         except ProfilePhotoError:
             raise
         except (UnidentifiedImageError, OSError, ValueError) as exc:
@@ -99,15 +121,19 @@ class ProfilePhotoStore:
                 os.unlink(temporary)
 
     @staticmethod
-    def _crop(image: Image.Image, crop_x: int, crop_y: int) -> Image.Image:
-        crop_x = max(0, min(100, crop_x)) / 100
-        crop_y = max(0, min(100, crop_y)) / 100
-        side = min(image.width, image.height)
-        max_left = image.width - side
-        max_top = image.height - side
+    def _crop(image: Image.Image, crop_x: float, crop_y: float, crop_zoom: float = 1.0) -> Image.Image:
+        crop_x = max(0.0, min(100.0, float(crop_x))) / 100.0
+        crop_y = max(0.0, min(100.0, float(crop_y))) / 100.0
+        crop_zoom = max(1.0, min(5.0, float(crop_zoom)))
+        base_side = min(image.width, image.height)
+        crop_side = base_side / crop_zoom
+        max_left = image.width - crop_side
+        max_top = image.height - crop_side
         left = round(max_left * crop_x)
         top = round(max_top * crop_y)
-        return image.crop((left, top, left + side, top + side))
+        right = round(left + crop_side)
+        bottom = round(top + crop_side)
+        return image.crop((left, top, right, bottom))
 
     def remove(self) -> None:
         self.webp_path.unlink(missing_ok=True)

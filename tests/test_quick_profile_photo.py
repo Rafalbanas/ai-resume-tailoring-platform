@@ -35,7 +35,15 @@ def quick_photo_app(tmp_path, profile, resume_payload, monkeypatch):
     app.include_router(web_routes.router)
     storage = Storage(tmp_path / "data")
     store = ProfilePhotoStore(tmp_path / "data" / "profile_photo")
-    app.state.settings = SimpleNamespace(profile_photo_max_bytes=5_000_000)
+    from starlette.templating import Jinja2Templates
+
+    app.state.templates = Jinja2Templates(directory="templates")
+    app.state.settings = SimpleNamespace(
+        profile_photo_max_bytes=5_000_000,
+        app_build_sha="test",
+        app_build_timestamp="now",
+        csrf_secret="secret",
+    )
     app.state.limiter = NoopLimiter()
     app.state.profile = profile
     app.state.storage = storage
@@ -145,3 +153,47 @@ def test_quick_avatar_replaces_removes_and_returns_to_initials(quick_photo_app, 
     assert metadata["photo_enabled"] is False
     html = app.state.pdf_generator.render_html(resume, profile, photo_enabled=True)
     assert "<span>JT</span>" in html
+
+
+def test_real_jpeg_portrait_upload_end_to_end(quick_photo_app):
+    app, slug, store, storage = quick_photo_app
+    img = Image.new("RGB", (1536, 2048), (55, 95, 140))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    jpeg_bytes = buf.getvalue()
+    assert 10_000 < len(jpeg_bytes) < 1_000_000
+
+    client = TestClient(app)
+    response = client.post(
+        f"/preview/{slug}/photo",
+        files={"photo": ("IMG_7890.JPG", jpeg_bytes, "image/jpeg")},
+        data={"crop_x": "50", "crop_y": "30", "crop_zoom": "1.2"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "photo_enabled": True}
+
+    assert store.webp_path.is_file()
+    assert store.jpg_path.is_file()
+    with Image.open(store.jpg_path) as saved_jpg:
+        assert saved_jpg.size == (600, 600)
+    with Image.open(store.webp_path) as saved_webp:
+        assert saved_webp.size == (600, 600)
+
+    preview_res = client.get(f"/preview/{slug}")
+    assert preview_res.status_code == 200
+    assert "data:image/" in preview_res.text
+    assert "Profile photo" in preview_res.text
+
+    pdf_path = storage.artifact(slug, "resume.pdf")
+    docx_path = storage.artifact(slug, "resume.docx")
+    assert pdf_path.is_file()
+    assert docx_path.is_file()
+
+    from docx import Document
+    from pypdf import PdfReader
+
+    pdf_reader = PdfReader(pdf_path)
+    assert len(pdf_reader.pages) == 1
+    doc = Document(docx_path)
+    assert len(doc.inline_shapes) == 1
+

@@ -88,8 +88,15 @@ def generate_docx(
         document.add_heading("Education", level=1)
         for item in resume.education:
             document.add_paragraph(f"{item.qualification} — {item.institution} ({item.dates})")
+            if getattr(item, "specialisation", None):
+                document.add_paragraph(item.specialisation)
+            if getattr(item, "thesis_subline", None):
+                document.add_paragraph(item.thesis_subline)
     if resume.certifications:
         document.add_heading("Certifications", level=1)
         for item in resume.certifications:
             document.add_paragraph(" · ".join(filter(None, [item.name, item.issuer, item.date])))
+    if getattr(resume, "interests", None) and template_name == "modern_sidebar":
+        document.add_heading("Interests", level=1)
+        document.add_paragraph(" • ".join(resume.interests))
     document.save(output)

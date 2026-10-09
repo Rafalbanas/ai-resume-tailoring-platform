@@ -15,6 +15,8 @@
     <label>Template<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>
     <label class="toggle-label"><input type="checkbox" name="photo_enabled"{% if metadata.photo_enabled %} checked{% endif %}> Include photo in this CV <small>Modern Sidebar only</small></label>
   </div>
+  <label>Interests <small>Comma-separated personal interests (shown in Modern Sidebar if space permits)</small><input name="interests" value="{{ resume.interests|join(', ') }}"></label>
+
 
   <h2>Professional experience</h2>
   {% for item in resume.experience %}
