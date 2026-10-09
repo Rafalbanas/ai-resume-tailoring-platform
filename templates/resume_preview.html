@@ -2,17 +2,19 @@
 {% block title %}CV preview · CV Tailor{% endblock %}
 {% block content %}
 <div class="preview-head"><div><p class="eyebrow">READY TO USE</p><h1>{{ metadata.company }} · {{ metadata.role }}</h1><p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p></div><div class="actions"><a class="secondary button" href="/edit/{{ slug }}">Edit CV</a><a class="secondary button" href="/download/{{ slug }}/docx">Download DOCX</a><a class="primary button" href="/download/{{ slug }}/pdf">Download PDF</a><form action="/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Delete</button></form></div></div>
-{% set truth_warnings = metadata.truth_lock_warnings|default(metadata.warnings, true) %}{% if truth_warnings %}<details class="warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
-{% if metadata.layout_warnings %}<details class="warnings"><summary>Layout applied {{ metadata.layout_warnings|length }} one-page adjustment(s)</summary><ul>{% for warning in metadata.layout_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+{% set truth_warnings = metadata.truth_lock_warnings if metadata.truth_lock_warnings is defined and metadata.truth_lock_warnings is not none else [] %}
+{% if truth_warnings and truth_warnings|length > 0 %}<details class="warnings truth-lock-warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+{% set layout_warns = metadata.layout_adjustments if metadata.layout_adjustments is defined and metadata.layout_adjustments is not none else metadata.layout_warnings|default([], true) %}
+{% if layout_warns and layout_warns|length > 0 %}<details class="warnings layout-adjustments"><summary>Layout applied {{ layout_warns|length }} one-page adjustment(s)</summary><ul>{% for warning in layout_warns %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 <div class="paper-frame">{{ resume_html|safe }}</div>
 {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
 <dialog class="quick-photo-dialog" id="quick-photo-dialog" data-slug="{{ slug }}" data-csrf="{{ csrf_token }}">
   <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
   <p class="eyebrow">PROFILE PHOTO</p>
   <h2>{% if photo_available %}Change profile photo{% else %}Add profile photo{% endif %}</h2>
-  <p class="dialog-hint">Paste an image with Ctrl+V / Cmd+V or choose a file.</p>
+  <p class="dialog-hint">Drag & drop on avatar, paste with Cmd+V / Ctrl+V, or choose a file.</p>
   <p class="quick-photo-status" id="quick-photo-status" aria-live="polite"></p>
-  <input id="quick-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+  <input id="quick-photo-file" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.tif,.tiff" hidden>
   <div class="dialog-actions">
     <button class="primary" id="quick-photo-choose" type="button">{% if photo_available %}Replace photo{% else %}Choose profile photo{% endif %}</button>
     {% if photo_available and not metadata.photo_enabled %}<button class="secondary" id="quick-photo-use" type="button">Include saved photo</button>{% endif %}

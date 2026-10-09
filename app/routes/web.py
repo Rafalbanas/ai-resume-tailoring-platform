@@ -272,6 +272,9 @@ async def upload_preview_photo(request: Request, slug: str, photo: Annotated[Upl
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     except ProfilePhotoError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    except Exception:
+        logger.exception("Unexpected error uploading profile photo")
+        return JSONResponse({"ok": False, "error": "Could not read this image."}, status_code=422)
     finally:
         await photo.close()
     return {"ok": True, "photo_enabled": enabled}

@@ -142,11 +142,60 @@ class SkillsBank:
             "AI / ML": ("ai", "machine learning", "llm", "model", "ollama", "data", "python"),
         }
 
+        generic_names = {
+            "troubleshooting",
+            "technical troubleshooting",
+            "network troubleshooting",
+            "windows troubleshooting",
+            "technical documentation",
+            "documentation",
+            "runbooks",
+            "operational runbooks",
+            "incident handling",
+            "tier 2 support",
+            "tier 1 support",
+            "user support",
+            "customer support",
+        }
+
+        def technical_specificity(skill: VerifiedSkill) -> int:
+            name_norm = skill.name.casefold()
+            if name_norm in generic_names or skill.category == "Support / Operations":
+                return 10
+            spec_map = {
+                "Linux": 55,
+                "Automation / Scripting": 55,
+                "Data / Databases": 50,
+                "Windows / Microsoft": 45,
+                "Virtualisation": 45,
+                "Networking": 40,
+                "Tools": 40,
+                "AI / ML": 35,
+            }
+            return spec_map.get(skill.category, 25)
+
+        def evidence_strength(skill: VerifiedSkill) -> int:
+            score_val = 0
+            for ev in skill.evidence:
+                if ev.source_type == "employment":
+                    score_val += 12
+                elif ev.source_type == "project":
+                    score_val += 10
+                else:
+                    score_val += 6
+            level_score = {"advanced": 15, "hands_on": 10, "intermediate": 8, "basic": 4}.get(skill.level, 5)
+            return score_val + level_score
+
         def score(skill: VerifiedSkill) -> tuple[int, int, str]:
             direct = self.mentioned(skill, job_text)
             category_score = 35 if any(term in normalized_job for term in category_terms.get(skill.category, ())) else 0
+            relevance = (200 if skill.id in requested else 0) + (100 if direct else 0) + category_score
+            spec = technical_specificity(skill)
+            ev = evidence_strength(skill)
+            prio = skill.priority * 3
+            total = relevance + spec + ev + prio
             return (
-                (200 if skill.id in requested else 0) + (100 if direct else 0) + category_score + skill.priority,
+                total,
                 skill.priority,
                 skill.name,
             )

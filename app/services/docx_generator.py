@@ -27,9 +27,27 @@ def generate_docx(
     styles["Normal"].font.name = "Arial"
     styles["Normal"].font.size = Pt(9.5)
     if photo_enabled and template_name == "modern_sidebar" and photo_path and photo_path.is_file():
-        photo = document.add_paragraph()
-        photo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        photo.add_run().add_picture(str(photo_path), width=Inches(1.15), height=Inches(1.15))
+        actual_photo = photo_path
+        if actual_photo.suffix.casefold() == ".webp":
+            sibling_jpg = actual_photo.with_name("current.jpg")
+            if sibling_jpg.is_file():
+                actual_photo = sibling_jpg
+            else:
+                import tempfile
+
+                from PIL import Image
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+                try:
+                    with Image.open(actual_photo) as img:
+                        img.convert("RGB").save(tmp_path, "JPEG")
+                    actual_photo = tmp_path
+                except Exception:
+                    actual_photo = None
+        if actual_photo and actual_photo.is_file():
+            photo = document.add_paragraph()
+            photo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            photo.add_run().add_picture(str(actual_photo), width=Inches(1.15), height=Inches(1.15))
     title = document.add_heading(profile.personal.name, level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     contact = " · ".join(

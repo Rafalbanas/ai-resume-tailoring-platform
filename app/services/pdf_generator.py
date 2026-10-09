@@ -57,6 +57,7 @@ class PDFGenerator:
                 for enabled, value in (
                     (guide.get("compact_spacing"), "layout-compact"),
                     (guide.get("compact_bullets"), "layout-tight-bullets"),
+                    (guide.get("compact_headings"), "layout-tight-headings"),
                 )
                 if enabled
             ),
@@ -89,6 +90,7 @@ class PDFGenerator:
         guide = layout_guide if layout_guide is not None else {}
         guide.pop("compact_spacing", None)
         guide.pop("compact_bullets", None)
+        guide.pop("compact_headings", None)
         original = deepcopy(resume)
         fitted = deepcopy(resume)
         fitted.core_skills = fitted.core_skills[:16]
@@ -96,15 +98,27 @@ class PDFGenerator:
             item.bullets = item.bullets[:4]
         original = deepcopy(fitted)
 
+        # 1. Spacing tightened
         if not self._fits_one_page(fitted, profile, guide):
             guide["compact_spacing"] = True
+
+        # 2. Bullet spacing tightened
         if not self._fits_one_page(fitted, profile, guide):
             guide["compact_bullets"] = True
 
-        summary_target = max(350, min(500, int(guide.get("summary_max_chars", 500))))
-        if not self._fits_one_page(fitted, profile, guide) and len(fitted.professional_summary) > summary_target:
-            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, summary_target)
+        # 3. Heading spacing tightened
+        if not self._fits_one_page(fitted, profile, guide):
+            guide["compact_headings"] = True
 
+        # 4. Shorten overly long summary in stages
+        summary_target = max(350, min(500, int(guide.get("summary_max_chars", 500))))
+        for target in (summary_target, 420, 360, 320):
+            if self._fits_one_page(fitted, profile, guide):
+                break
+            if len(fitted.professional_summary) > target:
+                fitted.professional_summary = self._shorten_summary(fitted.professional_summary, target)
+
+        # 5. Shorten longest bullets
         for limit in (230, 195, 165):
             if self._fits_one_page(fitted, profile, guide):
                 break
@@ -116,11 +130,16 @@ class PDFGenerator:
             for bullet in longest:
                 bullet.text = self._shorten(bullet.text, limit)
 
-        while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > 10:
-            fitted.core_skills.pop()
-            if fitted.selected_skill_ids:
-                fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
+        # 6. Reduce lower-priority skills gradually
+        for min_skills in (14, 12, 10):
+            if self._fits_one_page(fitted, profile, guide):
+                break
+            while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > min_skills:
+                fitted.core_skills.pop()
+                if fitted.selected_skill_ids:
+                    fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
 
+        # 7. Shorten project descriptions
         for limit in (190, 140):
             if self._fits_one_page(fitted, profile, guide):
                 break
@@ -129,6 +148,7 @@ class PDFGenerator:
                 if self._fits_one_page(fitted, profile, guide):
                     break
 
+        # 8. Remove lowest-relevance bullets as a last resort
         preferred_minimums = [2, 1, 2, 2]
         while not self._fits_one_page(fitted, profile, guide):
             removable = [
@@ -141,7 +161,7 @@ class PDFGenerator:
             index = max(removable, key=lambda value: (value[1], value[0]))[0]
             fitted.experience[index].bullets.pop()
 
-        # One bullet per role is an emergency fallback only after every less destructive adjustment.
+        # Emergency overflow fallback only if still overflowing
         while not self._fits_one_page(fitted, profile, guide):
             removable = [
                 (index, len(item.bullets))
@@ -156,21 +176,22 @@ class PDFGenerator:
         if not self._fits_one_page(fitted, profile, guide) and len(fitted.projects) > 1:
             fitted.projects = fitted.projects[:1]
         if not self._fits_one_page(fitted, profile, guide):
-            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 320)
+            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 280)
         while not self._fits_one_page(fitted, profile, guide) and len(fitted.experience) > 4:
             fitted.experience.pop()
 
+        # EXPAND to fill available space
         fitted = self._expand_to_available_space(fitted, original, profile, guide)
         return fitted, self._layout_warnings(original, fitted, guide)
 
     def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:
         metrics = self._layout_metrics(resume, profile, guide)
-        return metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"]
+        return bool(metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"])
 
     def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> dict[str, float | bool]:
         document = HTML(string=self.render_html(resume, profile, guide), base_url=str(self.data_dir)).render()
         if not document.pages:
-            return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0}
+            return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}
         descendants = list(document.pages[0]._page_box.descendants())
 
         def blocks(class_name: str):
@@ -201,10 +222,14 @@ class PDFGenerator:
                 "main_fits": False,
                 "sidebar_fits": False,
                 "utilization": 1.0,
+                "used_vertical_ratio": 1.0,
             }
         main = sections[0]
+        # Main available space excluding footer / GDPR
         main_available = max(1.0, footer.position_y - main.position_y - 6)
         main_used = main.height
+        used_vertical_ratio = main_used / main_available
+
         sidebar_bottom = max(
             (box.position_y + box.height for box in sidebar_sections),
             default=article.position_y,
@@ -212,11 +237,14 @@ class PDFGenerator:
         article_bottom = article.position_y + article.height
         sidebar_available = max(1.0, article_bottom - article.position_y - 12)
         sidebar_used = max(0.0, sidebar_bottom - article.position_y)
+        sidebar_ratio = sidebar_used / sidebar_available
+
         return {
             "pages": len(document.pages),
             "main_fits": main.position_y + main.height <= footer.position_y - 6,
             "sidebar_fits": sidebar_bottom <= article_bottom - 8,
-            "utilization": max(main_used / main_available, sidebar_used / sidebar_available),
+            "used_vertical_ratio": used_vertical_ratio,
+            "utilization": max(used_vertical_ratio, sidebar_ratio),
         }
 
     def _expand_to_available_space(
@@ -230,65 +258,94 @@ class PDFGenerator:
             return fitted
 
         def has_room() -> bool:
-            return float(self._layout_metrics(fitted, profile, guide)["utilization"]) < 0.9
+            metrics = self._layout_metrics(fitted, profile, guide)
+            ratio = float(metrics.get("used_vertical_ratio", metrics.get("utilization", 1.0)))
+            return ratio < 0.90
 
-        def keep_if_fits(candidate: TailoredResume) -> bool:
-            if self._fits_one_page(candidate, profile, guide):
-                return True
-            return False
+        max_iterations = 15
+        iteration = 0
 
-        # Restore valuable experience first, one bullet at a time.
-        for index, source in enumerate(original.experience):
-            if not has_room():
-                break
-            if index >= len(fitted.experience):
-                break
-            for bullet_index, bullet in enumerate(source.bullets):
-                if not has_room():
+        while iteration < max_iterations and has_room():
+            iteration += 1
+            expanded = False
+
+            # 1. Restore most relevant removed experience bullet
+            for exp_idx, orig_exp in enumerate(original.experience):
+                if exp_idx >= len(fitted.experience):
                     break
-                current = fitted.experience[index].bullets
-                if bullet_index < len(current) and current[bullet_index] == bullet:
-                    continue
-                candidate = deepcopy(fitted)
-                candidate_bullets = candidate.experience[index].bullets
-                if bullet_index < len(candidate_bullets):
-                    candidate_bullets[bullet_index] = deepcopy(bullet)
-                else:
-                    candidate_bullets.append(deepcopy(bullet))
-                if keep_if_fits(candidate):
-                    fitted = candidate
+                fit_exp = fitted.experience[exp_idx]
+                if len(fit_exp.bullets) < len(orig_exp.bullets):
+                    next_bullet = orig_exp.bullets[len(fit_exp.bullets)]
+                    candidate = deepcopy(fitted)
+                    candidate.experience[exp_idx].bullets.append(deepcopy(next_bullet))
+                    if self._fits_one_page(candidate, profile, guide):
+                        fitted = candidate
+                        expanded = True
+                        break
 
-        if has_room():
-            candidate = deepcopy(fitted)
-            candidate.professional_summary = original.professional_summary
-            if keep_if_fits(candidate):
-                fitted = candidate
-
-        for index, skill in enumerate(original.core_skills):
-            if not has_room():
-                break
-            if skill in fitted.core_skills:
+            if expanded:
                 continue
-            candidate = deepcopy(fitted)
-            candidate.core_skills.insert(min(index, len(candidate.core_skills)), skill)
-            if original.selected_skill_ids and index < len(original.selected_skill_ids):
-                candidate.selected_skill_ids.insert(
-                    min(index, len(candidate.selected_skill_ids)), original.selected_skill_ids[index]
-                )
-            if keep_if_fits(candidate):
-                fitted = candidate
 
-        for index, project in enumerate(original.projects):
-            if not has_room():
+            # 2. Restore richer summary
+            if len(fitted.professional_summary) < len(original.professional_summary):
+                candidate = deepcopy(fitted)
+                candidate.professional_summary = original.professional_summary
+                if self._fits_one_page(candidate, profile, guide):
+                    fitted = candidate
+                    expanded = True
+                    continue
+
+            # 3. Restore relevant hard skill
+            if len(fitted.core_skills) < len(original.core_skills):
+                next_skill_idx = len(fitted.core_skills)
+                candidate = deepcopy(fitted)
+                candidate.core_skills.append(original.core_skills[next_skill_idx])
+                if original.selected_skill_ids and next_skill_idx < len(original.selected_skill_ids):
+                    candidate.selected_skill_ids.append(original.selected_skill_ids[next_skill_idx])
+                if self._fits_one_page(candidate, profile, guide):
+                    fitted = candidate
+                    expanded = True
+                    continue
+
+            # 4. Restore project detail
+            for proj_idx, orig_proj in enumerate(original.projects):
+                if proj_idx >= len(fitted.projects):
+                    candidate = deepcopy(fitted)
+                    candidate.projects.append(deepcopy(orig_proj))
+                    if self._fits_one_page(candidate, profile, guide):
+                        fitted = candidate
+                        expanded = True
+                        break
+                elif fitted.projects[proj_idx].description != orig_proj.description:
+                    candidate = deepcopy(fitted)
+                    candidate.projects[proj_idx].description = orig_proj.description
+                    if self._fits_one_page(candidate, profile, guide):
+                        fitted = candidate
+                        expanded = True
+                        break
+
+            if expanded:
+                continue
+
+            # 5. Restore unshortened bullet text
+            for exp_idx, fit_exp in enumerate(fitted.experience):
+                orig_exp = original.experience[exp_idx]
+                for b_idx, fit_b in enumerate(fit_exp.bullets):
+                    if b_idx < len(orig_exp.bullets):
+                        orig_b = orig_exp.bullets[b_idx]
+                        if fit_b.text != orig_b.text:
+                            candidate = deepcopy(fitted)
+                            candidate.experience[exp_idx].bullets[b_idx].text = orig_b.text
+                            if self._fits_one_page(candidate, profile, guide):
+                                fitted = candidate
+                                expanded = True
+                                break
+                if expanded:
+                    break
+
+            if not expanded:
                 break
-            if index >= len(fitted.projects):
-                candidate = deepcopy(fitted)
-                candidate.projects.append(deepcopy(project))
-            else:
-                candidate = deepcopy(fitted)
-                candidate.projects[index] = deepcopy(project)
-            if keep_if_fits(candidate):
-                fitted = candidate
+
         return fitted
 
     @staticmethod
@@ -298,6 +355,8 @@ class PDFGenerator:
             warnings.append("Adaptive layout tightened section spacing")
         if guide.get("compact_bullets"):
             warnings.append("Adaptive layout tightened bullet spacing")
+        if guide.get("compact_headings"):
+            warnings.append("Adaptive layout tightened heading spacing")
         if fitted.professional_summary != original.professional_summary:
             warnings.append(f"Adaptive layout shortened the professional summary to {len(fitted.professional_summary)} characters")
         shortened = sum(
@@ -333,7 +392,8 @@ class PDFGenerator:
     def _photo_data_uri(self) -> str:
         path = self.photo_store.path
         if path.is_file() and path.stat().st_size <= self.photo_store.max_bytes:
-            return f"data:image/jpeg;base64,{base64.b64encode(path.read_bytes()).decode()}"
+            mime = "image/webp" if path.suffix.casefold() == ".webp" else "image/jpeg"
+            return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
         return ""
 
     @staticmethod

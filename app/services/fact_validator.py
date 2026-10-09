@@ -275,24 +275,48 @@ class FactValidator:
 
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
         capabilities: list[str] = []
+        generic_names = {
+            "troubleshooting",
+            "technical troubleshooting",
+            "technical documentation",
+            "runbooks",
+            "operational runbooks",
+            "documentation",
+            "tier 2 support",
+            "tier 1 support",
+            "incident handling",
+            "customer service",
+            "user support",
+        }
         if self.skills_bank:
+            hard_skills: list[str] = []
+            generic_skills: list[str] = []
             for skill_id in selected_ids:
                 skill = self.skills_bank.get(skill_id)
-                if skill and self.skills_bank.eligible(skill) and skill.name not in capabilities:
-                    capabilities.append(skill.name)
+                if skill and self.skills_bank.eligible(skill):
+                    if skill.name.casefold() in generic_names or skill.category == "Support / Operations":
+                        if skill.name not in generic_skills:
+                            generic_skills.append(skill.name)
+                    else:
+                        if skill.name not in hard_skills:
+                            hard_skills.append(skill.name)
+            capabilities = hard_skills + generic_skills
         else:
             allowed = {value.casefold(): value for values in self.profile.skills.values() for value in values}
             for value in core_skills:
                 canonical = allowed.get(value.casefold())
                 if canonical and canonical not in capabilities:
                     capabilities.append(canonical)
+
         parts = [role.strip()]
-        for capability in capabilities[:4]:
+        for capability in capabilities:
             candidate = " | ".join([*parts, capability])
-            if len(candidate) > 85 and len(parts) >= 4:
+            if len(candidate) > 75 and len(parts) >= 3:
+                break
+            if len(parts) >= 4:
                 break
             parts.append(capability)
-        return " | ".join(parts)[:140]
+        return " | ".join(parts)[:100]
 
     @staticmethod
     def _is_complete_summary(value: str) -> bool:

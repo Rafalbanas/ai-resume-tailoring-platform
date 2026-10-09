@@ -72,8 +72,9 @@ class Storage:
             "recommendation": analysis.recommendation,
             "warnings": warnings,
             "generation_warnings": warnings,
-            "truth_lock_warnings": truth_lock_warnings if truth_lock_warnings is not None else warnings,
+            "truth_lock_warnings": truth_lock_warnings if truth_lock_warnings is not None else [],
             "layout_warnings": layout_warnings or [],
+            "layout_adjustments": layout_warnings or [],
             "layout_guide": layout_guide or {},
             "draft_id": draft_id,
             "template_name": template_name,
@@ -130,6 +131,7 @@ class Storage:
             metadata["truth_lock_warnings"] = truth_lock_warnings
         if layout_warnings is not None:
             metadata["layout_warnings"] = layout_warnings
+            metadata["layout_adjustments"] = layout_warnings
         if template_name is not None:
             metadata["template_name"] = template_name
         if photo_enabled is not None:

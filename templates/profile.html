@@ -7,9 +7,9 @@
   <div id="photo-preview" class="photo-preview">{% if has_photo %}<img src="/profile/photo/content" alt="Current profile crop">{% else %}<span>No photo</span>{% endif %}</div>
   <form id="photo-form" action="/profile/photo" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>{{ 'Replace photo' if has_photo else 'Upload photo' }}<input id="profile-photo-input" class="file-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" required></label>
+    <label>{{ 'Replace photo' if has_photo else 'Upload photo' }}<input id="profile-photo-input" class="file-input" type="file" name="photo" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.tif,.tiff" required></label>
     <div class="form-grid"><label>Horizontal crop position<input id="crop-x" type="range" name="crop_x" min="0" max="100" value="50"></label><label>Vertical crop position<input id="crop-y" type="range" name="crop_y" min="0" max="100" value="50"></label></div>
-    <p><small>Preview crop uses a square frame. The stored image is normalized to 600×600 JPEG.</small></p>
+    <p><small>Preview crop uses a square frame. The stored image is normalized to 600×600.</small></p>
     <button class="primary" type="submit">{{ 'Replace photo' if has_photo else 'Upload photo' }}</button>
   </form>
   {% if has_photo %}<form action="/profile/photo/remove" method="post" onsubmit="return confirm('Remove the profile photo?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}

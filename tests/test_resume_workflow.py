@@ -439,3 +439,35 @@ def test_two_most_relevant_verified_projects_are_selected(verified_profile, plat
     assert len(names) == 2
     assert names[0] == "AI Resume Tailoring Platform"
     assert "Linux VPS" in names
+
+
+def test_layout_adjustments_never_increase_truth_lock_warning_count(verified_profile, platform_job, tmp_path):
+    storage = Storage(tmp_path)
+    clean_resume = generated_resume(verified_profile, platform_job)
+    validation = FactValidator(verified_profile).validate(clean_resume, platform_job)
+    assert len(validation.warnings) == 0
+
+    layout_adjustments = [
+        "Adaptive layout tightened section spacing",
+        "Adaptive layout tightened bullet spacing",
+        "Adaptive layout shortened the professional summary to 350 characters",
+        "Adaptive layout removed 1 lower-priority skill(s)",
+    ]
+    all_warnings = validation.warnings + layout_adjustments
+
+    analysis = job_analysis()
+    slug, _ = storage.save_application(
+        platform_job,
+        analysis,
+        validation.resume,
+        all_warnings,
+        truth_lock_warnings=validation.warnings,
+        layout_warnings=layout_adjustments,
+    )
+
+    _, _, _, metadata = storage.load_application(slug)
+    assert metadata["truth_lock_warnings"] == []
+    assert len(metadata["truth_lock_warnings"]) == 0
+    assert len(metadata["layout_adjustments"]) == 4
+    assert len(metadata["truth_lock_warnings"]) == len(validation.warnings)
+

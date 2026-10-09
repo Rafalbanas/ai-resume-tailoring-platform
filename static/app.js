@@ -50,15 +50,22 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.error || "Could not update the profile photo.");
-        window.location.reload();
+        window.location.href = window.location.pathname + "?v=" + Date.now();
       } catch (error) {
         setPhotoStatus(error.message || "Could not update the profile photo.", true);
       }
     };
     const upload = (file) => {
-      if (!file || !file.type.startsWith("image/")) return;
+      if (!file) return;
+      const name = file.name || "";
+      const isKnownExt = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i.test(name);
+      const isImageMime = file.type && file.type.startsWith("image/");
+      if (!isImageMime && !isKnownExt && file.type) {
+        setPhotoStatus("Please select a supported image file (JPEG, PNG, WEBP, or HEIC).", true);
+        return;
+      }
       const data = new FormData();
-      data.append("photo", file, file.name || `clipboard.${file.type.split("/")[1] || "png"}`);
+      data.append("photo", file, name || `upload_${Date.now()}.${(file.type && file.type.split("/")[1]) || "jpg"}`);
       request("", {body: data});
     };
 
@@ -69,14 +76,56 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     chooseButton.addEventListener("click", () => quickFile.click());
     quickFile.addEventListener("change", () => upload(quickFile.files[0]));
-    quickDialog.addEventListener("paste", (event) => {
-      const imageItem = Array.from(event.clipboardData?.items || []).find(
-        (item) => item.kind === "file" && item.type.startsWith("image/"),
+
+    const onDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      quickAvatar.classList.add("dragover");
+    };
+    const onDragLeave = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      quickAvatar.classList.remove("dragover");
+    };
+    const onDrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      quickAvatar.classList.remove("dragover");
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        upload(files[0]);
+      }
+    };
+    quickAvatar.addEventListener("dragenter", onDragOver);
+    quickAvatar.addEventListener("dragover", onDragOver);
+    quickAvatar.addEventListener("dragleave", onDragLeave);
+    quickAvatar.addEventListener("drop", onDrop);
+
+    document.addEventListener("paste", (event) => {
+      const tag = event.target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      const items = Array.from(event.clipboardData?.items || []);
+      const fileItem = items.find(
+        (item) => item.kind === "file" && (item.type.startsWith("image/") || !item.type),
       );
-      if (!imageItem) return;
-      event.preventDefault();
-      upload(imageItem.getAsFile());
+      if (fileItem) {
+        const file = fileItem.getAsFile();
+        if (file) {
+          event.preventDefault();
+          upload(file);
+          return;
+        }
+      }
+      const files = event.clipboardData?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|tiff?)$/i.test(file.name)) {
+          event.preventDefault();
+          upload(file);
+        }
+      }
     });
+
     if (useButton) useButton.addEventListener("click", () => request("/use"));
     if (hideButton) hideButton.addEventListener("click", () => request("/hide"));
     if (removeButton) {
