@@ -92,12 +92,31 @@ class SkillsBank:
         return list(dict.fromkeys([skill.name, *skill.aliases]))
 
     def find(self, value: str) -> VerifiedSkill | None:
-        key = _normal(value.replace("Hands-on ", "").replace("Basic ", "").replace("Advanced ", ""))
+        raw_key = _normal(value)
         for skill in self.skills:
-            if key in {_normal(item) for item in self.aliases_for(skill)}:
+            if raw_key == _normal(skill.name):
                 return skill
-            if skill.cv_wording and key == _normal(skill.cv_wording):
+        for skill in self.skills:
+            if raw_key in {_normal(item) for item in skill.aliases}:
                 return skill
+            if skill.cv_wording and raw_key == _normal(skill.cv_wording):
+                return skill
+
+        stripped = value
+        for prefix in ("Hands-on ", "Basic ", "Advanced ", "hands-on ", "basic ", "advanced "):
+            if stripped.startswith(prefix):
+                stripped = stripped[len(prefix):]
+                break
+        stripped_key = _normal(stripped)
+        if stripped_key != raw_key:
+            for skill in self.skills:
+                if stripped_key == _normal(skill.name):
+                    return skill
+            for skill in self.skills:
+                if stripped_key in {_normal(item) for item in skill.aliases}:
+                    return skill
+                if skill.cv_wording and stripped_key == _normal(skill.cv_wording):
+                    return skill
         return None
 
     def mentioned(self, skill: VerifiedSkill, text: str) -> bool:

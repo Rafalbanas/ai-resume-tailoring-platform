@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -259,3 +260,279 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
     assert result.resume.professional_summary == profile.summary_facts[0]
     assert result.resume.professional_summary.endswith(".")
     assert any("truncated or incomplete" in warning for warning in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Skills Bank & Role Selection Regression Tests
+# ---------------------------------------------------------------------------
+
+
+def test_all_verified_skills_require_evidence():
+    with pytest.raises(ValidationError, match="requires evidence"):
+        VerifiedSkill(
+            id="skill_custom",
+            name="Custom Skill",
+            category="Backend / Python",
+            level="hands_on",
+            verified=True,
+            allowed_in_cv=True,
+            evidence=[],
+        )
+
+
+def test_synthetic_bank_unique_ids_and_names(tmp_path, profile):
+    s1 = skill("FastAPI", aliases=["fast-api"])
+    s2 = skill("Pydantic")
+    store = bank(tmp_path, profile, [s1, s2])
+    assert store.get(s1.id) == s1
+    assert store.find("fast-api") == s1
+    assert store.find("Pydantic") == s2
+
+
+def test_learning_and_disabled_skills_never_enter_cv_synthetic(tmp_path, profile):
+    postgres = skill("PostgreSQL", level="learning", verified=False, allowed=False)
+    docker_disabled = skill("Docker", enabled=False)
+    python = skill("Python")
+    store = bank(tmp_path, profile, [postgres, docker_disabled, python])
+
+    candidate = resume(["PostgreSQL", "Docker", "Python"], [postgres.id, docker_disabled.id, python.id])
+    result = FactValidator(profile, store).validate(candidate, job("PostgreSQL, Docker, and Python developer"))
+    assert "PostgreSQL" not in result.resume.core_skills
+    assert "Docker" not in result.resume.core_skills
+    assert any("Python" in s for s in result.resume.core_skills)
+
+
+def test_github_derived_skills_pass_fact_validator_synthetic(tmp_path, profile):
+    fastapi = skill("FastAPI", category="Backend / Python")
+    xgboost = skill("XGBoost", category="Data / ML")
+    store = bank(tmp_path, profile, [fastapi, xgboost])
+
+    candidate = resume([], [fastapi.id, xgboost.id])
+    result = FactValidator(profile, store).validate(candidate, job("FastAPI backend and XGBoost predictive models"))
+    assert any("FastAPI" in s for s in result.resume.core_skills)
+    assert any("XGBoost" in s for s in result.resume.core_skills)
+    assert not any("Unsupported AI fact" in w for w in result.warnings)
+
+
+def test_support_role_not_dominated_by_backend_or_ml(tmp_path, profile):
+    skills = [
+        skill("Windows", priority=9, category="IT Support"),
+        skill("Active Directory", aliases=["AD"], priority=9, category="IT Support"),
+        skill("Troubleshooting", priority=8, category="IT Support"),
+        skill("Jira", priority=8, category="IT Support"),
+        skill("XGBoost", priority=7, category="Data / ML"),
+        skill("SHAP", priority=7, category="Data / ML"),
+        skill("FastALPR", priority=6, category="Computer Vision"),
+    ]
+    store = bank(tmp_path, profile, skills)
+    selected = store.select_for_job(
+        [],
+        "Technical Support Specialist Windows Active Directory Jira troubleshooting",
+        maximum=4,
+    )
+    selected_names = [s.name for s in selected]
+    assert "XGBoost" not in selected_names
+    assert "SHAP" not in selected_names
+    assert "FastALPR" not in selected_names
+    assert any(s in selected_names for s in ["Windows", "Active Directory", "Troubleshooting", "Jira"])
+
+
+def test_platform_role_prioritises_infrastructure_synthetic(tmp_path, profile):
+    skills = [
+        skill("Linux", priority=9, category="Infrastructure"),
+        skill("Docker", priority=9, category="Infrastructure"),
+        skill("systemd", priority=8, category="Infrastructure"),
+        skill("Nginx", priority=8, category="Infrastructure"),
+        skill("Python", priority=8, category="Engineering"),
+        skill("Customer Service", priority=5, category="Support"),
+    ]
+    store = bank(tmp_path, profile, skills)
+    selected = store.select_for_job(
+        [],
+        "Platform Engineer Linux Docker systemd Nginx Python automation",
+        maximum=5,
+    )
+    selected_names = [s.name for s in selected]
+    assert "Linux" in selected_names
+    assert "Docker" in selected_names
+    assert "systemd" in selected_names
+    assert "Nginx" in selected_names
+    assert "Python" in selected_names
+    assert "Customer Service" not in selected_names
+
+
+def test_ai_python_role_selects_expected_stack_synthetic(tmp_path, profile):
+    skills = [
+        skill("FastAPI", priority=9, category="Backend / Python"),
+        skill("Pydantic", priority=9, category="Backend / Python"),
+        skill("Ollama", priority=9, category="AI / ML"),
+        skill("REST API integration", priority=8, category="Backend / Python"),
+        skill("Windows Server", priority=5, category="IT Support"),
+    ]
+    store = bank(tmp_path, profile, skills)
+    selected = store.select_for_job(
+        [],
+        "Python AI Developer FastAPI Pydantic Ollama REST API integration",
+        maximum=4,
+    )
+    selected_names = [s.name for s in selected]
+    assert "FastAPI" in selected_names
+    assert "Pydantic" in selected_names
+    assert "Ollama" in selected_names
+    assert "REST API integration" in selected_names
+    assert "Windows Server" not in selected_names
+
+
+def test_data_ml_role_selects_expected_stack_synthetic(tmp_path, profile):
+    skills = [
+        skill("XGBoost", priority=9, category="Data / ML"),
+        skill("scikit-learn", priority=9, category="Data / ML"),
+        skill("SHAP", priority=8, category="Data / ML"),
+        skill("pandas", priority=8, category="Data / ML"),
+        skill("NumPy", priority=8, category="Data / ML"),
+        skill("Active Directory", priority=5, category="IT Support"),
+    ]
+    store = bank(tmp_path, profile, skills)
+    selected = store.select_for_job(
+        [],
+        "Data Scientist Machine Learning XGBoost scikit-learn SHAP pandas NumPy",
+        maximum=5,
+    )
+    selected_names = [s.name for s in selected]
+    assert "XGBoost" in selected_names
+    assert "scikit-learn" in selected_names
+    assert "SHAP" in selected_names
+    assert "pandas" in selected_names
+    assert "NumPy" in selected_names
+    assert "Active Directory" not in selected_names
+
+
+# ---------------------------------------------------------------------------
+# Production Skills Bank Validation (runs when data/skills.json is present)
+# ---------------------------------------------------------------------------
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SKILLS_JSON_PATH = DATA_DIR / "skills.json"
+MASTER_PROFILE_PATH = DATA_DIR / "master_profile.json"
+
+
+@pytest.mark.skipif(not SKILLS_JSON_PATH.exists(), reason="data/skills.json not present")
+def test_production_skills_bank_integrity():
+    from app.models.candidate import CandidateProfile
+
+    doc = SkillsDocument.model_validate_json(SKILLS_JSON_PATH.read_text(encoding="utf-8"))
+
+    # 1. All verified skills have >= 1 evidence
+    for s in doc.skills:
+        if s.verified:
+            assert len(s.evidence) >= 1, f"Skill {s.id} ({s.name}) is verified but has no evidence"
+            assert s.allowed_in_cv is True, f"Verified skill {s.id} should be allowed in CV"
+        else:
+            assert s.allowed_in_cv is False, f"Unverified skill {s.id} must not be allowed in CV"
+
+    # 2. All skill IDs and names are unique
+    ids = [s.id for s in doc.skills]
+    names = [s.name.casefold() for s in doc.skills]
+    assert len(ids) == len(set(ids)), f"Duplicate skill IDs found: {[x for x in ids if ids.count(x) > 1]}"
+    assert len(names) == len(set(names)), f"Duplicate skill names found: {[x for x in names if names.count(x) > 1]}"
+
+    # 3. Aliases resolve properly
+    profile_data = (
+        CandidateProfile.model_validate_json(MASTER_PROFILE_PATH.read_text(encoding="utf-8"))
+        if MASTER_PROFILE_PATH.exists()
+        else None
+    )
+    if profile_data:
+        prod_bank = SkillsBank(SKILLS_JSON_PATH, profile_data)
+        for s in doc.skills:
+            assert prod_bank.find(s.name) == s, f"Skill {s.name} did not resolve by name"
+            for alias in s.aliases:
+                found = prod_bank.find(alias)
+                assert found is not None, f"Alias {alias} for {s.name} did not resolve"
+
+
+@pytest.mark.skipif(
+    not (SKILLS_JSON_PATH.exists() and MASTER_PROFILE_PATH.exists()),
+    reason="Production files not present",
+)
+def test_production_skills_bank_role_selection_and_evidence():
+    from app.models.candidate import CandidateProfile
+
+    profile = CandidateProfile.model_validate_json(MASTER_PROFILE_PATH.read_text(encoding="utf-8"))
+    prod_bank = SkillsBank(SKILLS_JSON_PATH, profile)
+
+    # Support CV selection is not dominated by backend/ML tools
+    support_skills = [
+        s.name
+        for s in prod_bank.select_for_job(
+            [],
+            "IT Support Specialist Technical Support Jira Active Directory Windows hardware troubleshooting ticketing".ljust(
+                30, "."
+            ),
+            maximum=8,
+        )
+    ]
+    ml_tools = {"XGBoost", "Ultralytics / YOLO", "FastALPR", "SHAP / Model Explainability", "scikit-learn"}
+    assert not any(tool in support_skills for tool in ml_tools), f"Support CV contains ML tools: {support_skills}"
+    assert any(s in support_skills for s in ["Active Directory", "Windows", "Jira", "Troubleshooting"])
+
+    # Platform CV prioritises infrastructure skills
+    platform_skills = [
+        s.name
+        for s in prod_bank.select_for_job(
+            [],
+            "Platform Engineer Linux systemd Docker Nginx Python reverse proxy Bash automation CI/CD deployment".ljust(
+                30, "."
+            ),
+            maximum=8,
+        )
+    ]
+    assert any(s in platform_skills for s in ["Linux", "Docker", "systemd", "Nginx", "Python"])
+
+    # AI / Python CV selects FastAPI, Pydantic, Ollama, API integration
+    ai_skills = [
+        s.name
+        for s in prod_bank.select_for_job(
+            [],
+            "Python Backend AI Developer FastAPI Pydantic Ollama REST API integration Local LLMs Prompt Engineering".ljust(
+                30, "."
+            ),
+            maximum=8,
+        )
+    ]
+    assert any(s in ai_skills for s in ["FastAPI", "Pydantic", "Ollama", "REST API integration"])
+
+    # Data / ML CV selects XGBoost, scikit-learn, SHAP, pandas
+    ml_skills = [
+        s.name
+        for s in prod_bank.select_for_job(
+            [],
+            "Machine Learning Engineer Data Scientist pandas NumPy scikit-learn XGBoost SHAP Regression Feature Engineering".ljust(
+                30, "."
+            ),
+            maximum=8,
+        )
+    ]
+    assert any(s in ml_skills for s in ["XGBoost", "scikit-learn", "SHAP / Model Explainability", "pandas"])
+
+    # FactValidator blocks PostgreSQL (unverified/learning) and allows verified skills
+    validator = FactValidator(profile, prod_bank)
+    fastapi = prod_bank.find("FastAPI")
+    xgboost = prod_bank.find("XGBoost")
+    postgres = prod_bank.find("PostgreSQL")
+    assert postgres.level == "learning" and not postgres.verified
+
+    cand = resume(["PostgreSQL", "FastAPI", "XGBoost"], [postgres.id, fastapi.id, xgboost.id])
+    res = validator.validate(
+        cand,
+        JobRequest(
+            company="Tech Corp",
+            role="Python & ML Developer",
+            job_description="Requires FastAPI backend development, XGBoost model training, and PostgreSQL experience.",
+        ),
+    )
+    assert "PostgreSQL" not in res.resume.core_skills
+    assert any("FastAPI" in s for s in res.resume.core_skills)
+    assert any("XGBoost" in s for s in res.resume.core_skills)
+    assert any("PostgreSQL" in w for w in res.warnings)
+
