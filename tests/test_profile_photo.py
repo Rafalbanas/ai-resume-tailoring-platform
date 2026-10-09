@@ -37,6 +37,23 @@ def test_upload_webp(tmp_path):
     assert store.save("portrait.webp", "image/webp", image_bytes("WEBP")).is_file()
 
 
+def test_photo_persists_across_store_reload_and_replacement(tmp_path):
+    directory = tmp_path / "profile_photo"
+    store = ProfilePhotoStore(directory)
+    store.save("first.png", "image/png", image_bytes("PNG"))
+    first = store.path.read_bytes()
+
+    reloaded = ProfilePhotoStore(directory)
+    assert reloaded.exists()
+    replacement = io.BytesIO()
+    Image.new("RGB", (600, 900), (170, 50, 40)).save(replacement, format="JPEG")
+    reloaded.save("replacement.jpg", "image/jpeg", replacement.getvalue())
+
+    assert reloaded.path == store.path
+    assert reloaded.path.read_bytes() != first
+    assert list(directory.iterdir()) == [reloaded.path]
+
+
 def test_rejects_invalid_type_and_mismatched_content(tmp_path):
     store = ProfilePhotoStore(tmp_path / "profile_photo")
     with pytest.raises(ProfilePhotoError, match="JPG"):
@@ -71,6 +88,17 @@ def test_photo_on_off_and_ats_default(profile, resume_payload, tmp_path):
     assert "<span>JT</span>" in disabled
     assert '<div class="portrait">' not in ats
     assert "ats-classic" in ats
+
+
+def test_preview_avatar_is_interactive_but_export_markup_is_not(profile, resume_payload, tmp_path):
+    generator = PDFGenerator(Path("templates"), Path("static"), tmp_path)
+    resume = TailoredResume.model_validate(resume_payload)
+    preview = generator.render_html(resume, profile, interactive_photo=True)
+    export = generator.render_html(resume, profile)
+
+    assert 'id="quick-photo-avatar"' in preview
+    assert 'title="Change profile photo"' in preview
+    assert 'id="quick-photo-avatar"' not in export
 
 
 def test_pdf_and_docx_generate_with_photo(profile, resume_payload, tmp_path):

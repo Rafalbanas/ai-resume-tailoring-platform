@@ -5,7 +5,7 @@ import time
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
 from app.core.security import require_basic_auth, validate_csrf
@@ -201,10 +201,104 @@ async def preview(request: Request, slug: str):
         metadata.get("layout_guide"),
         template_name=metadata.get("template_name", "modern_sidebar"),
         photo_enabled=metadata.get("photo_enabled", request.app.state.profile_photo.exists()),
+        interactive_photo=metadata.get("template_name", "modern_sidebar") == "modern_sidebar",
     )
     return request.app.state.templates.TemplateResponse(
-        "resume_preview.html", context(request, slug=slug, metadata=metadata, resume_html=resume_html)
+        "resume_preview.html",
+        context(
+            request,
+            slug=slug,
+            metadata=metadata,
+            resume_html=resume_html,
+            photo_available=request.app.state.profile_photo.exists(),
+        ),
     )
+
+
+def _refresh_photo_artifacts(request: Request, slug: str, *, photo_enabled: bool) -> bool:
+    """Refresh only presentation artifacts; resume text and generated baseline stay untouched."""
+    try:
+        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    template_name = metadata.get("template_name", "modern_sidebar")
+    enabled = bool(
+        photo_enabled and template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
+    )
+    folder = request.app.state.storage.update_presentation(slug, photo_enabled=enabled)
+    request.app.state.pdf_generator.generate(
+        resume,
+        request.app.state.profile,
+        folder / "resume.pdf",
+        metadata.get("layout_guide"),
+        template_name=template_name,
+        photo_enabled=enabled,
+    )
+    request.app.state.docx_generator(
+        resume,
+        request.app.state.profile,
+        folder / "resume.docx",
+        photo_path=request.app.state.profile_photo.path,
+        photo_enabled=enabled,
+        template_name=template_name,
+    )
+    return enabled
+
+
+def _validate_ajax_csrf(request: Request) -> None:
+    validate_csrf(
+        request.headers.get("X-CSRF-Token", ""),
+        request.cookies.get("csrf_token", ""),
+        request.app.state.settings.csrf_secret,
+    )
+
+
+@router.post("/preview/{slug}/photo")
+async def upload_preview_photo(request: Request, slug: str, photo: Annotated[UploadFile, File()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    _validate_ajax_csrf(request)
+    try:
+        request.app.state.storage.application_folder(slug)
+        content = await photo.read(request.app.state.settings.profile_photo_max_bytes + 1)
+        request.app.state.profile_photo.save(photo.filename or "photo", photo.content_type or "", content)
+        enabled = _refresh_photo_artifacts(request, slug, photo_enabled=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    except ProfilePhotoError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    finally:
+        await photo.close()
+    return {"ok": True, "photo_enabled": enabled}
+
+
+@router.post("/preview/{slug}/photo/use")
+async def use_preview_photo(request: Request, slug: str):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    _validate_ajax_csrf(request)
+    if not request.app.state.profile_photo.exists():
+        return JSONResponse({"ok": False, "error": "No saved profile photo is available."}, status_code=404)
+    return {"ok": True, "photo_enabled": _refresh_photo_artifacts(request, slug, photo_enabled=True)}
+
+
+@router.post("/preview/{slug}/photo/hide")
+async def hide_preview_photo(request: Request, slug: str):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    _validate_ajax_csrf(request)
+    _refresh_photo_artifacts(request, slug, photo_enabled=False)
+    return {"ok": True, "photo_enabled": False}
+
+
+@router.post("/preview/{slug}/photo/remove")
+async def remove_preview_photo(request: Request, slug: str):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    _validate_ajax_csrf(request)
+    request.app.state.profile_photo.remove()
+    _refresh_photo_artifacts(request, slug, photo_enabled=False)
+    return {"ok": True, "photo_enabled": False}
 
 
 @router.get("/edit/{slug}", response_class=HTMLResponse)

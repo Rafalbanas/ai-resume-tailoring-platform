@@ -23,6 +23,68 @@ document.addEventListener("DOMContentLoaded", () => {
     cropY.addEventListener("input", updatePosition);
   }
 
+  const quickAvatar = document.getElementById("quick-photo-avatar");
+  const quickDialog = document.getElementById("quick-photo-dialog");
+  if (quickAvatar && quickDialog) {
+    const quickFile = document.getElementById("quick-photo-file");
+    const chooseButton = document.getElementById("quick-photo-choose");
+    const useButton = document.getElementById("quick-photo-use");
+    const hideButton = document.getElementById("quick-photo-hide");
+    const removeButton = document.getElementById("quick-photo-remove");
+    const quickStatus = document.getElementById("quick-photo-status");
+    const slug = quickDialog.dataset.slug;
+    const csrf = quickDialog.dataset.csrf;
+
+    const setPhotoStatus = (message, isError = false) => {
+      quickStatus.textContent = message;
+      quickStatus.classList.toggle("error", isError);
+    };
+    const request = async (path, options = {}) => {
+      setPhotoStatus("Saving…");
+      try {
+        const response = await fetch(`/preview/${encodeURIComponent(slug)}/photo${path}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"X-CSRF-Token": csrf, ...(options.headers || {})},
+          body: options.body,
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || "Could not update the profile photo.");
+        window.location.reload();
+      } catch (error) {
+        setPhotoStatus(error.message || "Could not update the profile photo.", true);
+      }
+    };
+    const upload = (file) => {
+      if (!file || !file.type.startsWith("image/")) return;
+      const data = new FormData();
+      data.append("photo", file, file.name || `clipboard.${file.type.split("/")[1] || "png"}`);
+      request("", {body: data});
+    };
+
+    quickAvatar.addEventListener("click", () => {
+      setPhotoStatus("");
+      quickDialog.showModal();
+    });
+    chooseButton.addEventListener("click", () => quickFile.click());
+    quickFile.addEventListener("change", () => upload(quickFile.files[0]));
+    quickDialog.addEventListener("paste", (event) => {
+      const imageItem = Array.from(event.clipboardData?.items || []).find(
+        (item) => item.kind === "file" && item.type.startsWith("image/"),
+      );
+      if (!imageItem) return;
+      event.preventDefault();
+      upload(imageItem.getAsFile());
+    });
+    if (useButton) useButton.addEventListener("click", () => request("/use"));
+    if (hideButton) hideButton.addEventListener("click", () => request("/hide"));
+    if (removeButton) {
+      removeButton.addEventListener("click", () => {
+        if (window.confirm("Remove the saved profile photo?")) request("/remove");
+      });
+    }
+  }
+
   const form = document.getElementById("job-form");
   if (!form) return;
 

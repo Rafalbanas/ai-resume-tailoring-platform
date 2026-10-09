@@ -5,4 +5,21 @@
 {% set truth_warnings = metadata.truth_lock_warnings|default(metadata.warnings, true) %}{% if truth_warnings %}<details class="warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% if metadata.layout_warnings %}<details class="warnings"><summary>Layout applied {{ metadata.layout_warnings|length }} one-page adjustment(s)</summary><ul>{% for warning in metadata.layout_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 <div class="paper-frame">{{ resume_html|safe }}</div>
+{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
+<dialog class="quick-photo-dialog" id="quick-photo-dialog" data-slug="{{ slug }}" data-csrf="{{ csrf_token }}">
+  <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+  <p class="eyebrow">PROFILE PHOTO</p>
+  <h2>{% if photo_available %}Change profile photo{% else %}Add profile photo{% endif %}</h2>
+  <p class="dialog-hint">Paste an image with Ctrl+V / Cmd+V or choose a file.</p>
+  <p class="quick-photo-status" id="quick-photo-status" aria-live="polite"></p>
+  <input id="quick-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+  <div class="dialog-actions">
+    <button class="primary" id="quick-photo-choose" type="button">{% if photo_available %}Replace photo{% else %}Choose profile photo{% endif %}</button>
+    {% if photo_available and not metadata.photo_enabled %}<button class="secondary" id="quick-photo-use" type="button">Include saved photo</button>{% endif %}
+    {% if photo_available and metadata.photo_enabled %}<button class="secondary" id="quick-photo-hide" type="button">Hide in this CV</button>{% endif %}
+    {% if photo_available %}<button class="danger" id="quick-photo-remove" type="button">Remove photo</button>{% endif %}
+    <form method="dialog"><button class="secondary" type="submit">Cancel</button></form>
+  </div>
+</dialog>
+{% endif %}
 {% endblock %}

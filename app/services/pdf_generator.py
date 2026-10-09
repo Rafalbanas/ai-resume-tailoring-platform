@@ -31,6 +31,7 @@ class PDFGenerator:
         *,
         template_name: str = "modern_sidebar",
         photo_enabled: bool | None = None,
+        interactive_photo: bool = False,
     ) -> str:
         if not profile.personal.name.strip():
             raise ValueError("Candidate name is missing from the active master profile.")
@@ -46,6 +47,8 @@ class PDFGenerator:
             personal=profile.personal,
             template_name=template_name,
             photo_enabled=include_photo,
+            photo_available=self.photo_store.exists(),
+            interactive_photo=interactive_photo and template_name == "modern_sidebar",
             photo_data_uri=self._photo_data_uri() if include_photo else "",
             initials="".join(part[0] for part in profile.personal.name.split() if part)[:2].upper() or "CV",
             section_order=order,

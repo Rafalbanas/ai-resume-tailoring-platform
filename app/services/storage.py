@@ -137,6 +137,15 @@ class Storage:
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return folder
 
+    def update_presentation(self, slug: str, *, photo_enabled: bool) -> Path:
+        """Update presentation-only state without rewriting generated resume content."""
+        folder = self.application_folder(slug)
+        metadata_path = folder / "metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["photo_enabled"] = bool(photo_enabled)
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        return folder
+
     def delete_application(self, slug: str) -> None:
         folder = self.application_folder(slug)
         metadata_path = folder / "metadata.json"
