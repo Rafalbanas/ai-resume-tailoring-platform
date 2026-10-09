@@ -1,4 +1,4 @@
-<article class="resume-document {{ template_name|replace('_', '-') }}">
+<article class="resume-document {{ template_name|replace('_', '-') }} {{ layout_classes }}">
   {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">
     {% if interactive_photo %}<button class="portrait portrait-control" id="quick-photo-avatar" type="button" title="Change profile photo" aria-label="Change profile photo" data-photo-available="{{ 'true' if photo_available else 'false' }}" data-photo-enabled="{{ 'true' if photo_enabled else 'false' }}">{% else %}<div class="portrait">{% endif %}

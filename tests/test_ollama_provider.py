@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.core.config import Settings
+from app.models.candidate import CandidateProfile
 from app.models.job import JobRequest
 from app.services.ai_provider import AIProviderError
 from app.services.fact_validator import FactValidator
@@ -88,6 +89,16 @@ class FakeReferenceLibrary:
 
 @pytest.mark.asyncio
 async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
+    payload = profile.model_dump(mode="json")
+    payload["projects"] = [
+        {
+            "name": "Python ML thesis project",
+            "description": "Compared machine-learning models in Python.",
+            "technologies": ["Python"],
+            "facts": ["Trained and compared machine-learning models."],
+        }
+    ]
+    profile = CandidateProfile.model_validate(payload)
     replies = [analysis_payload(), resume_payload()]
     requests = []
 
@@ -114,6 +125,10 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     assert resume_schema["properties"]["summary_source_fact_ids"]["minItems"] == 1
     assert resume_schema["properties"]["core_skills"]["items"]["enum"] == ["Python", "n8n", "Linux"]
     assert resume_schema["$defs"]["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"]
+    project_schema = resume_schema["$defs"]["ResumeProject"]["properties"]
+    assert project_schema["name"]["enum"] == ["Python ML thesis project"]
+    assert project_schema["technologies"]["items"]["enum"] == ["Python", "n8n", "Linux"]
+    assert "Python ML thesis project" not in project_schema["technologies"]["items"]["enum"]
 
 
 @pytest.mark.asyncio

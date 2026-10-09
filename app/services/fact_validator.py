@@ -168,10 +168,23 @@ class FactValidator:
             verified_technologies = [
                 allowed_skills[skill_key(tech)] for tech in source.technologies if skill_key(tech) in allowed_skills
             ]
-            if project.technologies and {
-                skill_key(value) for value in project.technologies
-            } - {skill_key(value) for value in verified_technologies}:
-                warnings.append(f"Unsupported project technologies removed: {project.name}")
+            requested_technologies = []
+            unsupported_technologies = []
+            for value in project.technologies:
+                canonical = allowed_skills.get(skill_key(value))
+                if canonical:
+                    requested_technologies.append(canonical)
+                else:
+                    unsupported_technologies.append(value)
+            source_technology_keys = {skill_key(value) for value in verified_technologies}
+            unsupported_technologies.extend(
+                value for value in requested_technologies if skill_key(value) not in source_technology_keys
+            )
+            if unsupported_technologies:
+                warnings.append(
+                    f"Unsupported technologies removed from project {project.name}: "
+                    f"{', '.join(dict.fromkeys(unsupported_technologies))}"
+                )
             project.technologies = verified_technologies
             project.source_fact_ids = valid_ids
             clean_projects.append(project)

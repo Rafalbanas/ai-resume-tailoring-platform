@@ -86,6 +86,9 @@ class OllamaProvider(AIProvider):
                 "experience"
             ]
             definitions["ResumeProject"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type["project"]
+            project_names = list(dict.fromkeys(entry["owner"] for entry in source_catalog if entry["type"] == "project"))
+            definitions["ResumeProject"]["properties"]["name"]["enum"] = project_names
+            definitions["ResumeProject"]["properties"]["technologies"]["items"]["enum"] = allowed_skills or []
             definitions["ResumeEducation"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type[
                 "education"
             ]
@@ -177,7 +180,9 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
 Set headline to the target role only. Python will deterministically append verified skills; never add technologies,
 capabilities, requirements, or marketing wording to headline.
 Every summary must reference summary source IDs. Every experience bullet must reference experience source IDs.
-Every project must reference project source IDs and every education item must reference its education source ID.
+Every project must use a supplied project name, reference project source IDs, and keep project identity in name.
+Project technologies may contain only supplied skill wording; never place a project name in technologies.
+Every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
 Select 8-16 relevant existing skill IDs in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
 unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the

@@ -52,6 +52,14 @@ class PDFGenerator:
             photo_data_uri=self._photo_data_uri() if include_photo else "",
             initials="".join(part[0] for part in profile.personal.name.split() if part)[:2].upper() or "CV",
             section_order=order,
+            layout_classes=" ".join(
+                value
+                for enabled, value in (
+                    (guide.get("compact_spacing"), "layout-compact"),
+                    (guide.get("compact_bullets"), "layout-tight-bullets"),
+                )
+                if enabled
+            ),
         )
         return f"<style>{self.css_path.read_text(encoding='utf-8')}</style>{markup}"
 
@@ -78,76 +86,249 @@ class PDFGenerator:
         profile: CandidateProfile,
         layout_guide: dict | None = None,
     ) -> tuple[TailoredResume, list[str]]:
-        guide = layout_guide or {}
+        guide = layout_guide if layout_guide is not None else {}
+        guide.pop("compact_spacing", None)
+        guide.pop("compact_bullets", None)
+        original = deepcopy(resume)
         fitted = deepcopy(resume)
-        warnings = []
-        summary_limit = int(guide.get("summary_max_chars", 520))
-        if len(fitted.professional_summary) > summary_limit:
-            shortened_summary = self._shorten_summary(fitted.professional_summary, summary_limit)
-            if shortened_summary != fitted.professional_summary:
-                fitted.professional_summary = shortened_summary
-                warnings.append(f"Reference layout limited the professional summary to {summary_limit} characters")
-        fitted.core_skills = fitted.core_skills[: int(guide.get("max_skills", 12))]
-        max_bullets = int(guide.get("max_bullets_per_role", 4))
+        fitted.core_skills = fitted.core_skills[:16]
         for item in fitted.experience:
-            item.bullets = item.bullets[:max_bullets]
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, warnings
+            item.bullets = item.bullets[:4]
+        original = deepcopy(fitted)
 
-        for limit in (210, 160):
-            for item in fitted.experience:
-                for bullet in item.bullets:
-                    bullet.text = self._shorten(bullet.text, limit)
-            warnings.append(f"Layout fit shortened experience bullets to {limit} characters")
+        if not self._fits_one_page(fitted, profile, guide):
+            guide["compact_spacing"] = True
+        if not self._fits_one_page(fitted, profile, guide):
+            guide["compact_bullets"] = True
+
+        summary_target = max(350, min(500, int(guide.get("summary_max_chars", 500))))
+        if not self._fits_one_page(fitted, profile, guide) and len(fitted.professional_summary) > summary_target:
+            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, summary_target)
+
+        for limit in (230, 195, 165):
             if self._fits_one_page(fitted, profile, guide):
-                return fitted, warnings
+                break
+            longest = sorted(
+                (bullet for item in fitted.experience for bullet in item.bullets if len(bullet.text) > limit),
+                key=lambda bullet: len(bullet.text),
+                reverse=True,
+            )
+            for bullet in longest:
+                bullet.text = self._shorten(bullet.text, limit)
 
-        fitted.core_skills = fitted.core_skills[:8]
-        warnings.append("Layout fit limited core skills to the eight most relevant items")
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, warnings
+        while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > 10:
+            fitted.core_skills.pop()
+            if fitted.selected_skill_ids:
+                fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
 
-        for item in fitted.experience:
-            item.bullets = item.bullets[:2]
-        warnings.append("Layout fit reduced secondary experience bullets")
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, warnings
+        for limit in (190, 140):
+            if self._fits_one_page(fitted, profile, guide):
+                break
+            for project in sorted(fitted.projects, key=lambda item: len(item.description), reverse=True):
+                project.description = self._shorten(project.description, limit)
+                if self._fits_one_page(fitted, profile, guide):
+                    break
 
-        for item in fitted.experience:
-            item.bullets = item.bullets[:1]
-        warnings.append("Layout fit kept one verified bullet per role")
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, warnings
+        preferred_minimums = [2, 1, 2, 2]
+        while not self._fits_one_page(fitted, profile, guide):
+            removable = [
+                (index, len(item.bullets))
+                for index, item in enumerate(fitted.experience)
+                if len(item.bullets) > preferred_minimums[min(index, len(preferred_minimums) - 1)]
+            ]
+            if not removable:
+                break
+            index = max(removable, key=lambda value: (value[1], value[0]))[0]
+            fitted.experience[index].bullets.pop()
 
-        fitted.projects = fitted.projects[:1]
-        fitted.certifications = fitted.certifications[:2]
-        warnings.append("Layout fit limited projects to the most relevant item")
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, warnings
+        # One bullet per role is an emergency fallback only after every less destructive adjustment.
+        while not self._fits_one_page(fitted, profile, guide):
+            removable = [
+                (index, len(item.bullets))
+                for index, item in enumerate(fitted.experience)
+                if len(item.bullets) > 1
+            ]
+            if not removable:
+                break
+            index = max(removable, key=lambda value: (value[1], value[0]))[0]
+            fitted.experience[index].bullets.pop()
 
-        fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 320)
-        fitted.experience = fitted.experience[:4]
-        fitted.education = fitted.education[:2]
-        fitted.certifications = fitted.certifications[:1]
-        while len(fitted.experience) > 1 and not self._fits_one_page(fitted, profile, guide):
+        if not self._fits_one_page(fitted, profile, guide) and len(fitted.projects) > 1:
+            fitted.projects = fitted.projects[:1]
+        if not self._fits_one_page(fitted, profile, guide):
+            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 320)
+        while not self._fits_one_page(fitted, profile, guide) and len(fitted.experience) > 4:
             fitted.experience.pop()
-        warnings.append("Layout fit limited older experience to preserve a one-page A4 document")
-        return fitted, warnings
 
-    def _page_count(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> int:
-        document = HTML(string=self.render_html(resume, profile, guide), base_url=str(self.data_dir)).render()
-        return len(document.pages)
+        fitted = self._expand_to_available_space(fitted, original, profile, guide)
+        return fitted, self._layout_warnings(original, fitted, guide)
 
     def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:
-        text_units = len(resume.professional_summary)
-        text_units += sum(len(bullet.text) for item in resume.experience for bullet in item.bullets)
-        text_units += sum(len(item.description) for item in resume.projects)
-        text_units += 80 * (len(resume.experience) + len(resume.education) + len(resume.projects))
-        text_units += 35 * len(resume.core_skills)
-        text_units += 2 * len(resume.headline)
-        # WeasyPrint reports one page even when a fixed A4 grid clips overflowing content.
-        # Keep a conservative density budget so projects and the fixed GDPR footer remain visible.
-        return text_units <= 2_200 and self._page_count(resume, profile, guide) <= 1
+        metrics = self._layout_metrics(resume, profile, guide)
+        return metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"]
+
+    def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> dict[str, float | bool]:
+        document = HTML(string=self.render_html(resume, profile, guide), base_url=str(self.data_dir)).render()
+        if not document.pages:
+            return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0}
+        descendants = list(document.pages[0]._page_box.descendants())
+
+        def blocks(class_name: str):
+            return [
+                box
+                for box in descendants
+                if type(box).__name__ in {"BlockBox", "GridBox"}
+                and getattr(box, "element", None) is not None
+                and class_name in box.element.get("class", "").split()
+            ]
+
+        sections = blocks("main-sections")
+        footer = next(
+            (
+                box
+                for box in descendants
+                if type(box).__name__ == "AbsolutePlaceholder"
+                and getattr(box, "element", None) is not None
+                and box.element.tag == "footer"
+            ),
+            None,
+        )
+        article = next(iter(blocks("resume-document")), None)
+        sidebar_sections = blocks("sidebar-section")
+        if not sections or footer is None or article is None:
+            return {
+                "pages": len(document.pages),
+                "main_fits": False,
+                "sidebar_fits": False,
+                "utilization": 1.0,
+            }
+        main = sections[0]
+        main_available = max(1.0, footer.position_y - main.position_y - 6)
+        main_used = main.height
+        sidebar_bottom = max(
+            (box.position_y + box.height for box in sidebar_sections),
+            default=article.position_y,
+        )
+        article_bottom = article.position_y + article.height
+        sidebar_available = max(1.0, article_bottom - article.position_y - 12)
+        sidebar_used = max(0.0, sidebar_bottom - article.position_y)
+        return {
+            "pages": len(document.pages),
+            "main_fits": main.position_y + main.height <= footer.position_y - 6,
+            "sidebar_fits": sidebar_bottom <= article_bottom - 8,
+            "utilization": max(main_used / main_available, sidebar_used / sidebar_available),
+        }
+
+    def _expand_to_available_space(
+        self,
+        fitted: TailoredResume,
+        original: TailoredResume,
+        profile: CandidateProfile,
+        guide: dict,
+    ) -> TailoredResume:
+        if not self._fits_one_page(fitted, profile, guide):
+            return fitted
+
+        def has_room() -> bool:
+            return float(self._layout_metrics(fitted, profile, guide)["utilization"]) < 0.9
+
+        def keep_if_fits(candidate: TailoredResume) -> bool:
+            if self._fits_one_page(candidate, profile, guide):
+                return True
+            return False
+
+        # Restore valuable experience first, one bullet at a time.
+        for index, source in enumerate(original.experience):
+            if not has_room():
+                break
+            if index >= len(fitted.experience):
+                break
+            for bullet_index, bullet in enumerate(source.bullets):
+                if not has_room():
+                    break
+                current = fitted.experience[index].bullets
+                if bullet_index < len(current) and current[bullet_index] == bullet:
+                    continue
+                candidate = deepcopy(fitted)
+                candidate_bullets = candidate.experience[index].bullets
+                if bullet_index < len(candidate_bullets):
+                    candidate_bullets[bullet_index] = deepcopy(bullet)
+                else:
+                    candidate_bullets.append(deepcopy(bullet))
+                if keep_if_fits(candidate):
+                    fitted = candidate
+
+        if has_room():
+            candidate = deepcopy(fitted)
+            candidate.professional_summary = original.professional_summary
+            if keep_if_fits(candidate):
+                fitted = candidate
+
+        for index, skill in enumerate(original.core_skills):
+            if not has_room():
+                break
+            if skill in fitted.core_skills:
+                continue
+            candidate = deepcopy(fitted)
+            candidate.core_skills.insert(min(index, len(candidate.core_skills)), skill)
+            if original.selected_skill_ids and index < len(original.selected_skill_ids):
+                candidate.selected_skill_ids.insert(
+                    min(index, len(candidate.selected_skill_ids)), original.selected_skill_ids[index]
+                )
+            if keep_if_fits(candidate):
+                fitted = candidate
+
+        for index, project in enumerate(original.projects):
+            if not has_room():
+                break
+            if index >= len(fitted.projects):
+                candidate = deepcopy(fitted)
+                candidate.projects.append(deepcopy(project))
+            else:
+                candidate = deepcopy(fitted)
+                candidate.projects[index] = deepcopy(project)
+            if keep_if_fits(candidate):
+                fitted = candidate
+        return fitted
+
+    @staticmethod
+    def _layout_warnings(original: TailoredResume, fitted: TailoredResume, guide: dict) -> list[str]:
+        warnings = []
+        if guide.get("compact_spacing"):
+            warnings.append("Adaptive layout tightened section spacing")
+        if guide.get("compact_bullets"):
+            warnings.append("Adaptive layout tightened bullet spacing")
+        if fitted.professional_summary != original.professional_summary:
+            warnings.append(f"Adaptive layout shortened the professional summary to {len(fitted.professional_summary)} characters")
+        shortened = sum(
+            1
+            for original_item, fitted_item in zip(original.experience, fitted.experience, strict=False)
+            for original_bullet, fitted_bullet in zip(original_item.bullets, fitted_item.bullets, strict=False)
+            if original_bullet.text != fitted_bullet.text
+        )
+        if shortened:
+            warnings.append(f"Adaptive layout shortened {shortened} longest experience bullet(s)")
+        removed_skills = len(original.core_skills) - len(fitted.core_skills)
+        if removed_skills:
+            warnings.append(f"Adaptive layout removed {removed_skills} lower-priority skill(s)")
+        shortened_projects = sum(
+            1
+            for original_project, fitted_project in zip(original.projects, fitted.projects, strict=False)
+            if original_project.description != fitted_project.description
+        )
+        if shortened_projects:
+            warnings.append(f"Adaptive layout shortened {shortened_projects} project description(s)")
+        removed_bullets = sum(
+            max(0, len(original_item.bullets) - len(fitted_item.bullets))
+            for original_item, fitted_item in zip(original.experience, fitted.experience, strict=False)
+        )
+        if removed_bullets:
+            warnings.append(f"Adaptive layout removed {removed_bullets} experience bullet(s) as a last resort")
+        if len(fitted.projects) < len(original.projects):
+            warnings.append("Adaptive layout removed the less relevant project as an extreme overflow fallback")
+        if len(fitted.experience) < len(original.experience):
+            warnings.append("Adaptive layout removed older experience as an extreme overflow fallback")
+        return warnings
 
     def _photo_data_uri(self) -> str:
         path = self.photo_store.path

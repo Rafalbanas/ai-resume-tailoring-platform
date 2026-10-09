@@ -4,6 +4,9 @@ services:
     container_name: cv-tailor
     restart: unless-stopped
     env_file: .env
+    environment:
+      APP_BUILD_SHA: ${APP_BUILD_SHA:-development}
+      APP_BUILD_TIMESTAMP: ${APP_BUILD_TIMESTAMP:-unknown}
     # Linux VPS: host networking lets the container reach Ollama on host loopback.
     # Uvicorn remains bound to loopback, so the configured port is not exposed publicly.
     network_mode: host

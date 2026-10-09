@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
+from app.models.skills import SkillEvidence, SkillsDocument, VerifiedSkill
 from app.services.analysis_validator import AnalysisValidator
 from app.services.docx_generator import generate_docx
 from app.services.fact_catalog import FactCatalog
@@ -16,6 +17,7 @@ from app.services.fact_validator import FactValidator
 from app.services.pdf_generator import PDFGenerator
 from app.services.profile_loader import ProfileConfigurationError, load_master_profile
 from app.services.resume_editor import apply_resume_edits
+from app.services.skills_bank import SkillsBank
 from app.services.storage import Storage
 
 
@@ -197,6 +199,94 @@ def test_truth_lock_preserves_supported_source_referenced_paraphrase(verified_pr
     assert result.resume.experience[0].bullets[0].text == candidate.experience[0].bullets[0].text
     assert result.resume.experience[0].company == "Motorola Solutions"
     assert result.resume.core_skills == ["Python", "Bash (basic)"]
+
+
+def test_project_titles_are_verified_separately_from_technologies(verified_profile, platform_job, tmp_path):
+    payload = verified_profile.model_dump(mode="json")
+    payload["projects"] = [
+        {
+            "name": "Linux VPS / banas.dev",
+            "description": "Deployment and maintenance of verified self-hosted services on a Linux VPS.",
+            "technologies": ["Linux"],
+            "facts": ["Maintains verified services through SSH and Linux administration."],
+        },
+        {
+            "name": "Python ML thesis project",
+            "description": "MSc thesis project comparing multiple machine-learning models in Python.",
+            "technologies": ["Python"],
+            "facts": ["Built a verified Python data preprocessing and model comparison pipeline."],
+        },
+    ]
+    profile = CandidateProfile.model_validate(payload)
+    skills = SkillsDocument(
+        skills=[
+            VerifiedSkill(
+                id="skill_linux",
+                name="Linux",
+                category="Linux",
+                level="hands_on",
+                verified=True,
+                allowed_in_cv=True,
+                cv_wording="Hands-on Linux administration",
+                evidence=[
+                    SkillEvidence(
+                        source_type="manual_verified",
+                        source_id="manual:linux",
+                        description="Verified Linux test evidence",
+                    )
+                ],
+            ),
+            VerifiedSkill(
+                id="skill_python",
+                name="Python",
+                category="Automation / Scripting",
+                level="intermediate",
+                verified=True,
+                allowed_in_cv=True,
+                cv_wording="Python automation",
+                evidence=[
+                    SkillEvidence(
+                        source_type="manual_verified",
+                        source_id="manual:python",
+                        description="Verified Python test evidence",
+                    )
+                ],
+            ),
+        ]
+    )
+    skills_path = tmp_path / "skills.json"
+    skills_path.write_text(skills.model_dump_json(), encoding="utf-8")
+    bank = SkillsBank(skills_path, profile)
+    catalog = FactCatalog(profile)
+
+    projects = []
+    for index, source in enumerate(profile.projects):
+        source_ids = [
+            entry.source_id
+            for entry in catalog.prompt_entries
+            if entry.kind == "project" and entry.owner_index == index
+        ]
+        projects.append(
+            {
+                "name": source.name,
+                "description": source.description,
+                "technologies": [*source.technologies, "PostgreSQL"] if index == 1 else source.technologies,
+                "source_fact_ids": source_ids,
+            }
+        )
+    candidate_payload = generated_resume(profile, platform_job).model_dump(mode="json")
+    candidate_payload["projects"] = projects
+    candidate = TailoredResume.model_validate(candidate_payload)
+    result = FactValidator(profile, bank).validate(candidate, platform_job)
+
+    by_name = {project.name: project for project in result.resume.projects}
+    assert "Linux VPS / banas.dev" in by_name
+    assert "Python ML thesis project" in by_name
+    assert by_name["Linux VPS / banas.dev"].technologies == ["Hands-on Linux administration"]
+    assert by_name["Python ML thesis project"].technologies == ["Python automation"]
+    assert all(project.name not in project.technologies for project in result.resume.projects)
+    assert any("PostgreSQL" in warning for warning in result.warnings)
+    assert not any("Linux VPS / banas.dev:" in warning for warning in result.warnings)
 
 
 def test_generated_resume_is_complete_and_has_no_candidate_placeholder(verified_profile, platform_job):

@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 def context(request: Request, **values):
-    return {"request": request, "csrf_token": request.state.csrf_token, **values}
+    return {
+        "request": request,
+        "csrf_token": request.state.csrf_token,
+        "asset_version": request.app.state.settings.app_build_sha,
+        **values,
+    }
 
 
 def guard(request: Request) -> None:
@@ -737,6 +742,10 @@ async def download(request: Request, slug: str, kind: str):
 async def health(request: Request):
     return {
         "status": "ok",
+        "build": {
+            "sha": request.app.state.settings.app_build_sha,
+            "timestamp": request.app.state.settings.app_build_timestamp,
+        },
         "profile": request.app.state.profile_status.public(),
         "skills": request.app.state.skills_status.public(),
     }

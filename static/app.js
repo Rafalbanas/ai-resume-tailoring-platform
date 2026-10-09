@@ -64,7 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     quickAvatar.addEventListener("click", () => {
       setPhotoStatus("");
-      quickDialog.showModal();
+      if (quickAvatar.dataset.photoAvailable === "true") quickDialog.showModal();
+      else quickFile.click();
     });
     chooseButton.addEventListener("click", () => quickFile.click());
     quickFile.addEventListener("change", () => upload(quickFile.files[0]));

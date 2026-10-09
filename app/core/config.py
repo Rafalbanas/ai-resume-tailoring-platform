@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_password: str | None = None
     csrf_secret: str = "change-this-csrf-secret"
     base_url: str = "http://localhost:8000"
+    app_build_sha: str = "development"
+    app_build_timestamp: str = "unknown"
     data_dir: Path = Path("data")
     n8n_webhook_url: str = ""
     n8n_webhook_secret: str = ""
