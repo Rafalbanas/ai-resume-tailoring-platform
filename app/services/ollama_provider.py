@@ -210,7 +210,7 @@ certifications, projects, or responsibilities unless the same fact exists in the
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
         analysis = await self.analyze_job(job, profile)
         resume = await self.tailor_resume(job, profile, analysis)
-        return WorkflowResponse(analysis=analysis, resume=resume)
+        return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.model)
 
     async def health(self) -> dict[str, str]:
         try:

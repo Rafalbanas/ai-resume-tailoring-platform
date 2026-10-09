@@ -25,6 +25,7 @@ data/profile_photo.*
 data/profile_photo/
 data/reference_cvs/
 data/.drafts/
+data/.diagnostics/
 data/generated/
 *.pdf
 *.docx

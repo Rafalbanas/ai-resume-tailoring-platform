@@ -48,6 +48,11 @@ class Storage:
         photo_enabled: bool = False,
         truth_lock_warnings: list[str] | None = None,
         layout_warnings: list[str] | None = None,
+        pre_fit_resume: TailoredResume | None = None,
+        provider_used: str = "unknown",
+        model_used: str = "unknown",
+        fallback_used: bool = False,
+        fallback_reason: str | None = None,
     ) -> tuple[str, Path]:
         date = datetime.now(timezone.utc).date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
@@ -63,6 +68,8 @@ class Storage:
         (folder / "analysis.json").write_text(analysis.model_dump_json(indent=2), encoding="utf-8")
         (folder / "resume.json").write_text(resume.model_dump_json(indent=2), encoding="utf-8")
         (folder / "resume.generated.json").write_text(resume.model_dump_json(indent=2), encoding="utf-8")
+        if pre_fit_resume:
+            (folder / "pre_fit_resume.json").write_text(pre_fit_resume.model_dump_json(indent=2), encoding="utf-8")
         metadata = {
             "company": job.company,
             "role": job.role,
@@ -79,6 +86,11 @@ class Storage:
             "draft_id": draft_id,
             "template_name": template_name,
             "photo_enabled": bool(photo_enabled),
+            "provider_used": provider_used,
+            "model_used": model_used,
+            "fallback_used": bool(fallback_used),
+            "fallback_reason": fallback_reason,
+            "pre_fit_available": pre_fit_resume is not None,
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
@@ -184,6 +196,16 @@ class Storage:
                 continue
         return sorted(rows, key=lambda item: (item["date"], item["slug"]), reverse=True)
 
+    def load_pre_fit_resume(self, slug: str) -> TailoredResume | None:
+        folder = self.application_folder(slug)
+        pre_fit_path = folder / "pre_fit_resume.json"
+        if pre_fit_path.is_file():
+            try:
+                return TailoredResume.model_validate_json(pre_fit_path.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
+
     def artifact(self, slug: str, filename: str) -> Path:
         if filename not in {"resume.pdf", "resume.docx"}:
             raise FileNotFoundError
@@ -191,3 +213,84 @@ class Storage:
         if not path.is_file():
             raise FileNotFoundError
         return path
+
+
+def compute_pre_fit_diff(pre_fit: TailoredResume | None, fitted: TailoredResume) -> dict:
+    """Compute detailed differences between the model proposal (pre-fit) and layout-fitted resume."""
+    if not pre_fit:
+        return {
+            "trimmed_skills": [],
+            "trimmed_bullets": [],
+            "shortened_bullets": [],
+            "trimmed_projects": [],
+            "summary_shortened": False,
+            "original_summary_len": len(fitted.professional_summary),
+            "fitted_summary_len": len(fitted.professional_summary),
+            "total_items": 0,
+        }
+
+    # 1. Trimmed skills
+    fitted_skills_set = set(fitted.core_skills)
+    trimmed_skills = [skill for skill in pre_fit.core_skills if skill not in fitted_skills_set]
+
+    # 2. Trimmed projects
+    fitted_project_names = {p.name.casefold() for p in fitted.projects}
+    trimmed_projects = [p.name for p in pre_fit.projects if p.name.casefold() not in fitted_project_names]
+
+    # 3. Bullets differences
+    trimmed_bullets = []
+    shortened_bullets = []
+    fitted_exp_map = {item.company.casefold(): item for item in fitted.experience}
+
+    for orig_item in pre_fit.experience:
+        fitted_item = fitted_exp_map.get(orig_item.company.casefold())
+        if not fitted_item:
+            for b in orig_item.bullets:
+                trimmed_bullets.append({"company": orig_item.company, "text": b.text})
+            continue
+
+        fitted_texts = [b.text for b in fitted_item.bullets]
+        for orig_b in orig_item.bullets:
+            # Check exact match
+            if orig_b.text in fitted_texts:
+                continue
+            # Check if shortened version exists
+            match_found = False
+            for f_text in fitted_texts:
+                if f_text and (f_text in orig_b.text or orig_b.text.startswith(f_text[:40])):
+                    shortened_bullets.append({
+                        "company": orig_item.company,
+                        "original": orig_b.text,
+                        "fitted": f_text,
+                    })
+                    match_found = True
+                    break
+            if not match_found:
+                trimmed_bullets.append({"company": orig_item.company, "text": orig_b.text})
+
+    # 4. Summary shortening
+    orig_sum_len = len(pre_fit.professional_summary)
+    fit_sum_len = len(fitted.professional_summary)
+    summary_shortened = orig_sum_len > fit_sum_len and pre_fit.professional_summary != fitted.professional_summary
+
+    total_items = (
+        len(trimmed_skills)
+        + len(trimmed_projects)
+        + len(trimmed_bullets)
+        + len(shortened_bullets)
+        + (1 if summary_shortened else 0)
+    )
+
+    return {
+        "trimmed_skills": trimmed_skills,
+        "trimmed_projects": trimmed_projects,
+        "trimmed_bullets": trimmed_bullets,
+        "shortened_bullets": shortened_bullets,
+        "summary_shortened": summary_shortened,
+        "original_summary": pre_fit.professional_summary,
+        "fitted_summary": fitted.professional_summary,
+        "original_summary_len": orig_sum_len,
+        "fitted_summary_len": fit_sum_len,
+        "total_items": total_items,
+    }
+

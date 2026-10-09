@@ -13,13 +13,14 @@ from app.models.candidate import Interest
 from app.models.job import JobExtraction, JobRequest, JobUrlRequest
 from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, VerifiedSkill
-from app.services.ai_provider import AIProviderError
+from app.services.ai_provider import AIProviderError, GeminiAuthError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
+from app.services.storage import compute_pre_fit_diff
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -87,7 +88,10 @@ async def extract_job_url(request: Request, payload: JobUrlRequest):
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     guard(request)
-    return request.app.state.templates.TemplateResponse("index.html", context(request))
+    default_provider = getattr(request.app.state.settings, "active_llm_provider", "ollama")
+    return request.app.state.templates.TemplateResponse(
+        "index.html", context(request, llm_provider=default_provider)
+    )
 
 
 @router.post("/analyze", response_class=HTMLResponse)
@@ -98,6 +102,7 @@ async def analyze(
     job_description: Annotated[str, Form()],
     csrf_token: Annotated[str, Form()],
     job_url: Annotated[str, Form()] = "",
+    llm_provider: Annotated[str, Form()] = "auto",
 ):
     guard(request)
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
@@ -109,33 +114,142 @@ async def analyze(
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
             "index.html",
-            context(request, error="Check the form fields and paste a complete job description."),
+            context(
+                request,
+                error="Check the form fields and paste a complete job description.",
+                company=company,
+                role=role,
+                job_description=job_description,
+                job_url=job_url,
+                llm_provider=llm_provider,
+            ),
             status_code=422,
         )
     started = time.perf_counter()
     try:
-        response = await request.app.state.provider.tailor(job, request.app.state.profile)
+        try:
+            response = await request.app.state.provider.tailor(
+                job, request.app.state.profile, requested_provider=llm_provider
+            )
+        except TypeError:
+            response = await request.app.state.provider.tailor(job, request.app.state.profile)
+
         response.analysis = AnalysisValidator(request.app.state.profile, request.app.state.skills_bank).validate(
             response.analysis, f"{job.role}\n{job.job_description}"
         )
-    except AIProviderError as exc:
-        logger.warning(
-            "AI provider failed", extra={"stage": "ai_provider", "provider": request.app.state.provider.name}
-        )
-        return request.app.state.templates.TemplateResponse(
-            "index.html", context(request, error=str(exc)), status_code=502
-        )
-    except Exception:
-        logger.exception("AI workflow failed", extra={"stage": "n8n_or_mock"})
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        if hasattr(request.app.state, "diagnostics"):
+            request.app.state.diagnostics.record(
+                company=job.company,
+                role=job.role,
+                requested_provider=llm_provider,
+                provider_used=getattr(response, "provider_used", "unknown"),
+                model_used=getattr(response, "model_used", "unknown"),
+                fallback_occurred=getattr(response, "fallback_used", False),
+                fallback_reason=getattr(response, "fallback_reason", None),
+                status="fallback" if getattr(response, "fallback_used", False) else "success",
+                duration_ms=duration_ms,
+                match_level=response.analysis.match_level,
+                recommendation=response.analysis.recommendation,
+            )
+    except GeminiAuthError as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        if hasattr(request.app.state, "diagnostics"):
+            request.app.state.diagnostics.record(
+                company=job.company,
+                role=job.role,
+                requested_provider=llm_provider,
+                provider_used="gemini",
+                model_used="gemini",
+                fallback_occurred=False,
+                status="error",
+                duration_ms=duration_ms,
+                error_message=str(exc),
+            )
         return request.app.state.templates.TemplateResponse(
             "index.html",
-            context(request, error="The AI provider did not return a valid response. Try again."),
+            context(
+                request,
+                error=str(exc),
+                company=company,
+                role=role,
+                job_description=job_description,
+                job_url=job_url,
+                llm_provider=llm_provider,
+            ),
+            status_code=401,
+        )
+    except AIProviderError as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.warning("AI provider failed: %s", exc)
+        if hasattr(request.app.state, "diagnostics"):
+            request.app.state.diagnostics.record(
+                company=job.company,
+                role=job.role,
+                requested_provider=llm_provider,
+                provider_used="unknown",
+                model_used="unknown",
+                fallback_occurred=False,
+                status="error",
+                duration_ms=duration_ms,
+                error_message=str(exc),
+            )
+        return request.app.state.templates.TemplateResponse(
+            "index.html",
+            context(
+                request,
+                error=str(exc),
+                company=company,
+                role=role,
+                job_description=job_description,
+                job_url=job_url,
+                llm_provider=llm_provider,
+            ),
             status_code=502,
         )
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception("AI workflow failed unexpectedly")
+        if hasattr(request.app.state, "diagnostics"):
+            request.app.state.diagnostics.record(
+                company=job.company,
+                role=job.role,
+                requested_provider=llm_provider,
+                provider_used="unknown",
+                model_used="unknown",
+                fallback_occurred=False,
+                status="error",
+                duration_ms=duration_ms,
+                error_message=str(exc),
+            )
+        return request.app.state.templates.TemplateResponse(
+            "index.html",
+            context(
+                request,
+                error="The AI provider did not return a valid response. Try again.",
+                company=company,
+                role=role,
+                job_description=job_description,
+                job_url=job_url,
+                llm_provider=llm_provider,
+            ),
+            status_code=502,
+        )
+
     draft_id = request.app.state.storage.save_draft(job, response)
     logger.info("Job analyzed", extra={"stage": "analyze", "duration_ms": int((time.perf_counter() - started) * 1000)})
     return request.app.state.templates.TemplateResponse(
-        "analysis.html", context(request, job=job, analysis=response.analysis, draft_id=draft_id)
+        "analysis.html",
+        context(
+            request,
+            job=job,
+            analysis=response.analysis,
+            draft_id=draft_id,
+            provider_used=getattr(response, "provider_used", "unknown"),
+            model_used=getattr(response, "model_used", "unknown"),
+            fallback_used=getattr(response, "fallback_used", False),
+            fallback_reason=getattr(response, "fallback_reason", None),
+        ),
     )
 
 
@@ -168,6 +282,11 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         photo_enabled=photo_enabled,
         truth_lock_warnings=result.warnings,
         layout_warnings=layout_warnings,
+        pre_fit_resume=result.resume,
+        provider_used=getattr(response, "provider_used", "unknown"),
+        model_used=getattr(response, "model_used", "unknown"),
+        fallback_used=getattr(response, "fallback_used", False),
+        fallback_reason=getattr(response, "fallback_reason", None),
     )
     request.app.state.pdf_generator.generate(
         fitted_resume,
@@ -211,6 +330,8 @@ async def preview(request: Request, slug: str):
         photo_enabled=metadata.get("photo_enabled", request.app.state.profile_photo.exists()),
         interactive_photo=metadata.get("template_name", "modern_sidebar") == "modern_sidebar",
     )
+    pre_fit = request.app.state.storage.load_pre_fit_resume(slug)
+    pre_fit_diff = compute_pre_fit_diff(pre_fit, resume)
     return request.app.state.templates.TemplateResponse(
         "resume_preview.html",
         context(
@@ -219,6 +340,7 @@ async def preview(request: Request, slug: str):
             metadata=metadata,
             resume_html=resume_html,
             photo_available=request.app.state.profile_photo.exists(),
+            pre_fit_diff=pre_fit_diff,
         ),
     )
 
@@ -869,3 +991,114 @@ async def provider_health(request: Request):
         return await request.app.state.provider.health()
     except AIProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/compare", response_class=HTMLResponse)
+async def compare_view(request: Request, draft_id: str | None = None):
+    guard(request)
+    job = None
+    if draft_id:
+        try:
+            job, _ = request.app.state.storage.load_draft(draft_id)
+        except Exception:
+            job = None
+    return request.app.state.templates.TemplateResponse(
+        "compare.html",
+        context(request, draft_id=draft_id, job=job, results=None),
+    )
+
+
+@router.post("/compare", response_class=HTMLResponse)
+async def run_compare(
+    request: Request,
+    company: Annotated[str, Form()],
+    role: Annotated[str, Form()],
+    job_description: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()],
+    job_url: Annotated[str, Form()] = "",
+):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    if len(job_description) > request.app.state.settings.max_job_description_chars:
+        raise HTTPException(status_code=413, detail="Job description is too long")
+    try:
+        job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description)
+    except ValidationError:
+        return request.app.state.templates.TemplateResponse(
+            "compare.html",
+            context(request, error="Check form fields and provide a complete job description.", job=None, results=None),
+            status_code=422,
+        )
+
+    available_providers = getattr(request.app.state, "providers", {})
+    provider_names = ["ollama", "gemini"]
+    if request.app.state.settings.ai_provider == "mock" or "mock" in available_providers:
+        if "mock" not in provider_names:
+            provider_names.append("mock")
+
+    results: dict[str, dict] = {}
+    for name in provider_names:
+        provider = available_providers.get(name)
+        if not provider:
+            results[name] = {"ok": False, "model": name, "error": f"Provider '{name}' is not configured."}
+            continue
+
+        if name == "gemini" and getattr(provider, "api_key", None) == "":
+            results[name] = {
+                "ok": False,
+                "model": getattr(provider, "model", "gemini-2.5-flash"),
+                "error": "Gemini API key is not configured. Set GEMINI_API_KEY to test Gemini.",
+            }
+            continue
+
+        started = time.perf_counter()
+        try:
+            resp = await provider.tailor(job, request.app.state.profile)
+            resp.analysis = AnalysisValidator(request.app.state.profile, request.app.state.skills_bank).validate(
+                resp.analysis, f"{job.role}\n{job.job_description}"
+            )
+            val = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resp.resume, job)
+            results[name] = {
+                "ok": True,
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+                "model": getattr(provider, "model", name),
+                "analysis": resp.analysis,
+                "resume": val.resume,
+                "truth_warnings": val.warnings,
+            }
+        except Exception as exc:
+            results[name] = {
+                "ok": False,
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+                "model": getattr(provider, "model", name),
+                "error": str(exc),
+            }
+
+    return request.app.state.templates.TemplateResponse(
+        "compare.html",
+        context(request, job=job, results=results),
+    )
+
+
+@router.get("/diagnostics", response_class=HTMLResponse)
+async def diagnostics_view(request: Request):
+    guard(request)
+    runs = request.app.state.diagnostics.list_runs() if hasattr(request.app.state, "diagnostics") else []
+    try:
+        health_info = await request.app.state.provider.health()
+    except Exception as exc:
+        health_info = {"status": "error", "error": str(exc)}
+    return request.app.state.templates.TemplateResponse(
+        "diagnostics.html",
+        context(request, runs=runs, health=health_info),
+    )
+
+
+@router.post("/diagnostics/clear")
+async def clear_diagnostics(request: Request, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    if hasattr(request.app.state, "diagnostics"):
+        request.app.state.diagnostics.clear()
+    return RedirectResponse("/diagnostics", status_code=303)

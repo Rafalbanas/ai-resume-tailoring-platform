@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}System Diagnostics · CV Tailor{% endblock %}
+{% block content %}
+<section class="workspace-head">
+  <div>
+    <p class="eyebrow">OBSERVABILITY &amp; HEALTH</p>
+    <h1>Local System Diagnostics</h1>
+    <p class="section-sub">Diagnostic trail tracking provider latency, fallback switches, and error rates (max 30 runs FIFO rotation).</p>
+  </div>
+  <div class="truth-badge">
+    <span>🛡</span>
+    <div>
+      <strong>Privacy Preserved</strong>
+      <small>No candidate PII or raw CV text is recorded in logs</small>
+    </div>
+  </div>
+</section>
+
+<section class="card diagnostics-summary">
+  <h2>Provider Status</h2>
+  <div class="health-grid">
+    {% for name, info in health.providers.items() %}
+    <div class="health-card">
+      <div class="health-head">
+        <strong>{{ name|upper }}</strong>
+        <span class="status-pill status-{{ info.status|default('unknown') }}">{{ info.status|default('unknown') }}</span>
+      </div>
+      <p class="health-detail">
+        {% if info.model %}Model: <code>{{ info.model }}</code><br>{% endif %}
+        {% if info.error %}<span class="error-text">{{ info.error }}</span>{% endif %}
+      </p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card diagnostics-table-card">
+  <div class="table-head-row">
+    <h2>Recent Runs ({{ runs|length }})</h2>
+    {% if runs %}
+    <form action="/diagnostics/clear" method="post" onsubmit="return confirm('Clear local diagnostic logs?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary button small" type="submit">Clear Logs</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if runs %}
+  <div class="table-responsive">
+    <table class="diag-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Role / Company</th>
+          <th>Requested</th>
+          <th>Used Engine</th>
+          <th>Fallback</th>
+          <th>Latency</th>
+          <th>Status</th>
+          <th>Truth Lock</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr class="diag-row-{{ run.status }}">
+          <td><small>{{ run.timestamp[11:19] }}</small></td>
+          <td><strong>{{ run.role }}</strong><br><small>{{ run.company }}</small></td>
+          <td><code>{{ run.requested_provider }}</code></td>
+          <td><code>{{ run.provider_used }}</code><br><small>{{ run.model_used }}</small></td>
+          <td>
+            {% if run.fallback_occurred %}
+            <span class="badge fallback-badge" title="{{ run.fallback_reason }}">⚡ Fallback</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ run.duration_ms }} ms</td>
+          <td>
+            <span class="status-tag tag-{{ run.status }}">{{ run.status|capitalize }}</span>
+          </td>
+          <td>
+            {% if run.truth_lock_warning_count > 0 %}
+            <span class="warning-count">{{ run.truth_lock_warning_count }} warn</span>
+            {% else %}
+            <span class="clean-count">0</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if run.error_message %}
+            <span class="error-snippet" title="{{ run.error_message }}">{{ run.error_message[:40] }}…</span>
+            {% elif run.fallback_reason %}
+            <small title="{{ run.fallback_reason }}">{{ run.fallback_reason[:40] }}…</small>
+            {% else %}
+            <small class="text-muted">OK</small>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-hint">No diagnostic runs recorded yet. Analyze a job or compare models to populate logs.</p>
+  {% endif %}
+</section>
+{% endblock %}

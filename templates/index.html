@@ -9,12 +9,22 @@
 <form action="/analyze" method="post" class="job-form" id="job-form" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-grid">
-    <label>Company<input id="company" name="company" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC"></label>
-    <label>Role<input id="role" name="role" maxlength="150" placeholder="e.g. Application Support Engineer"></label>
+    <label>Company<input id="company" name="company" value="{{ company or '' }}" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC"></label>
+    <label>Role<input id="role" name="role" value="{{ role or '' }}" maxlength="150" placeholder="e.g. Application Support Engineer"></label>
   </div>
-  <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
+  <div class="form-grid provider-grid">
+    <label>AI Engine
+      <select id="llm_provider" name="llm_provider" class="provider-select">
+        <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto (Ollama primary with Gemini fallback)</option>
+        <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama (Local Qwen 8B via tunnel)</option>
+        <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini (gemini-2.5-flash)</option>
+      </select>
+      <small class="field-hint">Automatic fallback recovers instantly if one provider is unreachable.</small>
+    </label>
+    <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
+  </div>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
-  <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…"></textarea></label>
-  <div class="form-foot"><span>Your text is sent only to your FastAPI backend and configured n8n workflow.</span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
+  <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ job_description or '' }}</textarea></label>
+  <div class="form-foot"><span>Private inference with Truth Lock guardrails. <a href="/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
 </form>
 {% endblock %}

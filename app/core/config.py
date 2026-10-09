@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     n8n_webhook_url: str = ""
     n8n_webhook_secret: str = ""
-    ai_provider: str = Field(default="mock", pattern="^(mock|n8n|ollama)$")
+    ai_provider: str = Field(default="ollama", pattern="^(mock|n8n|ollama|gemini|auto)$")
+    llm_provider: str = Field(default="", pattern="^(|mock|n8n|ollama|gemini|auto)$")
+    llm_fallback_provider: str = Field(default="gemini", pattern="^(|mock|ollama|gemini|none)$")
     profile_mode: str = Field(default="production", pattern="^(production|sample)$")
     request_timeout_seconds: float = 60.0
     ollama_base_url: str = "http://127.0.0.1:11434"
@@ -25,6 +27,11 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 300.0
     ollama_num_predict: int = 8192
     ollama_num_ctx: int = 32768
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+    gemini_timeout_seconds: float = 60.0
+    gemini_max_retries: int = 1
     reference_cv_max_bytes: int = 10_000_000
     profile_photo_max_bytes: int = 10_000_000
     max_job_description_chars: int = 30_000
@@ -33,6 +40,10 @@ class Settings(BaseSettings):
     job_fetch_max_bytes: int = 2_000_000
     job_fetch_max_redirects: int = 3
     job_fetch_playwright_enabled: bool = True
+
+    @property
+    def active_llm_provider(self) -> str:
+        return self.llm_provider or self.ai_provider or "ollama"
 
     @property
     def master_profile_path(self) -> Path:

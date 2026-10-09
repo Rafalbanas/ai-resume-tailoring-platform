@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Model Comparison · CV Tailor{% endblock %}
+{% block content %}
+<section class="workspace-head">
+  <div>
+    <p class="eyebrow">QUALITY BENCHMARK</p>
+    <h1>Compare Ollama vs Gemini side-by-side.</h1>
+    <p class="section-sub">Evaluate fact retention, skill selection, and summary tone on the exact same job description.</p>
+  </div>
+  <div class="truth-badge">
+    <span>⚖</span>
+    <div>
+      <strong>Strict Evaluation</strong>
+      <small>Same prompt, master profile, and Truth Lock rules</small>
+    </div>
+  </div>
+</section>
+
+{% if error %}
+<div class="alert" role="alert">{{ error }}</div>
+{% endif %}
+
+<form action="/compare" method="post" class="job-form compare-form" id="compare-form" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <label>Company<input id="company" name="company" value="{{ (job.company if job else '') }}" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC" required></label>
+    <label>Role<input id="role" name="role" value="{{ (job.role if job else '') }}" maxlength="150" placeholder="e.g. Application Support Engineer" required></label>
+  </div>
+  <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description to compare both models…" required>{{ (job.job_description if job else '') }}</textarea></label>
+  <div class="form-foot">
+    <span>Runs on demand without affecting routine applications history.</span>
+    <button class="primary" type="submit">Run side-by-side comparison</button>
+  </div>
+</form>
+
+{% if results %}
+<section class="comparison-results">
+  <div class="comparison-header">
+    <h2>Comparison Results for {{ job.role }} ({{ job.company }})</h2>
+  </div>
+
+  <div class="compare-columns">
+    {% for provider_key in ['ollama', 'gemini'] %}
+    {% set res = results.get(provider_key) %}
+    <div class="compare-column card">
+      <div class="compare-card-head">
+        <div>
+          <span class="provider-pill {{ provider_key }}">{{ provider_key|upper }}</span>
+          <h3>{{ res.model|default(provider_key) }}</h3>
+        </div>
+        {% if res and res.ok %}
+        <span class="latency-badge">{{ res.duration_ms }} ms</span>
+        {% else %}
+        <span class="latency-badge error-badge">Failed</span>
+        {% endif %}
+      </div>
+
+      {% if res and res.ok %}
+      <div class="compare-section">
+        <div class="score score-{{ res.analysis.match_level|lower }}">
+          <small>Match</small>
+          <strong>{{ res.analysis.match_level }}</strong>
+          <span>{{ res.analysis.recommendation.replace('_', ' ') }}</span>
+        </div>
+        <p class="reasoning-snippet"><em>{{ res.analysis.reasoning_summary }}</em></p>
+      </div>
+
+      <div class="compare-section">
+        <h4>Strong Matches ({{ res.analysis.strong_matches|length }})</h4>
+        <div class="chips">
+          {% for item in res.analysis.strong_matches %}
+          <span>{{ item }}</span>
+          {% else %}
+          <em>None</em>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="compare-section">
+        <h4>Missing Requirements ({{ res.analysis.missing_requirements|length }})</h4>
+        <div class="chips">
+          {% for item in res.analysis.missing_requirements %}
+          <span>{{ item }}</span>
+          {% else %}
+          <em>None</em>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="compare-section">
+        <h4>Headline</h4>
+        <p class="headline-snippet">{{ res.resume.headline }}</p>
+      </div>
+
+      <div class="compare-section">
+        <h4>Professional Summary</h4>
+        <p class="summary-snippet">{{ res.resume.professional_summary }}</p>
+      </div>
+
+      <div class="compare-section">
+        <h4>Core Skills Selected ({{ res.resume.core_skills|length }})</h4>
+        <div class="chips">
+          {% for skill in res.resume.core_skills %}
+          <span>{{ skill }}</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="compare-section">
+        <h4>Truth Lock Status</h4>
+        {% if res.truth_warnings and res.truth_warnings|length > 0 %}
+        <span class="warning-count">{{ res.truth_warnings|length }} modification(s)</span>
+        <ul class="mini-list">
+          {% for w in res.truth_warnings %}
+          <li>{{ w }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <span class="clean-count">✓ 100% facts verified without alterations</span>
+        {% endif %}
+      </div>
+
+      {% else %}
+      <div class="provider-error-box">
+        <strong>Provider Unreachable or Error:</strong>
+        <p>{{ res.error|default('No response received.') }}</p>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

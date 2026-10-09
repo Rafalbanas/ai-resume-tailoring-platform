@@ -129,4 +129,4 @@ class MockAIProvider(AIProvider):
             projects=projects,
             certifications=[ResumeCertification(**item.model_dump()) for item in profile.certifications],
         )
-        return WorkflowResponse(analysis=analysis, resume=resume)
+        return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.name)

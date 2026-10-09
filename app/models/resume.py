@@ -54,6 +54,10 @@ class TailoredResume(BaseModel):
 class WorkflowResponse(BaseModel):
     analysis: "JobAnalysis"
     resume: TailoredResume
+    provider_used: str = "unknown"
+    model_used: str = "unknown"
+    fallback_used: bool = False
+    fallback_reason: str | None = None
 
 
 from app.models.job import JobAnalysis  # noqa: E402

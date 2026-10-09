@@ -1,11 +1,72 @@
 {% extends "base.html" %}
 {% block title %}CV preview · CV Tailor{% endblock %}
 {% block content %}
-<div class="preview-head"><div><p class="eyebrow">READY TO USE</p><h1>{{ metadata.company }} · {{ metadata.role }}</h1><p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p></div><div class="actions"><a class="secondary button" href="/edit/{{ slug }}">Edit CV</a>{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}<button class="secondary button" id="preview-photo-options-btn" type="button">{% if photo_available %}Photo options{% else %}Add photo{% endif %}</button>{% endif %}<a class="secondary button" href="/download/{{ slug }}/docx">Download DOCX</a><a class="primary button" href="/download/{{ slug }}/pdf">Download PDF</a><form action="/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Delete</button></form></div></div>
+<div class="preview-head">
+  <div>
+    <p class="eyebrow">READY TO USE</p>
+    <h1>{{ metadata.company }} · {{ metadata.role }}</h1>
+    <p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p>
+    <div class="provider-meta">
+      <span class="badge provider-badge">Engine: {{ metadata.provider_used|default('ollama') }} ({{ metadata.model_used|default('qwen3.5:9b') }})</span>
+      {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">⚡ Fallback used</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    <a class="secondary button" href="/edit/{{ slug }}">Edit CV</a>
+    {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
+    <button class="secondary button" id="preview-photo-options-btn" type="button">{% if photo_available %}Photo options{% else %}Add photo{% endif %}</button>
+    {% endif %}
+    <a class="secondary button" href="/download/{{ slug }}/docx">Download DOCX</a>
+    <a class="primary button" href="/download/{{ slug }}/pdf">Download PDF</a>
+    <form action="/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="danger" type="submit">Delete</button>
+    </form>
+  </div>
+</div>
 {% set truth_warnings = metadata.truth_lock_warnings if metadata.truth_lock_warnings is defined and metadata.truth_lock_warnings is not none else [] %}
 {% if truth_warnings and truth_warnings|length > 0 %}<details class="warnings truth-lock-warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% set layout_warns = metadata.layout_adjustments if metadata.layout_adjustments is defined and metadata.layout_adjustments is not none else metadata.layout_warnings|default([], true) %}
 {% if layout_warns and layout_warns|length > 0 %}<details class="warnings layout-adjustments"><summary>Layout applied {{ layout_warns|length }} one-page adjustment(s)</summary><ul>{% for warning in layout_warns %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+{% if pre_fit_diff and pre_fit_diff.total_items > 0 %}
+<details class="warnings pre-fit-diff">
+  <summary>Page Fit Transparency: View {{ pre_fit_diff.total_items }} item(s) trimmed or shortened for 1-page fit</summary>
+  <div class="diff-content-wrapper">
+    <p class="diff-notice">The AI model drafted these facts, but the 1-page layout engine tightened them to maintain A4 boundaries. You can re-include or edit any items via <a href="/edit/{{ slug }}">Edit CV</a>.</p>
+    {% if pre_fit_diff.trimmed_skills %}
+    <div class="diff-group">
+      <strong>Lower-priority skills trimmed:</strong>
+      <div class="chips">{% for s in pre_fit_diff.trimmed_skills %}<span>{{ s }}</span>{% endfor %}</div>
+    </div>
+    {% endif %}
+    {% if pre_fit_diff.summary_shortened %}
+    <div class="diff-group">
+      <strong>Professional Summary shortened:</strong>
+      <p class="diff-text-compare"><span class="diff-label">Original ({{ pre_fit_diff.original_summary_len }} chars):</span> {{ pre_fit_diff.original_summary }}</p>
+      <p class="diff-text-compare"><span class="diff-label">Fitted ({{ pre_fit_diff.fitted_summary_len }} chars):</span> {{ pre_fit_diff.fitted_summary }}</p>
+    </div>
+    {% endif %}
+    {% if pre_fit_diff.trimmed_bullets %}
+    <div class="diff-group">
+      <strong>Experience bullets trimmed:</strong>
+      <ul class="diff-list">{% for b in pre_fit_diff.trimmed_bullets %}<li><strong>{{ b.company }}:</strong> {{ b.text }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    {% if pre_fit_diff.shortened_bullets %}
+    <div class="diff-group">
+      <strong>Experience bullets shortened:</strong>
+      <ul class="diff-list">{% for b in pre_fit_diff.shortened_bullets %}<li><strong>{{ b.company }}:</strong> <del>{{ b.original }}</del><br><ins>{{ b.fitted }}</ins></li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    {% if pre_fit_diff.trimmed_projects %}
+    <div class="diff-group">
+      <strong>Projects trimmed:</strong>
+      <ul class="diff-list">{% for p in pre_fit_diff.trimmed_projects %}<li>{{ p }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
 <div id="quick-photo-toast" class="quick-photo-toast" role="status" aria-live="polite" hidden></div>
 <div class="paper-frame">{{ resume_html|safe }}</div>
 {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
