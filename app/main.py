@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
         providers=providers,
         default_primary=primary if primary in providers else "ollama",
         default_fallback=fallback if fallback in providers else ("gemini" if primary != "gemini" else "ollama"),
+        operation_budget_seconds=settings.llm_operation_budget_seconds,
     )
     yield
 

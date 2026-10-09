@@ -106,9 +106,17 @@ class GeminiProvider(AIProvider):
         self.api_key = (settings.gemini_api_key or "").strip()
         self.model = (settings.gemini_model or "gemini-2.5-flash").strip()
         self.base_url = (settings.gemini_base_url or "https://generativelanguage.googleapis.com").rstrip("/")
+        self.connect_timeout = getattr(settings, "gemini_connect_timeout_seconds", 10.0)
+        self.read_timeout = getattr(
+            settings,
+            "gemini_read_timeout_seconds",
+            getattr(settings, "gemini_timeout_seconds", 60.0),
+        )
         self.timeout = httpx.Timeout(
-            settings.gemini_timeout_seconds,
-            connect=min(settings.gemini_timeout_seconds, 10.0),
+            self.read_timeout,
+            connect=self.connect_timeout,
+            write=30.0,
+            pool=10.0,
         )
         self.max_retries = max(0, int(settings.gemini_max_retries))
         self.transport = transport
@@ -382,7 +390,7 @@ certifications, projects, or responsibilities unless the same fact exists in the
         headers = {"x-goog-api-key": self.api_key}
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, connect=3.0),
+                timeout=httpx.Timeout(self.connect_timeout + 5.0, connect=self.connect_timeout),
                 follow_redirects=False,
                 transport=self.transport,
             ) as client:

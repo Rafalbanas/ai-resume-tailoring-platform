@@ -204,3 +204,59 @@ async def test_truth_lock_still_removes_unsupported_ollama_facts(profile):
     assert result.resume.experience[0].title == "Support Engineer"
     assert any("Kubernetes" in warning for warning in result.warnings)
     assert any("replaced" in warning for warning in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_ollama_passes_keep_alive_and_configurable_timeouts(profile):
+    captured_body = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_body
+        captured_body = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"content": json.dumps(analysis_payload())}})
+
+    custom_settings = Settings(
+        ollama_connect_timeout_seconds=5.0,
+        ollama_read_timeout_seconds=120.0,
+        ollama_keep_alive="20m",
+    )
+    p = OllamaProvider(custom_settings, transport=httpx.MockTransport(handler))
+    assert p.connect_timeout == 5.0
+    assert p.read_timeout == 120.0
+    assert p.keep_alive == "20m"
+
+    await p.analyze_job(job(), profile)
+    assert captured_body.get("keep_alive") == "20m"
+
+
+@pytest.mark.asyncio
+async def test_ollama_logs_telemetry_without_cv_content(profile, caplog):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(analysis_payload())},
+                "total_duration": 15_000_000_000,
+                "load_duration": 3_000_000_000,
+                "prompt_eval_count": 250,
+                "prompt_eval_duration": 4_000_000_000,
+                "eval_count": 120,
+                "eval_duration": 8_000_000_000,
+            },
+        )
+
+    with caplog.at_level("INFO"):
+        await provider(httpx.MockTransport(handler)).analyze_job(job(), profile)
+
+    # Check telemetry line exists
+    log_messages = [rec.message for rec in caplog.records]
+    telemetry_logs = [m for m in log_messages if "Ollama call completed" in m]
+    assert len(telemetry_logs) == 1
+    # Check that durations and tokens are reported
+    assert "load=3000.0ms" in telemetry_logs[0]
+    assert "prompt_eval=4000.0ms (250 tokens)" in telemetry_logs[0]
+    assert "eval=8000.0ms (120 tokens)" in telemetry_logs[0]
+    # Check that candidate PII and CV content are NOT logged
+    assert profile.personal.name not in telemetry_logs[0]
+    assert "Built reliable" not in telemetry_logs[0]
+

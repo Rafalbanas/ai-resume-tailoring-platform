@@ -168,3 +168,61 @@ def test_analyze_endpoint_preserves_form_data_on_provider_error(monkeypatch):
         assert 'value="Lead DevOps Architect"' in html
         assert 'value="https://example.com/job/123"' in html
         assert "We need an engineer experienced with Terraform" in html
+
+
+@pytest.mark.asyncio
+async def test_resilient_provider_enforces_budget_timeout(profile):
+    import asyncio
+
+    class SlowProvider(MockAIProvider):
+        def __init__(self, name: str):
+            super().__init__()
+            self.name = name
+
+        async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
+            await asyncio.sleep(0.5)
+            return sample_workflow_response(self.name, "slow-model")
+
+    router = ResilientAIProvider(
+        providers={"ollama": SlowProvider("ollama")},
+        default_primary="ollama",
+        default_fallback="none",
+        operation_budget_seconds=0.05,
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="timed out"):
+        await router.tailor(job(), profile, requested_provider="ollama")
+
+
+@pytest.mark.asyncio
+async def test_resilient_provider_aborts_fallback_if_insufficient_budget(profile):
+    import asyncio
+
+    class SlowFailingProvider(MockAIProvider):
+        def __init__(self, name: str):
+            super().__init__()
+            self.name = name
+
+        async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
+            await asyncio.sleep(0.05)
+            raise ProviderUnavailableError("Slow primary failure")
+
+    class FallbackProvider(MockAIProvider):
+        def __init__(self, name: str):
+            super().__init__()
+            self.name = name
+
+        async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
+            return sample_workflow_response(self.name, "fb-model")
+
+    # Budget is 3.0s, which is below the 5.0s fallback threshold
+    router = ResilientAIProvider(
+        providers={"ollama": SlowFailingProvider("ollama"), "gemini": FallbackProvider("gemini")},
+        default_primary="ollama",
+        default_fallback="gemini",
+        operation_budget_seconds=3.0,
+    )
+
+    with pytest.raises(AIProviderError, match="insufficient"):
+        await router.tailor(job(), profile, requested_provider="auto")
+

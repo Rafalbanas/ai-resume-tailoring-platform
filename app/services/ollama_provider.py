@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import TypeVar
 
 import httpx
@@ -14,6 +15,7 @@ from app.services.fact_catalog import FactCatalog
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
 
+logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 TRUTH_RULES = """MASTER PROFILE IS THE ONLY SOURCE OF FACTS.
@@ -36,9 +38,18 @@ class OllamaProvider(AIProvider):
     ):
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
+        self.connect_timeout = getattr(settings, "ollama_connect_timeout_seconds", 10.0)
+        self.read_timeout = getattr(
+            settings,
+            "ollama_read_timeout_seconds",
+            getattr(settings, "ollama_timeout_seconds", 180.0),
+        )
+        self.keep_alive = getattr(settings, "ollama_keep_alive", "15m")
         self.timeout = httpx.Timeout(
-            settings.ollama_timeout_seconds,
-            connect=min(settings.ollama_timeout_seconds, 10.0),
+            self.read_timeout,
+            connect=self.connect_timeout,
+            write=30.0,
+            pool=10.0,
         )
         self.num_predict = settings.ollama_num_predict
         self.num_ctx = settings.ollama_num_ctx
@@ -103,6 +114,7 @@ class OllamaProvider(AIProvider):
             "stream": False,
             "think": False,
             "format": schema,
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": 0,
                 "num_predict": self.num_predict,
@@ -129,6 +141,23 @@ class OllamaProvider(AIProvider):
             raise AIProviderError("Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         except (httpx.HTTPStatusError, ValueError) as exc:
             raise AIProviderError("Ollama returned an invalid HTTP response.") from exc
+
+        load_ms = (envelope.get("load_duration") or 0) / 1_000_000
+        prompt_eval_ms = (envelope.get("prompt_eval_duration") or 0) / 1_000_000
+        prompt_tokens = envelope.get("prompt_eval_count") or 0
+        eval_ms = (envelope.get("eval_duration") or 0) / 1_000_000
+        eval_tokens = envelope.get("eval_count") or 0
+        total_ms = (envelope.get("total_duration") or 0) / 1_000_000
+        logger.info(
+            "Ollama call completed: model=%s, load=%.1fms, prompt_eval=%.1fms (%d tokens), eval=%.1fms (%d tokens), total=%.1fms",
+            self.model,
+            load_ms,
+            prompt_eval_ms,
+            prompt_tokens,
+            eval_ms,
+            eval_tokens,
+            total_ms,
+        )
 
         try:
             content = envelope["message"]["content"]
@@ -216,7 +245,7 @@ certifications, projects, or responsibilities unless the same fact exists in the
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(10.0, connect=3.0),
+                timeout=httpx.Timeout(self.connect_timeout + 5.0, connect=self.connect_timeout),
                 follow_redirects=False,
                 transport=self.transport,
             ) as client:
