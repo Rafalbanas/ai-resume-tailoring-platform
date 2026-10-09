@@ -216,3 +216,46 @@ def test_manual_skill_edit_replaces_generated_ids(tmp_path, profile):
     edited = apply_resume_edits(generated, {"core_skills": "Linux"})
     result = FactValidator(profile, store).validate(edited, job("Linux support engineer"))
     assert result.resume.selected_skill_ids == [linux.id]
+
+
+def test_headline_blocks_job_requirements_and_uses_verified_skill_ids(tmp_path, profile):
+    python = skill("Python")
+    linux = skill("Linux")
+    store = bank(tmp_path, profile, [python, linux])
+    hostile = resume(
+        ["PostgreSQL", "Azure Data Factory", "GitLab CI/CD", "Elasticsearch", "Java"],
+        [python.id, linux.id],
+    )
+    hostile.headline = (
+        "Platform Engineer | Linux & Bash Automation | PostgreSQL & Azure Data Factory | "
+        "GitLab CI/CD | Elasticsearch | Java"
+    )
+    platform = JobRequest(
+        company="Example",
+        role="Platform Engineer",
+        job_description=(
+            "Requires PostgreSQL, Azure Data Factory, GitLab CI/CD, Elasticsearch, Java, Linux and Python."
+        ),
+    )
+
+    result = FactValidator(profile, store).validate(hostile, platform)
+
+    assert result.resume.headline == "Platform Engineer | Python | Linux"
+    serialized = result.resume.model_dump_json()
+    for unsupported in ("PostgreSQL", "Azure Data Factory", "GitLab CI/CD", "Elasticsearch", "Java"):
+        assert unsupported not in result.resume.headline
+        assert unsupported not in serialized
+    assert any("headline" in warning for warning in result.warnings)
+
+
+def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, profile):
+    python = skill("Python")
+    store = bank(tmp_path, profile, [python])
+    candidate = resume(["Python"], [python.id])
+    candidate.professional_summary = (
+        "Automates repeatable infrastructure and support workflows with Python and cross-tier."
+    )
+    result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
+    assert result.resume.professional_summary == profile.summary_facts[0]
+    assert result.resume.professional_summary.endswith(".")
+    assert any("truncated or incomplete" in warning for warning in result.warnings)

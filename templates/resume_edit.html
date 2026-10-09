@@ -8,9 +8,13 @@
 {% if error %}<div class="alert">{{ error }}</div>{% endif %}
 <form class="job-form resume-edit-form" action="/edit/{{ slug }}" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label>Role title<input name="headline" maxlength="140" required value="{{ resume.headline }}"></label>
+  <label>Verified headline <small>Built from the target role and verified skills</small><input name="headline" maxlength="140" readonly value="{{ resume.headline }}"></label>
   <label>Professional summary<textarea name="professional_summary" maxlength="700" required>{{ resume.professional_summary }}</textarea></label>
   <label>Skills <small>One per line or comma-separated</small><textarea name="core_skills">{{ resume.core_skills|join('\n') }}</textarea></label>
+  <div class="form-grid">
+    <label>Template<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>
+    <label class="toggle-label"><input type="checkbox" name="photo_enabled"{% if metadata.photo_enabled %} checked{% endif %}> Include photo in this CV <small>Modern Sidebar only</small></label>
+  </div>
 
   <h2>Professional experience</h2>
   {% for item in resume.experience %}

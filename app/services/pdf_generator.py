@@ -7,23 +7,47 @@ from weasyprint import HTML
 
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
+from app.services.profile_photo import ProfilePhotoStore
 
 
 class PDFGenerator:
-    def __init__(self, templates_dir: Path, static_dir: Path, data_dir: Path = Path("data")):
+    def __init__(
+        self,
+        templates_dir: Path,
+        static_dir: Path,
+        data_dir: Path = Path("data"),
+        photo_store: ProfilePhotoStore | None = None,
+    ):
         self.env = Environment(loader=FileSystemLoader(templates_dir), autoescape=select_autoescape(["html"]))
         self.css_path = static_dir / "resume.css"
         self.data_dir = data_dir
+        self.photo_store = photo_store or ProfilePhotoStore(data_dir / "profile_photo")
 
-    def render_html(self, resume: TailoredResume, profile: CandidateProfile, layout_guide: dict | None = None) -> str:
+    def render_html(
+        self,
+        resume: TailoredResume,
+        profile: CandidateProfile,
+        layout_guide: dict | None = None,
+        *,
+        template_name: str = "modern_sidebar",
+        photo_enabled: bool | None = None,
+    ) -> str:
         if not profile.personal.name.strip():
             raise ValueError("Candidate name is missing from the active master profile.")
         guide = layout_guide or {}
+        if template_name not in {"modern_sidebar", "ats_classic"}:
+            template_name = "modern_sidebar"
+        include_photo = template_name == "modern_sidebar" and (
+            self.photo_store.exists() if photo_enabled is None else photo_enabled and self.photo_store.exists()
+        )
         order = guide.get("section_order", ["summary", "experience", "education", "projects", "certifications"])
         markup = self.env.get_template("resume.html").render(
             resume=resume,
             personal=profile.personal,
-            photo_data_uri=self._photo_data_uri(),
+            template_name=template_name,
+            photo_enabled=include_photo,
+            photo_data_uri=self._photo_data_uri() if include_photo else "",
+            initials="".join(part[0] for part in profile.personal.name.split() if part)[:2].upper() or "CV",
             section_order=order,
         )
         return f"<style>{self.css_path.read_text(encoding='utf-8')}</style>{markup}"
@@ -34,8 +58,16 @@ class PDFGenerator:
         profile: CandidateProfile,
         output: Path,
         layout_guide: dict | None = None,
+        *,
+        template_name: str = "modern_sidebar",
+        photo_enabled: bool | None = None,
     ) -> None:
-        HTML(string=self.render_html(resume, profile, layout_guide), base_url=str(self.data_dir)).write_pdf(output)
+        HTML(
+            string=self.render_html(
+                resume, profile, layout_guide, template_name=template_name, photo_enabled=photo_enabled
+            ),
+            base_url=str(self.data_dir),
+        ).write_pdf(output)
 
     def fit_resume(
         self,
@@ -48,8 +80,10 @@ class PDFGenerator:
         warnings = []
         summary_limit = int(guide.get("summary_max_chars", 520))
         if len(fitted.professional_summary) > summary_limit:
-            fitted.professional_summary = self._shorten(fitted.professional_summary, summary_limit)
-            warnings.append(f"Reference layout limited the professional summary to {summary_limit} characters")
+            shortened_summary = self._shorten_summary(fitted.professional_summary, summary_limit)
+            if shortened_summary != fitted.professional_summary:
+                fitted.professional_summary = shortened_summary
+                warnings.append(f"Reference layout limited the professional summary to {summary_limit} characters")
         fitted.core_skills = fitted.core_skills[: int(guide.get("max_skills", 12))]
         max_bullets = int(guide.get("max_bullets_per_role", 4))
         for item in fitted.experience:
@@ -72,20 +106,23 @@ class PDFGenerator:
 
         for item in fitted.experience:
             item.bullets = item.bullets[:2]
-        fitted.projects = fitted.projects[:1]
-        warnings.append("Layout fit reduced secondary bullets and projects")
+        warnings.append("Layout fit reduced secondary experience bullets")
         if self._fits_one_page(fitted, profile, guide):
             return fitted, warnings
 
         for item in fitted.experience:
             item.bullets = item.bullets[:1]
-        fitted.projects = fitted.projects[:1]
-        fitted.certifications = fitted.certifications[:2]
-        warnings.append("Layout fit kept one verified bullet per role and one project")
+        warnings.append("Layout fit kept one verified bullet per role")
         if self._fits_one_page(fitted, profile, guide):
             return fitted, warnings
 
-        fitted.professional_summary = self._shorten(fitted.professional_summary, 320)
+        fitted.projects = fitted.projects[:1]
+        fitted.certifications = fitted.certifications[:2]
+        warnings.append("Layout fit limited projects to the most relevant item")
+        if self._fits_one_page(fitted, profile, guide):
+            return fitted, warnings
+
+        fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 320)
         fitted.experience = fitted.experience[:4]
         fitted.education = fitted.education[:2]
         fitted.certifications = fitted.certifications[:1]
@@ -103,14 +140,16 @@ class PDFGenerator:
         text_units += sum(len(bullet.text) for item in resume.experience for bullet in item.bullets)
         text_units += sum(len(item.description) for item in resume.projects)
         text_units += 80 * (len(resume.experience) + len(resume.education) + len(resume.projects))
-        return text_units <= 3_800 and self._page_count(resume, profile, guide) <= 1
+        text_units += 35 * len(resume.core_skills)
+        text_units += 2 * len(resume.headline)
+        # WeasyPrint reports one page even when a fixed A4 grid clips overflowing content.
+        # Keep a conservative density budget so projects and the fixed GDPR footer remain visible.
+        return text_units <= 2_200 and self._page_count(resume, profile, guide) <= 1
 
     def _photo_data_uri(self) -> str:
-        mime_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
-        for path in sorted(self.data_dir.glob("profile_photo.*")):
-            mime = mime_types.get(path.suffix.lower())
-            if mime and path.is_file() and path.stat().st_size <= 5_000_000:
-                return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+        path = self.photo_store.path
+        if path.is_file() and path.stat().st_size <= self.photo_store.max_bytes:
+            return f"data:image/jpeg;base64,{base64.b64encode(path.read_bytes()).decode()}"
         return ""
 
     @staticmethod
@@ -119,3 +158,10 @@ class PDFGenerator:
             return value
         shortened = value[: limit + 1].rsplit(" ", 1)[0].rstrip(" ,;:.-")
         return f"{shortened}."
+
+    @staticmethod
+    def _shorten_summary(value: str, limit: int) -> str:
+        if len(value) <= limit:
+            return value
+        boundary = max(value.rfind(". ", 0, limit), value.rfind("! ", 0, limit), value.rfind("? ", 0, limit))
+        return value[: boundary + 1].strip() if boundary >= 0 else value

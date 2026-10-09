@@ -116,7 +116,9 @@ Production never falls back to `data/skills.example.json`. For an existing priva
 
 Authenticated users can upload multiple PDF/DOCX files under **Reference CVs**. Files and the generated `data/reference_cvs/index.json` stay inside the ignored private data directory. Ingestion extracts role, summary, skills, experience-bullet examples, and section order. Ollama receives at most two similar references as style-only examples; the verified master profile remains the only permitted source of facts, and Truth Lock still rewrites/removes unsupported output.
 
-PDFs use the deterministic one-page `modern_sidebar` Jinja2/CSS template: navy sidebar, optional private `data/profile_photo.jpg` (also ignored), contacts and skills on the left, content on the right, and a fixed GDPR footer. The page-fit pass shortens bullets first, then removes lower-priority skills, without reducing the base font below 8 pt.
+PDFs use the deterministic one-page `modern_sidebar` Jinja2/CSS template: navy sidebar, optional private `data/profile_photo/profile_photo.jpg` (ignored), contacts and skills on the left, content on the right, and a fixed GDPR footer. The page-fit pass shortens bullets first, then removes lower-priority skills, without reducing the base font below 8 pt.
+
+The **Profile** screen accepts JPG, PNG, or WEBP photos, validates their declared and actual formats, and stores only a normalized 600×600 JPEG under ignored `data/profile_photo/`. Modern Sidebar uses the photo by default when present and always reserves the same circular space; without it, initials are shown. ATS Classic never includes a photo by default. The per-CV setting stores only `photo_enabled` and the template name—never image bytes. DOCX keeps the photo centered at a fixed aspect ratio; because Word does not reproduce the HTML sidebar engine, its layout is a stable editable approximation rather than a pixel-identical copy.
 
 On a Linux VPS, Docker Compose uses host networking so `http://127.0.0.1:11434` refers to the host Ollama service. Uvicorn is explicitly bound to `127.0.0.1:${CV_TAILOR_PORT:-8000}`. Check readiness without sending profile data at `GET /health/provider`.
 

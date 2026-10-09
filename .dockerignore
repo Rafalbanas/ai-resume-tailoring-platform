@@ -10,5 +10,6 @@ data/.auth-*.json
 data/master_profile.json
 data/skills.json
 data/profile_photo.*
+data/profile_photo/
 data/reference_cvs
 data/generated

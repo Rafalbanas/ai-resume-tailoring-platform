@@ -18,6 +18,7 @@ from app.services.n8n_provider import N8NGeminiProvider
 from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
 from app.services.profile_loader import load_master_profile
+from app.services.profile_photo import ProfilePhotoStore
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
 from app.services.storage import Storage
@@ -42,9 +43,12 @@ async def lifespan(app: FastAPI):
     app.state.storage = Storage(settings.data_dir)
     app.state.reference_library = ReferenceCVLibrary(settings.reference_cvs_path, settings.reference_cv_max_bytes)
     app.state.reference_library.refresh()
+    app.state.profile_photo = ProfilePhotoStore(settings.profile_photo_path, settings.profile_photo_max_bytes)
     app.state.job_extractor = JobExtractorService(settings)
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
-    app.state.pdf_generator = PDFGenerator(BASE_DIR / "templates", BASE_DIR / "static", settings.data_dir)
+    app.state.pdf_generator = PDFGenerator(
+        BASE_DIR / "templates", BASE_DIR / "static", settings.data_dir, app.state.profile_photo
+    )
     app.state.docx_generator = generate_docx
     app.state.limiter = FixedWindowLimiter(settings.rate_limit_per_minute)
     providers = {

@@ -15,6 +15,7 @@ from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.fact_validator import FactValidator
+from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 
 router = APIRouter()
@@ -146,13 +147,36 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         result.resume, request.app.state.profile, layout_guide
     )
     warnings = result.warnings + layout_warnings
+    template_name = "modern_sidebar"
+    photo_enabled = request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
-        job, response.analysis, fitted_resume, warnings, layout_guide, draft_id
+        job,
+        response.analysis,
+        fitted_resume,
+        warnings,
+        layout_guide,
+        draft_id,
+        template_name=template_name,
+        photo_enabled=photo_enabled,
+        truth_lock_warnings=result.warnings,
+        layout_warnings=layout_warnings,
     )
     request.app.state.pdf_generator.generate(
-        fitted_resume, request.app.state.profile, folder / "resume.pdf", layout_guide
+        fitted_resume,
+        request.app.state.profile,
+        folder / "resume.pdf",
+        layout_guide,
+        template_name=template_name,
+        photo_enabled=photo_enabled,
     )
-    request.app.state.docx_generator(fitted_resume, request.app.state.profile, folder / "resume.docx")
+    request.app.state.docx_generator(
+        fitted_resume,
+        request.app.state.profile,
+        folder / "resume.docx",
+        photo_path=request.app.state.profile_photo.path,
+        photo_enabled=photo_enabled,
+        template_name=template_name,
+    )
     logger.info(
         "Resume generated",
         extra={
@@ -172,7 +196,11 @@ async def preview(request: Request, slug: str):
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     resume_html = request.app.state.pdf_generator.render_html(
-        resume, request.app.state.profile, metadata.get("layout_guide")
+        resume,
+        request.app.state.profile,
+        metadata.get("layout_guide"),
+        template_name=metadata.get("template_name", "modern_sidebar"),
+        photo_enabled=metadata.get("photo_enabled", request.app.state.profile_photo.exists()),
     )
     return request.app.state.templates.TemplateResponse(
         "resume_preview.html", context(request, slug=slug, metadata=metadata, resume_html=resume_html)
@@ -192,18 +220,49 @@ async def edit_resume(request: Request, slug: str):
     )
 
 
-def _regenerate_artifacts(request: Request, slug: str, job: JobRequest, resume: TailoredResume) -> list[str]:
+def _regenerate_artifacts(
+    request: Request,
+    slug: str,
+    job: JobRequest,
+    resume: TailoredResume,
+    *,
+    template_name: str = "modern_sidebar",
+    photo_enabled: bool = False,
+) -> list[str]:
     result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resume, job)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide
     )
     warnings = result.warnings + layout_warnings
-    folder = request.app.state.storage.save_current_resume(slug, fitted_resume, warnings)
-    request.app.state.pdf_generator.generate(
-        fitted_resume, request.app.state.profile, folder / "resume.pdf", layout_guide
+    photo_enabled = bool(
+        photo_enabled and template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     )
-    request.app.state.docx_generator(fitted_resume, request.app.state.profile, folder / "resume.docx")
+    folder = request.app.state.storage.save_current_resume(
+        slug,
+        fitted_resume,
+        warnings,
+        template_name=template_name,
+        photo_enabled=photo_enabled,
+        truth_lock_warnings=result.warnings,
+        layout_warnings=layout_warnings,
+    )
+    request.app.state.pdf_generator.generate(
+        fitted_resume,
+        request.app.state.profile,
+        folder / "resume.pdf",
+        layout_guide,
+        template_name=template_name,
+        photo_enabled=photo_enabled,
+    )
+    request.app.state.docx_generator(
+        fitted_resume,
+        request.app.state.profile,
+        folder / "resume.docx",
+        photo_path=request.app.state.profile_photo.path,
+        photo_enabled=photo_enabled,
+        template_name=template_name,
+    )
     return warnings
 
 
@@ -223,7 +282,18 @@ async def save_resume_edit(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     try:
         edited = apply_resume_edits(resume, form)
-        _regenerate_artifacts(request, slug, job, edited)
+        template_name = str(form.get("template_name", "modern_sidebar"))
+        if template_name not in {"modern_sidebar", "ats_classic"}:
+            template_name = "modern_sidebar"
+        photo_enabled = form.get("photo_enabled") == "on"
+        _regenerate_artifacts(
+            request,
+            slug,
+            job,
+            edited,
+            template_name=template_name,
+            photo_enabled=photo_enabled,
+        )
     except (OSError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     except ValidationError as exc:
@@ -247,8 +317,15 @@ async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, F
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
     validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
     try:
-        job, _, generated, _ = request.app.state.storage.load_application(slug)
-        _regenerate_artifacts(request, slug, job, generated)
+        job, _, generated, metadata = request.app.state.storage.load_application(slug)
+        _regenerate_artifacts(
+            request,
+            slug,
+            job,
+            generated,
+            template_name=metadata.get("template_name", "modern_sidebar"),
+            photo_enabled=metadata.get("photo_enabled", False),
+        )
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     return RedirectResponse(f"/preview/{slug}", status_code=303)
@@ -447,6 +524,66 @@ async def remove_skill_evidence(request: Request, skill_id: str, index: int, csr
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Evidence not found") from exc
     return RedirectResponse(f"/skills/{skill_id}/evidence", status_code=303)
+
+
+@router.get("/profile", response_class=HTMLResponse)
+async def candidate_profile(request: Request):
+    guard(request)
+    return request.app.state.templates.TemplateResponse(
+        "profile.html", context(request, has_photo=request.app.state.profile_photo.exists())
+    )
+
+
+@router.get("/profile/photo/content")
+async def profile_photo_content(request: Request):
+    guard(request)
+    if not request.app.state.profile_photo.exists():
+        raise HTTPException(status_code=404, detail="Profile photo not found")
+    return FileResponse(
+        request.app.state.profile_photo.path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/profile/photo", response_class=HTMLResponse)
+async def upload_profile_photo(
+    request: Request,
+    photo: Annotated[UploadFile, File()],
+    csrf_token: Annotated[str, Form()],
+    crop_x: Annotated[int, Form()] = 50,
+    crop_y: Annotated[int, Form()] = 50,
+):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    try:
+        content = await photo.read(request.app.state.settings.profile_photo_max_bytes + 1)
+        request.app.state.profile_photo.save(
+            photo.filename or "photo",
+            photo.content_type or "",
+            content,
+            crop_x,
+            crop_y,
+        )
+    except ProfilePhotoError as exc:
+        return request.app.state.templates.TemplateResponse(
+            "profile.html",
+            context(request, has_photo=request.app.state.profile_photo.exists(), error=str(exc)),
+            status_code=422,
+        )
+    finally:
+        await photo.close()
+    return RedirectResponse("/profile", status_code=303)
+
+
+@router.post("/profile/photo/remove")
+async def remove_profile_photo(request: Request, csrf_token: Annotated[str, Form()]):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(csrf_token, request.cookies.get("csrf_token", ""), request.app.state.settings.csrf_secret)
+    request.app.state.profile_photo.remove()
+    return RedirectResponse("/profile", status_code=303)
 
 
 @router.get("/account/password", response_class=HTMLResponse)

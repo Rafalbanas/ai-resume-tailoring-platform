@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ollama_num_predict: int = 8192
     ollama_num_ctx: int = 32768
     reference_cv_max_bytes: int = 10_000_000
+    profile_photo_max_bytes: int = 5_000_000
     max_job_description_chars: int = 30_000
     rate_limit_per_minute: int = 20
     job_fetch_timeout_seconds: float = 12.0
@@ -46,6 +47,10 @@ class Settings(BaseSettings):
     @property
     def reference_cvs_path(self) -> Path:
         return self.data_dir / "reference_cvs"
+
+    @property
+    def profile_photo_path(self) -> Path:
+        return self.data_dir / "profile_photo"
 
 
 @lru_cache

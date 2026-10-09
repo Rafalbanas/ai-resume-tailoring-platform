@@ -1,4 +1,28 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const photoInput = document.getElementById("profile-photo-input");
+  const photoPreview = document.getElementById("photo-preview");
+  const cropX = document.getElementById("crop-x");
+  const cropY = document.getElementById("crop-y");
+  if (photoInput && photoPreview) {
+    const updatePosition = () => {
+      const image = photoPreview.querySelector("img");
+      if (image) image.style.objectPosition = `${cropX.value}% ${cropY.value}%`;
+    };
+    photoInput.addEventListener("change", () => {
+      const file = photoInput.files[0];
+      if (!file) return;
+      photoPreview.innerHTML = "";
+      const image = document.createElement("img");
+      image.alt = "Crop preview";
+      image.src = URL.createObjectURL(file);
+      image.onload = () => URL.revokeObjectURL(image.src);
+      photoPreview.appendChild(image);
+      updatePosition();
+    });
+    cropX.addEventListener("input", updatePosition);
+    cropY.addEventListener("input", updatePosition);
+  }
+
   const form = document.getElementById("job-form");
   if (!form) return;
 

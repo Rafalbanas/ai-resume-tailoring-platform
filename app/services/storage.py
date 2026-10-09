@@ -44,6 +44,10 @@ class Storage:
         warnings: list[str],
         layout_guide: dict | None = None,
         draft_id: str | None = None,
+        template_name: str = "modern_sidebar",
+        photo_enabled: bool = False,
+        truth_lock_warnings: list[str] | None = None,
+        layout_warnings: list[str] | None = None,
     ) -> tuple[str, Path]:
         date = datetime.now(timezone.utc).date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
@@ -68,8 +72,12 @@ class Storage:
             "recommendation": analysis.recommendation,
             "warnings": warnings,
             "generation_warnings": warnings,
+            "truth_lock_warnings": truth_lock_warnings if truth_lock_warnings is not None else warnings,
+            "layout_warnings": layout_warnings or [],
             "layout_guide": layout_guide or {},
             "draft_id": draft_id,
+            "template_name": template_name,
+            "photo_enabled": bool(photo_enabled),
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
@@ -102,12 +110,30 @@ class Storage:
             )
         return job, resume, generated, metadata
 
-    def save_current_resume(self, slug: str, resume: TailoredResume, warnings: list[str]) -> Path:
+    def save_current_resume(
+        self,
+        slug: str,
+        resume: TailoredResume,
+        warnings: list[str],
+        *,
+        template_name: str | None = None,
+        photo_enabled: bool | None = None,
+        truth_lock_warnings: list[str] | None = None,
+        layout_warnings: list[str] | None = None,
+    ) -> Path:
         folder = self.application_folder(slug)
         (folder / "resume.json").write_text(resume.model_dump_json(indent=2), encoding="utf-8")
         metadata_path = folder / "metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["warnings"] = warnings
+        if truth_lock_warnings is not None:
+            metadata["truth_lock_warnings"] = truth_lock_warnings
+        if layout_warnings is not None:
+            metadata["layout_warnings"] = layout_warnings
+        if template_name is not None:
+            metadata["template_name"] = template_name
+        if photo_enabled is not None:
+            metadata["photo_enabled"] = bool(photo_enabled)
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return folder
 

@@ -8,7 +8,15 @@ from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
 
 
-def generate_docx(resume: TailoredResume, profile: CandidateProfile, output: Path) -> None:
+def generate_docx(
+    resume: TailoredResume,
+    profile: CandidateProfile,
+    output: Path,
+    *,
+    photo_path: Path | None = None,
+    photo_enabled: bool = False,
+    template_name: str = "modern_sidebar",
+) -> None:
     if not profile.personal.name.strip():
         raise ValueError("Candidate name is missing from the active master profile.")
     document = Document()
@@ -18,6 +26,10 @@ def generate_docx(resume: TailoredResume, profile: CandidateProfile, output: Pat
     styles = document.styles
     styles["Normal"].font.name = "Arial"
     styles["Normal"].font.size = Pt(9.5)
+    if photo_enabled and template_name == "modern_sidebar" and photo_path and photo_path.is_file():
+        photo = document.add_paragraph()
+        photo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        photo.add_run().add_picture(str(photo_path), width=Inches(1.15), height=Inches(1.15))
     title = document.add_heading(profile.personal.name, level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     contact = " · ".join(

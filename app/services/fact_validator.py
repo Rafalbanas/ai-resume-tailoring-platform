@@ -1,3 +1,4 @@
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -11,7 +12,7 @@ from app.models.resume import (
     ResumeProject,
     TailoredResume,
 )
-from app.services.fact_catalog import FactCatalog
+from app.services.fact_catalog import FactCatalog, normalized_tokens
 from app.services.skills_bank import SkillsBank
 
 
@@ -80,18 +81,23 @@ class FactValidator:
                 clean_skills = relevant or list(dict.fromkeys(allowed_skills.values()))[:10]
             draft.core_skills = clean_skills[:18]
 
+        verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)
+        if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
+            warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
+        draft.headline = verified_headline
+
         summary_entries = self.catalog.valid(draft.summary_source_fact_ids, kind="summary")[:4]
         if not summary_entries:
             summary_entries = [entry for entry in self.catalog.prompt_entries if entry.kind == "summary"][:3]
         summary_ids = [entry.source_id for entry in summary_entries]
-        if not self.catalog.supports_paraphrase(draft.professional_summary, summary_ids):
+        summary_supported = self.catalog.supports_paraphrase(draft.professional_summary, summary_ids)
+        summary_complete = self._is_complete_summary(draft.professional_summary)
+        if not summary_supported or not summary_complete:
             if draft.professional_summary:
-                warnings.append("Unsupported AI summary content was replaced with source facts")
-            draft.professional_summary = " ".join(entry.text for entry in summary_entries)
+                reason = "unsupported" if not summary_supported else "truncated or incomplete"
+                warnings.append(f"The {reason} professional summary was replaced with source facts")
+            draft.professional_summary = " ".join(self._complete_sentence(entry.text) for entry in summary_entries)
         draft.summary_source_fact_ids = summary_ids
-        if not draft.headline.strip() or "candidate name" in draft.headline.casefold():
-            draft.headline = job.role
-
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
             bullets = []
@@ -159,34 +165,41 @@ class FactValidator:
                 if project.description:
                     warnings.append(f"Unsupported AI project content replaced: {project.name}")
                 project.description = " ".join(entry.text for entry in entries)
-            project.technologies = [
+            verified_technologies = [
                 allowed_skills[skill_key(tech)] for tech in source.technologies if skill_key(tech) in allowed_skills
             ]
+            if project.technologies and {
+                skill_key(value) for value in project.technologies
+            } - {skill_key(value) for value in verified_technologies}:
+                warnings.append(f"Unsupported project technologies removed: {project.name}")
+            project.technologies = verified_technologies
             project.source_fact_ids = valid_ids
             clean_projects.append(project)
-        if not clean_projects:
-            for index, source in enumerate(self.profile.projects[:2]):
-                entries = [
-                    entry
-                    for entry in self.catalog.prompt_entries
-                    if entry.kind == "project" and entry.owner_index == index
-                ]
-                content = next((entry for entry in entries if ":description:" in entry.source_id), None)
-                content = content or next(iter(entries), None)
-                if content:
-                    clean_projects.append(
-                        ResumeProject(
-                            name=source.name,
-                            description=content.text,
-                            technologies=[
-                                allowed_skills[skill_key(tech)]
-                                for tech in source.technologies
-                                if skill_key(tech) in allowed_skills
-                            ],
-                            source_fact_ids=[content.source_id],
-                        )
+        selected_project_names = {project.name.casefold() for project in clean_projects}
+        for index, source in enumerate(self.profile.projects):
+            if source.name.casefold() in selected_project_names:
+                continue
+            entries = [
+                entry
+                for entry in self.catalog.prompt_entries
+                if entry.kind == "project" and entry.owner_index == index
+            ]
+            content = next((entry for entry in entries if ":description:" in entry.source_id), None)
+            content = content or next(iter(entries), None)
+            if content:
+                clean_projects.append(
+                    ResumeProject(
+                        name=source.name,
+                        description=content.text,
+                        technologies=[
+                            allowed_skills[skill_key(tech)]
+                            for tech in source.technologies
+                            if skill_key(tech) in allowed_skills
+                        ],
+                        source_fact_ids=[content.source_id],
                     )
-        draft.projects = clean_projects[:2]
+                )
+        draft.projects = self._rank_projects(clean_projects, job)[:2]
 
         clean_education = []
         education_lookup = {
@@ -246,3 +259,75 @@ class FactValidator:
             clean_certs.append(ResumeCertification(**cert_lookup[cert.name.casefold()].model_dump()))
         draft.certifications = clean_certs
         return ValidationResult(resume=draft, warnings=warnings)
+
+    def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
+        capabilities: list[str] = []
+        if self.skills_bank:
+            for skill_id in selected_ids:
+                skill = self.skills_bank.get(skill_id)
+                if skill and self.skills_bank.eligible(skill) and skill.name not in capabilities:
+                    capabilities.append(skill.name)
+        else:
+            allowed = {value.casefold(): value for values in self.profile.skills.values() for value in values}
+            for value in core_skills:
+                canonical = allowed.get(value.casefold())
+                if canonical and canonical not in capabilities:
+                    capabilities.append(canonical)
+        parts = [role.strip()]
+        for capability in capabilities[:4]:
+            candidate = " | ".join([*parts, capability])
+            if len(candidate) > 85 and len(parts) >= 4:
+                break
+            parts.append(capability)
+        return " | ".join(parts)[:140]
+
+    @staticmethod
+    def _is_complete_summary(value: str) -> bool:
+        text = value.strip()
+        if not text or text[-1] not in ".!?" or text.count("(") != text.count(")"):
+            return False
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+        if any(len(re.findall(r"[\w'-]+", sentence)) < 4 for sentence in sentences):
+            return False
+        hanging = re.compile(r"\b(?:and|or|including|such as|cross-tier|cross-functional)[.!?]$", re.I)
+        return not any(hanging.search(sentence) for sentence in sentences)
+
+    @staticmethod
+    def _complete_sentence(value: str) -> str:
+        text = value.strip()
+        return text if not text or text[-1] in ".!?" else f"{text}."
+
+    def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
+        job_tokens = normalized_tokens(f"{job.role} {job.job_description}")
+        role_tokens = normalized_tokens(job.role)
+        generic = {
+            "built",
+            "control",
+            "data",
+            "hands",
+            "human",
+            "job",
+            "large",
+            "pipeline",
+            "project",
+            "review",
+            "services",
+            "source",
+            "that",
+            "using",
+            "workflows",
+        }
+        profile_projects = {project.name.casefold(): project for project in self.profile.projects}
+
+        def score(project: ResumeProject) -> tuple[int, str]:
+            source = profile_projects.get(project.name.casefold())
+            technologies = source.technologies if source else project.technologies
+            facts = source.facts if source else [project.description]
+            identity_tokens = normalized_tokens(f"{project.name} {' '.join(technologies)}")
+            fact_tokens = normalized_tokens(" ".join(facts)) - generic
+            relevance = 6 * len(role_tokens & identity_tokens)
+            relevance += 4 * len(job_tokens & identity_tokens)
+            relevance += len(job_tokens & fact_tokens)
+            return relevance, project.name
+
+        return sorted(projects, key=score, reverse=True)

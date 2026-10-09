@@ -1,7 +1,8 @@
-<article class="resume-document modern-sidebar">
+<article class="resume-document {{ template_name|replace('_', '-') }}">
+  {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">
     <div class="portrait">
-      {% if photo_data_uri %}<img src="{{ photo_data_uri }}" alt="">{% else %}<span>{{ personal.name[:1] or 'C' }}</span>{% endif %}
+      {% if photo_enabled and photo_data_uri %}<img src="{{ photo_data_uri }}" alt="Profile photo">{% else %}<span>{{ initials }}</span>{% endif %}
     </div>
     <section class="sidebar-section contact-block">
       <h2>Contact</h2>
@@ -9,9 +10,11 @@
     </section>
     {% if resume.core_skills %}<section class="sidebar-section"><h2>Skills</h2><ul class="skill-list">{% for skill in resume.core_skills %}<li>{{ skill }}</li>{% endfor %}</ul></section>{% endif %}
   </aside>
+  {% endif %}
   <main class="resume-main">
-    <header><p class="candidate-name">{{ personal.name }}</p><h1>{{ resume.headline }}</h1></header>
+    <header><p class="candidate-name">{{ personal.name }}</p><h1>{{ resume.headline }}</h1>{% if template_name == 'ats_classic' %}<p class="ats-contact">{{ [personal.location, personal.email, personal.phone, personal.linkedin, personal.website, personal.github]|select|join(' · ') }}</p>{% endif %}</header>
     <div class="main-sections">
+      {% if template_name == 'ats_classic' and resume.core_skills %}<section><h2>Core Skills</h2><p>{{ resume.core_skills|join(' · ') }}</p></section>{% endif %}
       {% for section_name in section_order %}
         {% if section_name == 'summary' and resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
         {% if section_name == 'experience' and resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} · {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}

@@ -174,6 +174,8 @@ Use a qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or S
         return await self._chat(
             TailoredResume,
             """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
+Set headline to the target role only. Python will deterministically append verified skills; never add technologies,
+capabilities, requirements, or marketing wording to headline.
 Every summary must reference summary source IDs. Every experience bullet must reference experience source IDs.
 Every project must reference project source IDs and every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.

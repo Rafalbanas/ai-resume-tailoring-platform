@@ -117,7 +117,7 @@ class MockAIProvider(AIProvider):
             [skill.id for skill in bank_matches], f"{job.role}\n{job.job_description}"
         ) if self.skills_bank else []
         resume = TailoredResume(
-            headline=f"{job.role} | {' • '.join(matches[:3] or all_skills[:3])}",
+            headline=job.role,
             professional_summary=" ".join(profile.summary_facts[:3]),
             summary_source_fact_ids=summary_ids,
             core_skills=[self.skills_bank.wording(skill) for skill in selected] if self.skills_bank else (
