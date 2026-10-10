@@ -15,16 +15,16 @@
   <div class="form-grid provider-grid">
     <label>AI Engine
       <select id="llm_provider" name="llm_provider" class="provider-select">
-        <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto (Ollama primary with Gemini fallback)</option>
-        <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama (Local Qwen 8B via tunnel)</option>
-        <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini (gemini-2.5-flash)</option>
+        <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto ({{ engine_primary }}; fallback: {{ engine_fallback }})</option>
+        <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama ({{ ollama_model }})</option>
+        <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini ({{ gemini_model }})</option>
       </select>
-      <small class="field-hint">Automatic fallback recovers instantly if one provider is unreachable.</small>
+      <small class="field-hint">Gemini 3.1 Flash-Lite to ekonomiczny model do analizy ofert i dopasowywania CV. Przesyła profil i ofertę do chmury Google.</small>
     </label>
     <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ job_description or '' }}</textarea></label>
-  <div class="form-foot"><span>Private inference with Truth Lock guardrails. <a href="/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
+  <div class="form-foot"><span>Source-constrained analysis and CV drafts. <a href="/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
 </form>
 {% endblock %}

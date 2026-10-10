@@ -47,6 +47,7 @@
         <div>
           <span class="provider-pill {{ provider_key }}">{{ provider_key|upper }}</span>
           <h3>{{ res.model|default(provider_key) }}</h3>
+          {% if provider_key == 'gemini' %}<small class="provider-sub">Ekonomiczny model do analizy ofert i dopasowywania CV.</small>{% endif %}
         </div>
         {% if res and res.ok %}
         <span class="latency-badge">{{ res.duration_ms }} ms</span>
@@ -59,8 +60,13 @@
       <div class="compare-section">
         <div class="score score-{{ res.analysis.match_level|lower }}">
           <small>Match</small>
-          <strong>{{ res.analysis.match_level }}</strong>
-          <span>{{ res.analysis.recommendation.replace('_', ' ') }}</span>
+          {% if res.analysis.match_level == 'UNRELIABLE' or res.analysis.recommendation == 'RETRY' %}
+            <strong class="score-unreliable">Analiza niewiarygodna</strong>
+            <span>Wymaga ponowienia</span>
+          {% else %}
+            <strong>{{ res.analysis.match_level }}</strong>
+            <span>{{ res.analysis.recommendation.replace('_', ' ') }}</span>
+          {% endif %}
         </div>
         <p class="reasoning-snippet"><em>{{ res.analysis.reasoning_summary }}</em></p>
       </div>
@@ -86,6 +92,37 @@
           {% endfor %}
         </div>
       </div>
+
+      {% if res.analysis.requirements %}
+      <div class="compare-section">
+        <h4>Wymagania i dowody ({{ res.analysis.requirements|length }})</h4>
+        <div class="requirements-table">
+          {% for req in res.analysis.requirements %}
+          <div class="requirement-row req-status-{{ req.status }}">
+            <div class="req-header">
+              <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
+              <span class="badge status-badge status-{{ req.status }}">{{ req.status|upper }}</span>
+              <strong>{{ req.name }}</strong>
+            </div>
+            {% if req.source_quote %}
+            <div class="req-quote">
+              <small><em>„{{ req.source_quote }}”</em></small>
+            </div>
+            {% endif %}
+            {% if req.evidence %}
+            <div class="req-evidence">
+              <small><strong>Dowód:</strong> {{ req.evidence|join('; ') }}</small>
+            </div>
+            {% elif req.reason %}
+            <div class="req-reason">
+              <small>{{ req.reason }}</small>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
       <div class="compare-section">
         <h4>Headline</h4>

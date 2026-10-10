@@ -27,6 +27,7 @@
       </div>
       <p class="health-detail">
         {% if info.model %}Model: <code>{{ info.model }}</code><br>{% endif %}
+        {% if name == 'gemini' %}<small class="provider-sub">Ekonomiczny model do analizy ofert i dopasowywania CV.</small><br>{% endif %}
         {% if info.error %}<span class="error-text">{{ info.error }}</span>{% endif %}
       </p>
     </div>

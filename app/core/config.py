@@ -25,19 +25,20 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:9b"
     ollama_connect_timeout_seconds: float = 10.0
-    ollama_read_timeout_seconds: float = 180.0
-    ollama_timeout_seconds: float = 180.0
+    ollama_read_timeout_seconds: float = 540.0
+    ollama_timeout_seconds: float = 540.0
     ollama_keep_alive: str = "15m"
+    ollama_max_concurrency: int = 1
     ollama_num_predict: int = 8192
     ollama_num_ctx: int = 32768
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
-    gemini_connect_timeout_seconds: float = 10.0
+    gemini_connect_timeout_seconds: float = 15.0
     gemini_read_timeout_seconds: float = 60.0
     gemini_timeout_seconds: float = 60.0
-    gemini_max_retries: int = 1
-    llm_operation_budget_seconds: float = 300.0
+    gemini_max_retries: int = 0
+    llm_operation_budget_seconds: float = 720.0
     reference_cv_max_bytes: int = 10_000_000
     profile_photo_max_bytes: int = 10_000_000
     max_job_description_chars: int = 30_000
@@ -70,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def profile_photo_path(self) -> Path:
         return self.data_dir / "profile_photo"
+
+    @property
+    def tasks_path(self) -> Path:
+        return self.data_dir / "tasks"
 
 
 @lru_cache

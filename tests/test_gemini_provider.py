@@ -83,7 +83,7 @@ def gemini_response_envelope(data: dict) -> dict:
 def gemini_provider(
     transport: httpx.AsyncBaseTransport,
     api_key: str = "test-gemini-key",
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-3.1-flash-lite",
     max_retries: int = 1,
 ) -> GeminiProvider:
     settings = Settings(
@@ -123,7 +123,7 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
     result = await provider.tailor(job(), profile_model)
 
     assert result.provider_used == "gemini"
-    assert result.model_used == "gemini-2.5-flash"
+    assert result.model_used == "gemini-3.1-flash-lite"
     assert result.analysis.strong_matches == ["Python", "Linux"]
     assert result.resume.core_skills == ["Python", "Linux"]
     assert len(requests) == 2
@@ -136,6 +136,7 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
         assert "generationConfig" in body
         assert body["generationConfig"]["responseMimeType"] == "application/json"
         assert "$defs" not in body["generationConfig"]["responseSchema"]
+        assert body["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "minimal"}
 
 
 @pytest.mark.asyncio
@@ -222,9 +223,9 @@ async def test_gemini_health_check():
     # Healthy
     async def ok_handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("x-goog-api-key") == "test-key"
-        return httpx.Response(200, json={"name": "models/gemini-2.5-flash"})
+        return httpx.Response(200, json={"name": "models/gemini-3.1-flash-lite"})
 
     conf_provider = gemini_provider(httpx.MockTransport(ok_handler), api_key="test-key")
     health = await conf_provider.health()
     assert health["status"] == "ok"
-    assert health["model"] == "gemini-2.5-flash"
+    assert health["model"] == "gemini-3.1-flash-lite"
