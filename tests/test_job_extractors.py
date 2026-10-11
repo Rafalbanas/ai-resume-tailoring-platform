@@ -171,10 +171,30 @@ async def test_nofluff_polish_support_offer_with_nested_marketing_recommendation
         "B2+",
         "Identify recurring issues and trends",  # Last task, hidden in the initial page UI.
         "front-line technical partner",
+        "Competitive Compensation: Attractive salary and benefits package.",
+        "Take the next step in your career",
     ):
         assert expected in result.job_description
     for noise in ("Salesforce Marketing Cloud", "Similar offer", "Opis oferty", "Oryginalny tekst."):
         assert noise not in result.job_description
+
+
+@pytest.mark.parametrize("phrase", ["benefits", "job details", "what you get in return", "offer valid until"])
+def test_nofluff_noise_markers_inside_offer_sentences_do_not_truncate_source(phrase):
+    from app.services.job_extractors.nofluff import NoFluffExtractor
+
+    html = f"""<main><h1>Support Engineer</h1><section id="posting-description">
+    <h2>Offer description</h2>
+    <p>Investigate customer incidents using logs, API requests and SQL queries.</p>
+    <p>Discuss {phrase} with our team during the interview.</p>
+    <p>Maintain documentation and improve support tooling.</p>
+    <h3>Benefits</h3><ul><li>Private medical coverage</li></ul></section></main>"""
+
+    result = NoFluffExtractor().extract(html)
+
+    assert f"Discuss {phrase} with our team during the interview." in result.job_description
+    assert result.job_description.endswith("Maintain documentation and improve support tooling.")
+    assert "Private medical coverage" not in result.job_description
 
 
 @pytest.mark.asyncio

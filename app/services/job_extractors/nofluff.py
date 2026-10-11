@@ -182,12 +182,6 @@ class NoFluffExtractor(BaseExtractor):
     def _section_text(node: Tag | None, heading_aliases: tuple[str, ...], stop_at_noise: bool) -> str:
         if node is None:
             return ""
-        if stop_at_noise:
-            markup = str(node)
-            folded_markup = markup.casefold()
-            positions = [folded_markup.find(marker) for marker in STOP_MARKERS if folded_markup.find(marker) >= 0]
-            if positions:
-                node = BeautifulSoup(markup[: min(positions)], "html.parser")
         heading_values = {value.casefold() for value in heading_aliases}
         lines = []
         values = NoFluffExtractor._block_texts(node) or normalized_text(node).splitlines()
