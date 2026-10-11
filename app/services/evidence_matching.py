@@ -17,7 +17,7 @@ FAMILIES = {
     'javascript': r'\b(?:javascript|vanilla js|client-side javascript|js)\b',
     'typescript': r'\btypescript\b',
     'ai_tools': r'\b(?:ai[- ](?:assisted|supported|powered)|ai coding|codex|coding assistants?|ai[- ]assisted tools)\b',
-    'troubleshooting': r'\b(?:troubleshoot\w*|problem solving|technical diagnostics?|technical incidents?)\b',
+    'troubleshooting': r'\b(?:troublesho(?:ot\w*|t)|problem solving|technical diagnostics?|technical incidents?)\b',
     'support': r'\b(?:technical|it|application|product|user|l[12]|tier [12]) support\b',
     'incident': r'\bincident (?:handling|management|investigation)\b',
     'documentation': r'\b(?:technical documentation|runbooks?|knowledge base|support documentation)\b',
@@ -25,8 +25,8 @@ FAMILIES = {
 }
 NEGATIVE = re.compile(r'\b(?:no (?:prior )?(?:experience|knowledge)|never (?:used|worked with)|have not used|not proficient)\b', re.I)
 SQL_ADVANCED = re.compile(r'\b(?:dba|database administration|cluster\w*|replication|performance tuning|query optimi[sz]ation)\b', re.I)
-API_DEBUG = re.compile(r'\b(?:debug\w*|troubleshoot\w*|oauth|authentication flows?|auth)\b', re.I)
-LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|advanced|expert|fluency|fluent|basic|working knowledge|hands.on)\b\+?', re.I)
+API_DEBUG = re.compile(r'\b(?:debug\w*|troublesho(?:ot\w*|t)|oauth|authentication flows?|auth)\b', re.I)
+LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|solid|advanced|expert|fluency|fluent|basic|working knowledge|hands.on)\b\+?', re.I)
 YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat)\b', re.I)
 
 
@@ -122,10 +122,10 @@ class EvidenceMatcher:
         return EvidenceMatch(status, entries, reason, observed)
 
     def _qualified(self, name, entries, complete, reason):
-        if re.search(r'\b(?:advanced|expert|strong|independen\w*|autonom\w*)\b', name, re.I):
+        if re.search(r'\b(?:solid|advanced|expert|strong|independen\w*|autonom\w*)\b', name, re.I):
             # Every level/scope modifier must have evidence; a hands-on skill is
             # not advanced proficiency and experience is not proof of autonomy.
-            for condition in re.findall(r'\b(?:advanced|expert|strong|independen\w*|autonom\w*)\b', name, re.I):
+            for condition in re.findall(r'\b(?:solid|advanced|expert|strong|independen\w*|autonom\w*)\b', name, re.I):
                 declared_advanced = condition.casefold() == 'advanced' and self.bank and any(
                     s.level == 'advanced' and self.bank.eligible(s) and self.bank.mentioned(s, name)
                     for s in self.bank.skills)
@@ -175,10 +175,21 @@ class EvidenceMatcher:
         if minimum is None:
             return None
         support_role = bool(re.search(r'technical support|product support|customer.facing technical|software development', name, re.I))
-        intervals, entries = [], []
+        systems_role = bool(re.search(r'system(?:s)? engineer(?:ing)?|system(?:s)? administrat|infrastructure', name, re.I))
+        similar_role = bool(re.search(r'similar|related|equivalent', name, re.I))
+        intervals, entries, periods = [], [], []
         for index, exp in enumerate(self.catalog.profile.experience):
             facts = [e for e in self.entries if e.kind == 'experience' and e.owner_index == index and not NEGATIVE.search(e.text)]
-            if support_role:
+            if systems_role:
+                core = r'(?:deploy|configur|administ|maintain|manag)\w*.*(?:windows server|vmware|esxi|active directory|infrastructure|linux|servers?)'
+                related = r'(?:support|troubleshoot)\w*.*(?:windows|active directory|dns|dhcp|vpn|network|connectivity)|(?:network|vpn).*operations'
+                relevant = [e for e in facts if re.search(core, e.text, re.I) or (similar_role and re.search(related, e.text, re.I))]
+                # Named platform scopes constrain tenure too; on-prem VMware
+                # must never establish years of Azure/AWS engineering.
+                platforms = [v for v in ('Azure', 'AWS', 'Entra ID') if re.search(r'\b' + v + r'\b', name, re.I)]
+                if platforms:
+                    relevant = [e for e in relevant if all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in platforms)]
+            elif support_role:
                 relevant = [e for e in facts if re.search(r'\b(?:technical|it|user|product|application|l[12]|tier [12]) support\b|(?:support.*(?:users?|applications?|windows|partners?)|(?:developed|built|implemented).*software)', e.text, re.I)]
                 scopes = [v for v in ('SaaS', 'TypeScript', 'SAP', 'Kubernetes', 'Azure') if re.search(r'\b' + v + r'\b', name, re.I)]
                 if scopes:
@@ -190,6 +201,8 @@ class EvidenceMatcher:
             start, end = _month(exp.start, end=False, as_of=self.as_of), _month(exp.end, end=True, as_of=self.as_of)
             if relevant and start and end and start < min(end, self.as_of):
                 intervals.append((start, min(end, self.as_of)))
+                scope = 'systems administration/infrastructure' if systems_role and any(re.search(core, e.text, re.I) for e in relevant) else 'related Windows/network technical troubleshooting' if systems_role else 'relevant duties'
+                periods.append(f'{exp.company}: {exp.start} – {exp.end} ({scope})')
         merged = []
         for start, end in sorted(intervals):
             if merged and start <= merged[-1][1]:
@@ -198,7 +211,58 @@ class EvidenceMatcher:
                 merged.append((start, end))
         observed = sum((end - start).days for start, end in merged) / 365.2425
         reason = f'Dated, relevant employment facts support {observed:.2f} years against minimum {minimum:g}; overlapping periods are counted once. Titles and undated project work are not counted.'
+        reason += ' Gaps are excluded; historical end months are inclusive and Present is capped at the evaluation date. Counted periods: ' + '; '.join(periods)
         return self._result(entries, observed >= minimum, reason, observed=round(observed, 2))
+
+    def _systems(self, name):
+        if re.search(r'microsoft server.*client|windows server.*client', name, re.I):
+            servers = self._find(r'windows server', practical=True)
+            clients = self._find(r'windows (?:10|11|clients?)', practical=True)
+            return self._qualified(name, servers + clients, bool(servers and clients),
+                'Windows Server deployment/configuration and Windows client support establish practice in both Microsoft environments; proficiency is assessed separately.')
+        if re.search(r'active directory|\bA\s+D\b|entra id|\bAD\b', name, re.I) and re.search(r'\b(?:DNS|DHCP|GPO)\b', name, re.I):
+            scopes = {'Active Directory': r'active directory|\bAD\b', 'Entra ID': r'entra id',
+                      'DNS': r'\bDNS\b', 'DHCP': r'\bDHCP\b', 'GPO': r'\bGPO\b|group polic(?:y|ies)'}
+            selected = [key for key, pattern in scopes.items() if re.search(pattern, name, re.I) or (key == 'Active Directory' and re.search(r'\bA\s+D\b', name))]
+            matches = {key: self._find(scopes[key], practical=True) for key in selected}
+            missing = [key for key in selected if not matches[key]]
+            return self._qualified(name, [e for values in matches.values() for e in values], not missing,
+                'Each directory/network scope is checked separately. Needs confirmation: ' + ', '.join(missing) + '. AD does not establish Entra ID or GPO; a slash between different products needs review.')
+        if re.search(r'\bpowershell\b', name, re.I):
+            entries = self._find(r'\bpowershell\b')
+            automation = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id and re.search(r'automat\w*|script\w*', e.text, re.I)]
+            needs_practice = bool(re.search(r'script\w*|automat\w*', name, re.I))
+            return self._qualified(name, automation or entries, bool(automation) if needs_practice else bool(entries),
+                'Documented PowerShell operational automation supports scripting familiarity; advanced engineering and independent ownership are not inferred.')
+        return None
+
+    def _security(self, name):
+        facets = {
+            'endpoint protection': r'endpoint protection|antivirus|anti.malware|microsoft defender|edr',
+            'access management': r'access management|(?:administ|manag)\w*.*(?:access|permissions)',
+            'security policies / GPO': r'group polic(?:y|ies)|\bgpo\b|security policies',
+            'patch management': r'patch (?:management|deployment)|(?:deploy|manage|install)\w*.*(?:security patches|security updates)',
+            'security monitoring': r'security monitoring|security (?:logs|alerts)|siem|compliance monitoring',
+            'VPN': r'\bvpn\b',
+            'MFA': r'\bmfa\b|multi.factor authentication',
+            'identity security': r'identity security|conditional access|identity protection',
+            'compliance': r'\bcompliance\b',
+        }
+        general = bool(re.search(r'IT security|security practices', name, re.I))
+        requested = [key for key, pattern in facets.items() if re.search(pattern, name, re.I) or key.casefold() in name.casefold()]
+        if not general and not requested:
+            return None
+        if general and re.search(r'\bmonitoring\b', name, re.I) and 'security monitoring' not in requested:
+            requested.append('security monitoring')
+        matches = {key: [e for e in self._find(facets[key], practical=True) if ':technology:' not in e.source_id] for key in facets}
+        selected = requested or list(facets)
+        evidenced = [e for key in selected for e in matches[key]]
+        # Adjacent security practice can justify PARTIAL, never all missing facets.
+        related = [e for key in facets for e in matches[key]] if general else []
+        missing = [key for key in selected if not matches[key]]
+        complete = bool(requested) and not missing
+        reason = 'Security practices are verified per scope. Documented: ' + ', '.join(key for key in facets if matches[key]) + '. Needs confirmation: ' + ', '.join(missing) + '. Application logs do not prove security monitoring; access/VPN work does not prove endpoint protection, MFA or compliance.'
+        return self._qualified(name, evidenced or related, complete, reason)
 
     def match(self, name: str, *, alternatives: list[str] | None = None, operator='single') -> EvidenceMatch | None:
         if alternatives:
@@ -225,6 +289,10 @@ class EvidenceMatcher:
         language = self._language(name)
         if language is not None:
             return language
+        for matcher in (self._systems, self._security):
+            scoped = matcher(name)
+            if scoped is not None:
+                return scoped
         key = family(name)
         entries = self._find(FAMILIES[key]) if key else []
         practical = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
@@ -245,7 +313,7 @@ class EvidenceMatcher:
         if key == 'api':
             integration = [e for e in practical if re.search(r'integrat\w*|httpx|requests?|endpoints?', e.text, re.I)]
             if API_DEBUG.search(name):
-                debugging = [e for e in integration if re.search(r'debug\w*|troubleshoot\w*', e.text, re.I)]
+                debugging = [e for e in integration if re.search(r'debug\w*|troublesho(?:ot\w*|t)', e.text, re.I)]
                 scope = [term for term in ('requests', 'responses', 'auth', 'payloads', 'status codes', 'OAuth', 'production') if re.search(r'\b' + term + r'\b', name, re.I)]
                 complete = bool(debugging) and all(any(re.search(r'\b' + term + r'\b', e.text, re.I) for e in debugging) for term in scope)
                 return self._qualified(name, debugging or integration or entries, complete, 'API integration is evidenced; API debugging requires evidence of debugging and each listed scope (auth, payloads, status codes, production).')
@@ -282,7 +350,7 @@ class EvidenceMatcher:
             if key == 'support':
                 entries = self._find(r'(?:support\w*.*(?:users?|partners?|application|windows|technical)|(?:technical|it|application|user|l[12]|tier [12]) support)', practical=True)
             if key == 'troubleshooting':
-                entries = self._find(r'troubleshoot\w*|investigat\w*.*incidents?|resolv\w*.*(?:incidents?|issues?|problems?)', practical=True)
+                entries = self._find(r'troublesho(?:ot\w*|t)|investigat\w*.*incidents?|resolv\w*.*(?:incidents?|issues?|problems?)', practical=True)
                 scopes = [v for v in ('network', 'Windows', 'Linux', 'application') if re.search(r'\b' + v + r'\b', name, re.I)]
                 if scopes and not all(any(re.search(r'\b' + v + r'\b', e.text, re.I) for e in entries) for v in scopes):
                     return self._result(entries, False, 'General troubleshooting evidence does not establish every named system or network scope.')

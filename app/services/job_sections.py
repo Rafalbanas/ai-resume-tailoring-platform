@@ -29,6 +29,8 @@ REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|experience|knowled
 ORGANIZATION_SIGNAL = re.compile(r'\b(?:global leader|our (?:company|team|division)|we (?:believe|build|offer)|join (?:our|a) team)\b', re.I)
 INSTRUCTION = re.compile(r'ignore.*instructions|system prompt|you are chatgpt|return.*json|mark.*(?:strong|apply)|reveal.*(?:secret|key)', re.I)
 LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|advanced|expert|fluent|fluency|basic|working knowledge|hands.on)\b\+?', re.I)
+PREFERENCE_MARKER = re.compile(r'\b(?:preferred|preferably|nice.to.have|big plus|(?:is |are |would be )a plus|(?:considered (?:an? )?)?advantage|considered an asset|optional)\b', re.I)
+
 TECH_LIST = r'(?:JavaScript|TypeScript|Python|PowerShell|Bash|SQL|T-SQL|Linux|Windows|Mac|Docker|Kubernetes|Azure|AWS|Terraform|Java|C\+\+|C#)'
 
 
@@ -48,9 +50,10 @@ def requirement_units(line: str, category: str, section: str, group: str) -> lis
         # Keep optional detail in the quote, not as a mandatory constraint.
         return [SourceUnit(line[:optional.start()].strip(), line, category,
                            f'{category.title()} section: {section}; the preferably clause is optional', section, group)]
-    if category == 'preferred':
+    if category in {'preferred', 'nice_to_have'}:
         line = re.sub(r'^(?:preferred|optional)\s+', '', line, flags=re.I)
-        line = re.sub(r'\s*(?:\(?nice.to.have\)?|\(?optional\)?|\(?preferred\)?|is a plus)\s*\.?$', '', line, flags=re.I).strip()
+        line = re.sub(r'\s*\(\s*(?:nice.to.have|optional|preferred|big plus|(?:is )?(?:considered (?:an? )?)?advantage)\s*\)\s*[.;]?$', '', line, flags=re.I)
+        line = re.sub(r'\s*(?:nice.to.have|optional|preferred|big plus|(?:is |are |would be )a plus|(?:is )?(?:considered (?:an? )?)?advantage|considered an asset)\s*[.;]?$', '', line, flags=re.I).strip(' .;')
     prefix = r'(?:(?:experience|knowledge|working knowledge)\s+(?:with|in|of)\s+)?'
     pure_and = re.fullmatch(rf'({prefix})({TECH_LIST})\s+and\s+({TECH_LIST}|[A-Za-z][A-Za-z0-9+#-]*)[.]?', line, re.I)
     if pure_and:
@@ -90,7 +93,7 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
         text = text[:tag_block.start()] + text[tag_block.start():].replace('MUST HAVE', 'PORTAL TECHNOLOGY TAGS', 1)
     units, section, category, recognized = [], '', None, ['MUST HAVE'] if legacy_tags else []
     for raw in text.splitlines():
-        line = raw.strip().strip('•*- ').strip()
+        line = re.sub(r'^(?:->|[•*−–>-])\s*', '', raw.strip()).strip()
         if not line:
             continue
         heading = line.rstrip(':').strip()
@@ -122,22 +125,42 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
                 units[-1].level = line
                 units[-1].supporting_quotes.append(line)
                 continue
-            unit_category = category
-            if category == 'mandatory' and re.search(r'^(?:preferred|preferably|nice.to.have|optional)\b|(?:is a plus|considered an asset)\b|\b(?:preferred|optional|nice.to.have)\)?\s*\.?$', line, re.I):
-                unit_category = 'preferred'
             group = f'source_{len(units) + 1}'
-            pieces = [line]
-            # Independent evidence: CRM and KCS must not be confirmed as one skill.
+            # Semicolons delimit independently qualified clauses. Retain the
+            # entire source sentence on every row for review.
+            pieces = [p.strip(' ;') for p in re.split(r';(?![^()]*\))', line) if p.strip(' ;')]
             if re.search(r'\bCRM\b', line, re.I) and re.search(r'\bKCS\b', line, re.I) and re.search(r'\band\b', line, re.I):
                 pieces = re.split(r'\s+and\s+(?=working|knowledge|experience|KCS)', line, maxsplit=1, flags=re.I)
-            elif 'Fluency' in line or re.search(r'\bfluent\b|would be a plus|is a plus', line, re.I):
-                pieces = re.split(r'(?<=[.!?])\s+(?=[A-Z])', line)
-            for piece in pieces:
-                piece_category = 'preferred' if unit_category == 'mandatory' and re.search(r'would be a plus|is a plus|considered an asset', piece, re.I) else unit_category
-                basis = (f'{piece_category.title()} section: {section}' if piece_category == category else 'Explicit preference in source text')
-                if unit_category == 'mandatory' and re.search(r',\s*preferably\b', piece, re.I):
-                    basis += '; the preferably clause is optional'
-                parsed = requirement_units(piece, piece_category, section, group)
+            elif re.search(r'\bfluen\w*\b|would be a plus|is a plus', line, re.I):
+                pieces = re.split(r'(?<=[.!?])\s+(?=[A-Z])', line.rstrip(';'))
+            for piece_index, piece in enumerate(pieces):
+                piece_category = category
+                # A preferred parenthesis must not weaken the main capability.
+                parenthesis = re.search(r'\(([^()]*)\)', piece)
+                if re.search(r'preferred\s*;\s*other languages welcome', piece, re.I):
+                    parsed = requirement_units(piece, category, section, group + f'_{piece_index}')
+                    for unit in parsed:
+                        unit.quote = line
+                    units.extend(parsed)
+                    continue
+                if category in {'mandatory', 'preferred', 'nice_to_have'} and parenthesis and PREFERENCE_MARKER.search(parenthesis[1]) and not re.fullmatch(r'\s*(?:big plus|optional|preferred|nice.to.have|(?:is )?(?:considered (?:an? )?)?advantage)\s*', parenthesis[1], re.I):
+                    main = (piece[:parenthesis.start()] + piece[parenthesis.end():]).strip(' .;')
+                    detail = parenthesis[1].strip()
+                    parsed = requirement_units(main, category, section, group + f'_{piece_index}')
+                    parsed += requirement_units(detail, 'nice_to_have' if re.search(r'\boptional\b', detail, re.I) else 'preferred', section, group + f'_{piece_index}_preferred')
+                    for unit in parsed:
+                        unit.quote = line
+                        unit.basis += '; parenthetical preference separated from the main condition'
+                    units.extend(parsed)
+                    continue
+                if category in {'mandatory', 'preferred', 'nice_to_have'} and PREFERENCE_MARKER.search(piece):
+                    piece_category = 'nice_to_have' if re.search(r'\boptional\b', piece, re.I) else 'preferred'
+                basis = f'{piece_category.title()} section: {section}' if piece_category == category else 'Explicit optional condition in source text' if piece_category == 'nice_to_have' else 'Explicit preference in source text'
+                if category == 'mandatory' and re.search(r',\s*(?:preferably|preferred specialization)\b', piece, re.I):
+                    piece_category = category
+                    basis = f'Mandatory section: {section}; the preferably clause is optional'
+                piece_group = group if re.search(r'\bCRM\b.*\band\b.*\bKCS\b', line, re.I) else group + f'_{piece_index}'
+                parsed = requirement_units(piece.strip(' ;'), piece_category, section, piece_group)
                 for unit in parsed:
                     unit.quote = line
                     if len(parsed) == 1 and unit.operator == 'single' and not unit.basis.endswith('optional'):

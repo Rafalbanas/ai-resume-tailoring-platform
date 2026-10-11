@@ -37,7 +37,7 @@
 {% endif %}
 {% if analysis.qualification_assessment %}<section class="card"><h2>Qualification assessment</h2><p>{{ analysis.qualification_assessment }}</p>
 <h2>Role alignment — documented experience</h2><p>{{ analysis.role_alignment_summary }}</p></section>{% endif %}
-{% if analysis.requirements and analysis.requirement_counts %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred }} preferred · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
+{% if analysis.requirements and analysis.requirement_counts %}{% set optional_count = analysis.requirements|selectattr("priority", "equalto", "nice_to_have")|list|length %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred - optional_count }} preferred · {{ optional_count }} optional · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
 {% if analysis.scoring_counts %}<p class="muted">{{ analysis.scoring_counts.mandatory_groups }} distinct mandatory conditions used in scoring. Equivalent requirements share one weight; all source rows remain available below. Portal tags have unspecified employer priority.</p>{% endif %}
 <div class="match-grid">
   <section class="card">
@@ -97,7 +97,7 @@
     {% for req in analysis.requirements %}
     <div class="requirement-row req-status-{{ req.status }}">
       <div class="req-header">
-        <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
+        <span class="badge priority-badge {{ req.priority }}">{{ "OPTIONAL / NICE TO HAVE" if req.priority == "nice_to_have" else req.priority|upper }}</span>
         <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(req.status, req.status) }}</span>
         <strong>{{ req.name }}</strong>
       </div>

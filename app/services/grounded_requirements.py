@@ -18,7 +18,7 @@ INJECTION = re.compile(r'ignore.*instructions|system prompt|you are chatgpt|retu
 def source_lines(job_text):
     from app.services.job_sections import extract_sections
     units, _ = extract_sections(job_text)
-    return [(u.name, RequirementPriority(u.category)) for u in units if u.category in {"mandatory", "preferred"}]
+    return [(u.name, RequirementPriority(u.category)) for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}]
 
 
 def boundary_contains(needle, text):
@@ -212,7 +212,7 @@ def validate_grounded(validator, candidate, job_text):
             match_name = unit.name + ' ' + unit.level if unit.level and not boundary_contains(unit.level, unit.name) else unit.name
             status, evidence, ids, reason = verify_requirement(validator, match_name, unit)
             result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
-    unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred"}}
+    unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
     result.completeness_issues = []
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
     suggestions += [r.name for r in candidate.requirements]
@@ -236,7 +236,7 @@ def validate_grounded(validator, candidate, job_text):
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
-        if any(u.category in {"responsibility", "organization", "preferred", "competency"}
+        if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency"}
                and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
             continue
         if re.fullmatch(r'\s*(?:B[12]|C[12]|Advanced|Expert|Intermediate|Basic)\s*', raw, re.I) and index and not any(u.level == raw.strip() and u.name == job_lines[index-1].strip() for u in units):
@@ -300,7 +300,7 @@ def validate_grounded(validator, candidate, job_text):
     result.supported_keywords = [k for k in candidate.supported_keywords if boundary_contains(k, job_text) and validator.catalog.direct_sources(k)]
     result.unsupported_keywords = [k for k in candidate.unsupported_keywords if boundary_contains(k, job_text) and not validator.catalog.direct_sources(k)]
     visibly_truncated = bool(re.search(r"\b(?:and|or|i|oraz)\s*$", job_text.strip(), re.I))
-    expected = {u.name for u in units if u.category in {"mandatory", "preferred"}}
+    expected = {u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
     omitted = {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
         result.completeness_issues.append("Some source requirements were not assessed.")

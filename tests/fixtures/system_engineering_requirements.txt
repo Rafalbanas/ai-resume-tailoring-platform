@@ -1,0 +1,37 @@
+PORTAL TECHNOLOGY TAGS
+Jira
+Confluence
+AD
+Entra ID
+DNS
+DHCP
+GPO
+Cloud
+powershell
+English B2
+
+NICE TO HAVE
+Python
+
+REQUIREMENTS
+-> 3+ years of professional experience in system engineering or a similar role;
+-> Solid knowledge of Microsoft Server and Client environments;
+-> Hands-on experience with A D / Entra ID, DNS, DHCP, and GPO;
+-> Familiarity with PowerShell scripting and automation; knowledge of Python is considered an advantage;
+-> Practical experience with cloud platforms (Azure, AWS), including VM management;
+-> Experience with cloud-based virtual desktop solutions (big plus);
+-> Good understanding of IT security practices (endpoint protection, compliance, monitoring);
+-> Basic network troubleshooting skills (advantage);
+-> Experience with release processes and DLP policies (optional);
+-> Degree in Computer Science, Business Informatics or equivalent professional training;
+-> Fluent English (German or other languages are a plus).
+
+RESPONSIBILITIES
+-> Provide 2nd- and 3rd-level support for complex IT issues, analyzing problems to find root causes;
+-> Ensure stability and performance of IT systems while proactively improving them through automation and best practices;
+-> Maintain documentation and task tracking in Atlassian tools (Jira, Confluence);
+-> Coordinate and support application and infrastructure releases with well-documented deployments;
+-> Support the implementation and monitoring of IT security measures, including endpoint protection (Microsoft Defender) and compliance monitoring;
+
+OFFER DESCRIPTION
+Are you ready to solve IT challenges and help people work better every day? Join our international IT support team as a System Engineer. You’ll diagnose, guide, and resolve technical issues, ensuring smooth operations across our organization.
