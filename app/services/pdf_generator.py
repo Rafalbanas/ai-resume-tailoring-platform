@@ -1,13 +1,21 @@
 import base64
+from contextlib import closing
 from copy import deepcopy
+from html import escape
+from io import BytesIO
 from pathlib import Path
 
+import pypdfium2
+from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pypdf import PdfReader
 from weasyprint import HTML
 
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
+from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
+from app.services.professional_summary import deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
 
 
@@ -36,6 +44,8 @@ class PDFGenerator:
     ) -> str:
         if not profile.personal.name.strip():
             raise ValueError("Candidate name is missing from the active master profile.")
+        resume = deepcopy(resume)
+        resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
         guide = layout_guide or {}
         if template_name not in {"modern_sidebar", "ats_classic"}:
             template_name = "modern_sidebar"
@@ -46,7 +56,7 @@ class PDFGenerator:
         if template_name == "modern_sidebar":
             requested = guide.get("section_order", order)
             order = list(dict.fromkeys([value for value in requested if value in order] + order))
-        markup = self.env.get_template("resume.html").render(
+        render_context = dict(
             resume=resume,
             personal=profile.personal,
             languages=profile_languages(profile),
@@ -67,7 +77,75 @@ class PDFGenerator:
                 if enabled
             ),
         )
-        return f"<style>{self.css_path.read_text(encoding='utf-8')}</style>{markup}"
+        css = f"<style>{self.css_path.read_text(encoding='utf-8')}</style>"
+        template = self.env.get_template("resume.html")
+        markup = template.render(**render_context)
+        return css + markup
+
+    def render_preview(
+        self,
+        resume: TailoredResume,
+        profile: CandidateProfile,
+        layout_guide: dict | None = None,
+        *,
+        template_name: str = "modern_sidebar",
+        photo_enabled: bool | None = None,
+        interactive_photo: bool = False,
+    ) -> str:
+        """Show the PDF engine's actual pages, never reflow print CSS in a browser.
+
+        Raster pages retain precise pagination; accessible text and clickable links
+        come from the same PDF. The export itself remains searchable vector text.
+        """
+        markup = self.render_html(resume, profile, layout_guide, template_name=template_name,
+                                  photo_enabled=photo_enabled)
+        document = HTML(string=markup, base_url=str(self.data_dir)).render()
+        pdf = document.write_pdf()
+        reader = PdfReader(BytesIO(pdf))
+        pages = []
+        with closing(pypdfium2.PdfDocument(pdf)) as raster:
+            for index, source in enumerate(reader.pages):
+                with closing(raster[index]) as page:
+                    bitmap = page.render(scale=1.6)
+                    try:
+                        output = BytesIO()
+                        bitmap.to_pil().save(output, format="PNG")
+                    finally:
+                        bitmap.close()
+                width, height = float(source.mediabox.width), float(source.mediabox.height)
+                links = []
+                for annotation in source.get("/Annots", []):
+                    annotation = annotation.get_object()
+                    target = annotation.get("/A", {}).get("/URI", "")
+                    if not str(target).startswith(("https://", "http://", "mailto:")):
+                        continue
+                    left, bottom, right, top = map(float, annotation["/Rect"])
+                    links.append(f'<a class="page-link" href="{escape(str(target), quote=True)}" '
+                                 f'aria-label="{escape(str(target), quote=True)}" style="left:{left/width*100}%;'
+                                 f'top:{(height-top)/height*100}%;width:{(right-left)/width*100}%;'
+                                 f'height:{(top-bottom)/height*100}%"></a>')
+                portrait = ""
+                if index == 0 and interactive_photo and template_name == "modern_sidebar":
+                    interactive = self.render_html(resume, profile, layout_guide, template_name=template_name,
+                                                   photo_enabled=photo_enabled, interactive_photo=True)
+                    control = BeautifulSoup(interactive, "html.parser").find(id="quick-photo-avatar")
+                    boxes = [b for b in document.pages[0]._page_box.descendants()
+                             if getattr(b, "element", None) is not None
+                             and "portrait" in b.element.get("class", "").split()]
+                    if control and boxes:
+                        box = boxes[0]
+                        control["style"] = (f"position:absolute;left:{box.border_box_x()/document.pages[0].width*100}%;"
+                                            f"top:{box.border_box_y()/document.pages[0].height*100}%;"
+                                            f"width:{box.border_width()/document.pages[0].width*100}%;"
+                                            f"height:{box.border_height()/document.pages[0].height*100}%;margin:0")
+                        portrait = str(control)
+                data = base64.b64encode(output.getvalue()).decode()
+                pages.append(f'<section class="preview-page" aria-label="CV page {index+1}">'
+                             f'<img class="page-image" src="data:image/png;base64,{data}" '
+                             f'alt="CV page {index+1} of {len(reader.pages)}">'
+                             f'<pre class="visually-hidden">{escape(source.extract_text())}</pre>'
+                             + "".join(links) + portrait + '</section>')
+        return '<div class="paginated-preview">' + "".join(pages) + '</div>'
 
     def generate(
         self,

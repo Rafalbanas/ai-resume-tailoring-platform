@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 
 from docx import Document
@@ -9,7 +10,9 @@ from docx.shared import Inches, Pt
 
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
+from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
+from app.services.professional_summary import deduplicate_summary
 
 
 def add_link(paragraph, text: str, target: str) -> None:
@@ -34,6 +37,8 @@ def generate_docx(
 ) -> None:
     if not profile.personal.name.strip():
         raise ValueError("Candidate name is missing from the active master profile.")
+    resume = deepcopy(resume)
+    resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
     document = Document()
     section = document.sections[0]
     section.top_margin = section.bottom_margin = Inches(0.55)

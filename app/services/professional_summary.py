@@ -4,6 +4,42 @@ import re
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 
 
+def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
+    """Fuse repeated verified clauses; preserve the identity and every detail.
+
+    Only verbatim source sentences qualify. Similar model paraphrases, negations,
+    differing numbers and unknown wording remain subject to normal Truth Lock.
+    """
+    verified = {e.text.strip().rstrip(".!?") for e in catalog.prompt_entries}
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", value.strip())
+    result: list[str] = []
+    for sentence in sentences:
+        raw = sentence.rstrip(".!?")
+        merged = False
+        if raw in verified:
+            prefix, separator, detail = raw.partition(", ")
+            tokens = normalized_tokens(prefix) - {"technical"}
+            for index, previous in enumerate(result):
+                prior = previous.rstrip(".!?")
+                if prior not in verified or ", " in prior:
+                    continue
+                prior_tokens = normalized_tokens(prior) - {"technical"}
+                # Additional identity information in the shorter source is kept.
+                # No fuzzy threshold: every token of the repeated clause must exist.
+                if (tokens and tokens <= prior_tokens
+                        and re.findall(r"\d+", prefix) == re.findall(r"\d+", prior)
+                        and re.findall(r"\b(?:not|never|no|without)\b", prefix, re.I)
+                        == re.findall(r"\b(?:not|never|no|without)\b", prior, re.I)):
+                    if "technical support" in prefix and "technical support" not in prior:
+                        prior = prior.replace("support", "technical support", 1)
+                    result[index] = prior + (separator + detail if separator else "") + "."
+                    merged = True
+                    break
+        if not merged:
+            result.append(sentence)
+    return " ".join(result)
+
+
 def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
     entries = [e for e in catalog.prompt_entries if e.kind == 'summary' or (e.kind == 'experience' and ':fact:' in e.source_id)]
     # Dates/tenure are particularly easy to overstate; experience dates remain visible.
@@ -48,4 +84,4 @@ def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
         if len(text) + len(sentence) + 1 <= 700:
             text = f"{text} {sentence}".strip()
             ids.append(education.source_id)
-    return text, ids
+    return deduplicate_summary(text, catalog), ids

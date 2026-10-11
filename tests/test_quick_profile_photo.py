@@ -44,6 +44,8 @@ def quick_photo_app(tmp_path, profile, resume_payload, monkeypatch):
         app_build_timestamp="now",
         csrf_secret="secret",
     )
+    app.state.provider = SimpleNamespace(fallback_enabled=False)
+    app.state.settings.demo_mode = False
     app.state.limiter = NoopLimiter()
     app.state.profile = profile
     app.state.storage = storage

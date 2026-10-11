@@ -491,3 +491,12 @@ ins {
 .shell,.card,.requirement-row,.chip-item,fieldset{min-width:0;overflow-wrap:anywhere}
 
 .login-panel{max-width:440px;margin:7vh auto;padding:24px}.login-panel label{display:block;margin:18px 0}.login-panel input{width:100%}.demo-marker{font-size:12px;opacity:.7}.fallback-settings{margin:16px 0;padding:16px;border:1px solid #d8dee6;border-radius:12px}.fallback-settings input[type=checkbox]{width:auto}.topbar form{margin:0}
+
+.paginated-preview{max-width:210mm;margin:auto}
+.preview-page{position:relative;width:100%;aspect-ratio:210/297;background:#fff;margin:0 auto 24px;box-shadow:var(--shadow)}
+.page-image{display:block;width:100%;height:100%}
+.page-link{position:absolute;display:block}
+.page-link:focus-visible{outline:2px solid var(--accent)}
+.preview-page .portrait{overflow:hidden;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#244d70;border:1.2mm solid rgba(255,255,255,.25);color:white}
+.preview-page .portrait img{width:100%;height:100%;object-fit:cover}
+.preview-page .portrait>span:first-child{font-size:20pt;font-weight:700}

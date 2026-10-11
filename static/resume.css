@@ -37,21 +37,34 @@
 
 .ats-classic footer{font-size:9pt;color:#344759}
 
-/* Keep the same sidebar layout while allowing full text to continue in print.
-   CSS grid was clipping long saved CVs at the first A4 boundary. */
-.modern-sidebar{display:block}
-.modern-sidebar>.resume-sidebar{float:left;width:61mm}
-.modern-sidebar>.resume-main{margin-left:61mm}
-.modern-sidebar .resume-main footer{position:static;margin-top:5mm}
 
-/* Reserve a page margin for consent: it cannot paginate on its own or overlap
-   flowing CV text. Running content is repeated on every actual content page. */
-@page modern {size:A4;margin:0 0 16mm;@bottom-center{content:element(consent)}}
+/* Consent occupies a reserved margin on actual content pages. */
 @page ats {size:A4;margin:14mm 16mm 22mm;@bottom-center{content:element(consent)}}
 .consent-footer{position:running(consent);font-family:Arial,Helvetica,sans-serif;font-size:8pt;line-height:1.25;color:#526174;border-top:.2mm solid #c7d0d8;padding:2mm 10mm 0;text-align:left}
-.modern-sidebar{page:modern;min-height:0}
-.modern-sidebar>.resume-sidebar{min-height:281mm}
-.modern-sidebar>.resume-main{min-height:0;padding-bottom:8mm}
-/* Continuation pages need a top margin; retain the full sidebar on page one. */
-@page modern {margin-top:10mm}
-@page modern:first {margin-top:0}
+
+/* Modern flows through the page engine; page furniture repeats on continuation. */
+@page modern {
+  size:A4;margin:10mm 0 16mm;
+  background:linear-gradient(to right,#102b46 0,#102b46 61mm,#fff 61mm,#fff 100%);
+  @top-right{content:string(candidate) " · CV · " counter(page);font:8pt Arial;color:#526174;padding-right:12mm}
+  @bottom-center{content:element(consent);background:#fff}
+}
+@page modern:first {margin-top:0;@top-right{content:none}}
+body:has(>.modern-sidebar){margin:0}
+.modern-sidebar{page:modern;display:block;min-height:0;background:transparent}
+.modern-sidebar>.resume-sidebar{float:left;width:61mm;min-height:0;background:transparent}
+.modern-sidebar>.resume-main{margin-left:61mm;min-height:0;padding-top:10mm;padding-bottom:2mm}
+.modern-sidebar .candidate-name{string-set:candidate content()}
+.modern-sidebar .resume-main header{margin-bottom:3mm;padding-bottom:3mm}
+.modern-sidebar .resume-main section{margin-bottom:2mm}
+.modern-sidebar .resume-main section>h2{margin-bottom:2mm;padding-bottom:1mm;break-after:avoid}
+.modern-sidebar .entry{margin-bottom:1mm;break-inside:auto}
+.modern-sidebar .entry-head{break-after:avoid}
+.modern-sidebar .entry-head h3{min-width:0;flex:1}
+.modern-sidebar .entry-head span{flex:0 1 auto;max-width:29%;white-space:normal;text-align:right}
+.modern-sidebar h3{break-after:avoid}
+.modern-sidebar .resume-main li{margin-bottom:.6mm;break-inside:avoid}
+.modern-sidebar p{orphans:2;widows:2}
+.modern-sidebar .tech{break-before:avoid}
+.modern-sidebar .resume-main h1,.modern-sidebar h3,.modern-sidebar p,.modern-sidebar li{overflow-wrap:anywhere}
+.modern-sidebar .resume-main p{margin-bottom:1mm}

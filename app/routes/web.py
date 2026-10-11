@@ -365,7 +365,7 @@ async def preview(request: Request, slug: str):
         _, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    resume_html = request.app.state.pdf_generator.render_html(
+    resume_html = request.app.state.pdf_generator.render_preview(
         resume,
         request.app.state.profile,
         metadata.get("layout_guide"),

@@ -13,7 +13,7 @@ from app.models.resume import (
     TailoredResume,
 )
 from app.services.fact_catalog import FactCatalog, normalized_tokens
-from app.services.professional_summary import build_summary
+from app.services.professional_summary import build_summary, deduplicate_summary
 from app.services.skills_bank import SkillsBank
 
 
@@ -96,6 +96,7 @@ class FactValidator:
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from verified source sentences; model tone cannot be assessed from this replacement")
             draft.professional_summary = summary
+        draft.professional_summary = deduplicate_summary(draft.professional_summary, self.catalog)
         draft.summary_source_fact_ids = summary_ids
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
