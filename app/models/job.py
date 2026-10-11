@@ -28,6 +28,7 @@ class RequirementStatus(StrEnum):
     STRONG = "strong"
     PARTIAL = "partial"
     MISSING = "missing"
+    ABSENT = "absent"
 
 
 class JobRequirement(BaseModel):
@@ -36,6 +37,9 @@ class JobRequirement(BaseModel):
     id: str = ""
     name: str
     source_quote: str = ""
+    classification_basis: str = ""
+    source_section: str = ""
+    group_id: str = ""
     priority: RequirementPriority = RequirementPriority.MANDATORY
     status: RequirementStatus = RequirementStatus.MISSING
     evidence: list[str] = Field(default_factory=list)
@@ -88,3 +92,9 @@ class JobAnalysis(BaseModel):
     reasoning_summary: str = Field(default="", max_length=2000)
     requirements: list[JobRequirement] = Field(default_factory=list)
     is_reliable: bool = True
+    analysis_language: str = ""
+    completeness_issues: list[str] = Field(default_factory=list)
+    source_sections: list[str] = Field(default_factory=list)
+    responsibilities: list[dict[str, str]] = Field(default_factory=list)
+    organization_context: list[dict[str, str]] = Field(default_factory=list)
+    requirement_counts: dict[str, int] = Field(default_factory=dict)

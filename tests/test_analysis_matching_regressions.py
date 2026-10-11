@@ -153,4 +153,4 @@ def test_unreliable_analysis_marked_when_no_valid_requirements(real_profile, rea
     assert result.is_reliable is False
     assert result.match_level == MatchLevel.UNRELIABLE
     assert result.recommendation == Recommendation.RETRY
-    assert "Analiza niewiarygodna" in result.reasoning_summary
+    assert "Incomplete analysis — review required" in result.reasoning_summary

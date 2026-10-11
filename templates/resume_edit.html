@@ -13,9 +13,10 @@
   <label>Professional summary<textarea name="professional_summary" maxlength="700" required>{{ resume.professional_summary }}</textarea></label>
   <label>Skills <small>One per line or comma-separated</small><textarea name="core_skills">{{ resume.core_skills|join('\n') }}</textarea></label>
   <div class="form-grid">
-    <label>Template<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>
-    <label class="toggle-label"><input type="checkbox" name="photo_enabled"{% if metadata.photo_enabled %} checked{% endif %}> Include photo in this CV <small>Modern Sidebar only</small></label>
+    <label>Resume layout<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>
+    <label class="toggle-label"><input type="checkbox" name="photo_enabled"{% if metadata.modern_photo_enabled|default(metadata.photo_enabled) %} checked{% endif %}> Include photo in this CV <small>Modern Sidebar only</small></label>
   </div>
+  <p class="muted">DOCX uses a simplified layout and does not reproduce the PDF sidebar.</p>
   <label>Interests <small>Comma-separated personal interests (shown in Modern Sidebar if space permits)</small><input name="interests" value="{{ resume.interests|join(', ') }}"></label>
 
 

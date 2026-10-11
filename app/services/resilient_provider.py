@@ -104,7 +104,7 @@ class ResilientAIProvider(AIProvider):
                         f"Operation budget ({self.operation_budget_seconds}s) exceeded before running fallback."
                     )
                 if on_stage:
-                    on_stage(f"Przełączanie na provider '{fallback_name}'...")
+                    on_stage(f"Switching to provider '{fallback_name}'...")
                 response = await asyncio.wait_for(_call(fallback), timeout=rem)
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
@@ -142,7 +142,7 @@ class ResilientAIProvider(AIProvider):
             )
             fallback = self.providers[fallback_name]
             if on_stage:
-                on_stage(f"Przełączanie na provider rezerwowy ({fallback_name})...")
+                on_stage(f"Switching to fallback provider ({fallback_name})...")
             try:
                 response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name
@@ -183,7 +183,7 @@ class ResilientAIProvider(AIProvider):
                 ) from timeout_err
 
             if on_stage:
-                on_stage(f"Przełączanie po przekroczeniu limitu czasu na ({fallback_name})...")
+                on_stage(f"Switching after timeout to ({fallback_name})...")
             try:
                 response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name
@@ -227,7 +227,7 @@ class ResilientAIProvider(AIProvider):
                 ) from primary_err
 
             if on_stage:
-                on_stage(f"Przełączanie na provider rezerwowy ({fallback_name})...")
+                on_stage(f"Switching to fallback provider ({fallback_name})...")
             try:
                 response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -22,6 +22,7 @@ from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 from app.services.storage import compute_pre_fit_diff
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
+from app.services.ui_language import ui_text
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -201,7 +202,10 @@ async def get_task_status(request: Request, task_id: str):
     task = request.app.state.task_manager.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return JSONResponse(content=task.model_dump(mode="json"))
+    payload = task.model_dump(mode="json")
+    payload["stage"] = ui_text(task.stage)
+    payload["error"] = ui_text(task.error) if task.error else None
+    return JSONResponse(content=payload)
 
 
 @router.get("/tasks/{task_id}/view", response_class=HTMLResponse)
@@ -293,7 +297,8 @@ async def analysis_view(request: Request, draft_id: str):
 
 
 @router.post("/generate/{draft_id}")
-async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()]):
+async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()],
+                   template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic"):
     guard(request)
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
@@ -306,7 +311,6 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     started = time.perf_counter()
     result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(response.resume, job)
     layout_guide = {}
-    template_name = "ats_classic"
     fitted_resume, layout_warnings = result.resume, []
     warnings = result.warnings
     photo_enabled = False
@@ -384,13 +388,13 @@ async def preview(request: Request, slug: str):
     )
 
 
-def _refresh_photo_artifacts(request: Request, slug: str, *, photo_enabled: bool) -> bool:
+def _refresh_photo_artifacts(request: Request, slug: str, *, photo_enabled: bool, template_name: str | None = None) -> bool:
     """Refresh only presentation artifacts; resume text and generated baseline stay untouched."""
     try:
         _, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    template_name = metadata.get("template_name", "modern_sidebar")
+    template_name = template_name or metadata.get("template_name", "modern_sidebar")
     enabled = bool(
         photo_enabled and template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     )
@@ -405,7 +409,8 @@ def _refresh_photo_artifacts(request: Request, slug: str, *, photo_enabled: bool
             photo_path=request.app.state.profile_photo.path, photo_enabled=enabled,
             template_name=template_name,
         )
-        commit_artifacts(folder, staged, lambda: request.app.state.storage.update_presentation(slug, photo_enabled=enabled))
+        commit_artifacts(folder, staged, lambda: request.app.state.storage.update_presentation(slug, photo_enabled=enabled, template_name=template_name,
+            modern_photo_enabled=photo_enabled if template_name == "modern_sidebar" else metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))))
     return enabled
 
 
@@ -506,18 +511,13 @@ def _regenerate_artifacts(
 ) -> list[str]:
     result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
-    if template_name == "ats_classic":
-        fitted_resume, layout_warnings = result.resume, []
-    else:
-        fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
-            result.resume, request.app.state.profile, layout_guide
-        )
+    fitted_resume, layout_warnings = result.resume, []
     warnings = result.warnings + layout_warnings
+    metadata = request.app.state.storage.load_application(slug)[3]
+    modern_photo_preference = photo_enabled if template_name == "modern_sidebar" else metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
     photo_enabled = bool(
         photo_enabled and template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     )
-    if fitted_resume != result.resume:
-        raise ValueError("The sidebar would shorten your content. Select ATS Classic to preserve all text.")
     folder = request.app.state.storage.application_folder(slug)
     with staged_artifacts(folder) as staged:
         request.app.state.pdf_generator.generate(
@@ -531,7 +531,7 @@ def _regenerate_artifacts(
         )
         commit_artifacts(folder, staged, lambda: request.app.state.storage.save_current_resume(
             slug, fitted_resume, warnings, template_name=template_name, photo_enabled=photo_enabled,
-            truth_lock_warnings=result.warnings, layout_warnings=layout_warnings,
+            truth_lock_warnings=result.warnings, layout_warnings=layout_warnings, modern_photo_enabled=modern_photo_preference,
         ))
     return warnings
 
@@ -554,8 +554,14 @@ async def save_resume_edit(request: Request, slug: str):
         edited = apply_resume_edits(resume, form)
         template_name = str(form.get("template_name", "modern_sidebar"))
         if template_name not in {"modern_sidebar", "ats_classic"}:
-            template_name = "modern_sidebar"
+            raise HTTPException(status_code=422, detail="Unsupported resume layout")
         photo_enabled = form.get("photo_enabled") == "on"
+        if edited == resume:
+            # Presentation changes preserve the exact saved content, including legacy CVs.
+            if template_name == "ats_classic":
+                photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
+            _refresh_photo_artifacts(request, slug, photo_enabled=photo_enabled, template_name=template_name)
+            return RedirectResponse(f"/preview/{slug}", status_code=303)
         checked = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(edited, job, preserve_skills=True)
         changed = (
             checked.resume.professional_summary != edited.professional_summary
@@ -1164,7 +1170,7 @@ async def login(request: Request, username: Annotated[str, Form()], password: An
     request.app.state.login_limiter.check(request.client.host if request.client else "unknown")
     if len(password) > 256 or not request.app.state.auth_store.verify(username, password):
         return request.app.state.templates.TemplateResponse(
-            "login.html", context(request, error="Nieprawidłowy login lub hasło."), status_code=401)
+            "login.html", context(request, error="Invalid username or password."), status_code=401)
     request.app.state.sessions.revoke(request.session.get("id", ""))
     token = request.app.state.sessions.create(request.app.state.auth_store.credential_version)
     request.session.clear()
@@ -1185,3 +1191,16 @@ async def set_fallback(request: Request, enabled: Annotated[str, Form()] = "off"
     guard(request)
     request.app.state.provider.save_settings(enabled == "on")
     return RedirectResponse("/", status_code=303)
+
+
+@router.post("/preview/{slug}/layout")
+async def change_resume_layout(request: Request, slug: str,
+                               template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()]):
+    guard(request)
+    try:
+        _, _, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Resume not found") from exc
+    photo = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
+    _refresh_photo_artifacts(request, slug, photo_enabled=photo, template_name=template_name)
+    return RedirectResponse(f"/preview/{slug}", status_code=303)

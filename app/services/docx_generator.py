@@ -125,7 +125,7 @@ def generate_docx(
         document.add_heading("Certifications", level=1)
         for item in resume.certifications:
             document.add_paragraph(" · ".join(filter(None, [item.name, item.issuer, item.date])))
-    if getattr(resume, "interests", None) and template_name == "modern_sidebar":
+    if getattr(resume, "interests", None):
         document.add_heading("Interests", level=1)
         document.add_paragraph(" • ".join(resume.interests))
     consent = document.add_paragraph("I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).")

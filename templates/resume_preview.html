@@ -8,7 +8,7 @@
     <p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p>
     <div class="provider-meta">
       <span class="badge provider-badge">Engine: {{ metadata.provider_used|default('ollama') }} ({{ metadata.model_used|default('qwen3.5:9b') }})</span>
-      {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">Fallback: tak</span>{% else %}<span class="badge">Fallback: nie</span>{% endif %}
+      {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">Fallback: yes</span>{% else %}<span class="badge">Fallback: no</span>{% endif %}
     </div>
   </div>
   <div class="actions">
@@ -24,6 +24,12 @@
     </form>
   </div>
 </div>
+<form action="{{ app_root_path|default('') }}/preview/{{ slug }}/layout" method="post" class="job-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Resume layout<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name|default('modern_sidebar') == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>
+  <button type="submit" class="secondary">Apply layout</button>
+  <small>Changing the layout does not run AI or change the CV text. DOCX uses a simplified layout and does not reproduce the PDF sidebar.</small>
+</form>
 {% set truth_warnings = metadata.truth_lock_warnings if metadata.truth_lock_warnings is defined and metadata.truth_lock_warnings is not none else [] %}
 {% if truth_warnings and truth_warnings|length > 0 %}<details class="warnings truth-lock-warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% set layout_warns = metadata.layout_adjustments if metadata.layout_adjustments is defined and metadata.layout_adjustments is not none else metadata.layout_warnings|default([], true) %}
@@ -76,11 +82,11 @@
     <div class="crop-dialog-header">
       <p class="eyebrow">PROFILE PHOTO</p>
       <h2>Dostosuj kadr</h2>
-      <p class="dialog-hint">Przeciągnij zdjęcie i dopasuj zoom, aby ustawić idealny okrągły kadr.</p>
+      <p class="dialog-hint">Drag the photo and adjust zoom to frame the circular crop.</p>
     </div>
     <div class="crop-viewport-wrapper">
       <div class="crop-viewport" id="crop-viewport">
-        <img id="crop-image" alt="Podgląd kadru" draggable="false">
+        <img id="crop-image" alt="Crop preview" draggable="false">
         <div class="crop-circle-mask" aria-hidden="true"></div>
       </div>
     </div>
@@ -90,23 +96,23 @@
     </div>
     <p class="quick-photo-status" id="crop-photo-status" aria-live="polite"></p>
     <div class="dialog-actions">
-      <button class="primary" id="crop-save-btn" type="button">Zapisz kadr</button>
-      <button class="secondary" id="crop-cancel-btn" type="button">Anuluj</button>
+      <button class="primary" id="crop-save-btn" type="button">Save crop</button>
+      <button class="secondary" id="crop-cancel-btn" type="button">Cancel</button>
     </div>
   </div>
 </dialog>
 <dialog class="quick-photo-dialog" id="quick-photo-dialog" data-slug="{{ slug }}" data-csrf="{{ csrf_token }}">
   <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
   <p class="eyebrow">PROFILE PHOTO</p>
-  <h2>{% if photo_available %}Zarządzaj zdjęciem{% else %}Dodaj zdjęcie profilowe{% endif %}</h2>
-  <p class="dialog-hint">Przeciągnij plik na avatar, wklej ze schowka (Cmd+V) lub wybierz plik z dysku.</p>
+  <h2>{% if photo_available %}Manage photo{% else %}Add profile photo{% endif %}</h2>
+  <p class="dialog-hint">Drop a file on the avatar, paste from the clipboard (Cmd+V), or choose a file.</p>
   <p class="quick-photo-status" id="quick-photo-status" aria-live="polite"></p>
   <div class="dialog-actions">
-    <label class="primary button" id="quick-photo-choose" for="quick-photo-file" role="button" tabindex="0">{% if photo_available %}Wybierz inne zdjęcie{% else %}Wybierz plik ze zdjęciem{% endif %}</label>
+    <label class="primary button" id="quick-photo-choose" for="quick-photo-file" role="button" tabindex="0">{% if photo_available %}Choose another photo{% else %}Choose photo file{% endif %}</label>
     {% if photo_available %}<button class="secondary" id="quick-photo-adjust" type="button">Dostosuj kadr</button>{% endif %}
-    {% if photo_available and not metadata.photo_enabled %}<button class="secondary" id="quick-photo-use" type="button">Włącz w tym CV</button>{% endif %}
-    {% if photo_available and metadata.photo_enabled %}<button class="secondary" id="quick-photo-hide" type="button">Ukryj w tym CV</button>{% endif %}
-    {% if photo_available %}<button class="danger" id="quick-photo-remove" type="button">Usuń trwale zdjęcie</button>{% endif %}
+    {% if photo_available and not metadata.photo_enabled %}<button class="secondary" id="quick-photo-use" type="button">Enable in this CV</button>{% endif %}
+    {% if photo_available and metadata.photo_enabled %}<button class="secondary" id="quick-photo-hide" type="button">Hide in this CV</button>{% endif %}
+    {% if photo_available %}<button class="danger" id="quick-photo-remove" type="button">Permanently remove photo</button>{% endif %}
     <form method="dialog"><button class="secondary" type="submit">Zamknij</button></form>
   </div>
 </dialog>

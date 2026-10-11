@@ -8,10 +8,10 @@
 {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
 <form action="{{ app_root_path|default('') }}/settings/fallback" method="post" class="fallback-settings">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label><input type="checkbox" name="enabled" {% if fallback_enabled %}checked{% endif %}> Automatyczny fallback</label>
-  <button class="secondary" type="submit">Zapisz</button>
+  <label><input type="checkbox" name="enabled" {% if fallback_enabled %}checked{% endif %}> Automatic fallback</label>
+  <button class="secondary" type="submit">Save</button>
   <p id="provider-order" data-fallback="{{ 'true' if fallback_enabled else 'false' }}"></p>
-  <small>Wyłączenie fallbacku nie blokuje ręcznego wyboru Gemini.</small>
+  <small>Disabling fallback does not prevent selecting Gemini manually.</small>
 </form>
 <form action="{{ app_root_path|default('') }}/analyze" method="post" class="job-form" id="job-form" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -26,7 +26,7 @@
         <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama ({{ ollama_model }})</option>
         <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini ({{ gemini_model }})</option>
       </select>
-      <small class="field-hint">Użycie Gemini przesyła dane potrzebne do analizy do zewnętrznego API Google.</small>
+      <small class="field-hint">Using Gemini sends the data needed for analysis to Google's external API.</small>
     </label>
     <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>

@@ -36,3 +36,10 @@
 .resume-document a{color:inherit;text-decoration:none;overflow-wrap:anywhere}
 
 .ats-classic footer{font-size:9pt;color:#344759}
+
+/* Keep the same sidebar layout while allowing full text to continue in print.
+   CSS grid was clipping long saved CVs at the first A4 boundary. */
+.modern-sidebar{display:block}
+.modern-sidebar>.resume-sidebar{float:left;width:61mm}
+.modern-sidebar>.resume-main{margin-left:61mm}
+.modern-sidebar .resume-main footer{position:static;margin-top:5mm}

@@ -232,7 +232,7 @@ class GeminiProvider(AIProvider):
                 if response.status_code == 404:
                     logger.error("Gemini model not found (status 404): %s", self.model)
                     raise ProviderUnavailableError(
-                        f"Model Gemini '{self.model}' jest niedostępny lub wycofany dla tego konta API. Zaktualizuj GEMINI_MODEL w konfiguracji."
+                        f"Model Gemini '{self.model}' is unavailable or retired for this API account. Update GEMINI_MODEL in the configuration."
                     )
 
                 if response.status_code >= 400:
@@ -370,10 +370,10 @@ certifications, projects, or responsibilities unless the same fact exists in the
         on_stage: Callable[[str], None] | None = None,
     ) -> WorkflowResponse:
         if on_stage:
-            on_stage("Analizowanie wymagań oferty (Gemini)...")
+            on_stage("Analyzing job requirements (Gemini)...")
         analysis = await self.analyze_job(job, profile)
         if on_stage:
-            on_stage("Generowanie dopasowanego CV (Gemini)...")
+            on_stage("Generating tailored CV (Gemini)...")
         resume = await self.tailor_resume(job, profile, analysis)
         return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.model)
 
@@ -397,7 +397,7 @@ certifications, projects, or responsibilities unless the same fact exists in the
                 if response.status_code in (401, 403):
                     raise GeminiAuthError("Gemini API key is invalid.")
                 if response.status_code == 404:
-                    raise AIProviderError(f"Model Gemini '{self.model}' jest niedostępny (404). Zaktualizuj GEMINI_MODEL w konfiguracji.")
+                    raise AIProviderError(f"Model Gemini '{self.model}' is unavailable (404). Update GEMINI_MODEL in the configuration.")
                 response.raise_for_status()
         except GeminiAuthError:
             raise

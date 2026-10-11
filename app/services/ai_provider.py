@@ -1,4 +1,6 @@
+import hashlib
 from abc import ABC, abstractmethod
+from typing import Any, Callable
 
 from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
@@ -34,14 +36,11 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 5. If a job requirement lists alternatives with OR (e.g. 'telecommunications or video conferencing'), confirmed evidence for ANY one alternative satisfies the requirement.
 6. A candidate with an MSc in Computer Science (magisterka informatyczna) satisfies a requirement for a Degree or Diploma in Computer Science.
 7. Experience with Salesforce provides direct evidence of CRM systems experience. Evaluate KCS (Knowledge Centered Service) methodology separately if mentioned in the job.
-8. Describe any unconfirmed requirement as 'brak potwierdzenia w profilu' (no confirmation in profile), not as candidate inability.
+8. Describe any unconfirmed requirement as 'not confirmed in profile' (no confirmation in profile), not as candidate inability.
 9. For skill matches, select exact IDs from skills_bank into strong_skill_ids, partial_skill_ids, or learning_skill_ids.
 10. Use qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or SKIP recommendation based solely on the actual job requirements.
-11. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps)."""
-
-
-import hashlib
-from typing import Any, Callable
+11. All generated reasoning, explanations and status messages MUST be in English. Preserve verbatim source quotes and proper names. Separate mandatory requirements, preferred requirements, responsibilities and organization context. Treat examples (such as) as examples, not cumulative mandatory certifications. If the analysis is incomplete, use UNRELIABLE / RETRY; never make a firm SKIP recommendation.
+12. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps)."""
 
 
 def _digest(value: str) -> str:
@@ -70,7 +69,7 @@ def clean_job_description(text: str) -> str:
                 skip_rest = True
                 continue
         if skip_rest:
-            if "tech stack" in lower or "wymagania" in lower or "requirements" in lower:
+            if "tech stack" in lower or "wymagania" in lower or "requirements" in lower or "qualifications" in lower or "preference" in lower:
                 skip_rest = False
             else:
                 continue
@@ -84,7 +83,7 @@ def build_compact_analysis_payload(
     profile: CandidateProfile,
     skills_bank: Any = None,
 ) -> dict[str, Any]:
-    cleaned_desc = clean_job_description(job.job_description)
+    cleaned_desc = job.job_description
     experience_summary = [
         {
             "title": exp.title,

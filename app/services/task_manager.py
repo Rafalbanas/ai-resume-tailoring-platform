@@ -36,7 +36,7 @@ class TaskRecord(BaseModel):
     kind: TaskKind
     idempotency_key: str
     status: TaskStatus = TaskStatus.QUEUED
-    stage: str = "Oczekiwanie w kolejce..."
+    stage: str = "Waiting in queue..."
     progress_percent: int = 0
     created_at: str
     started_at: str | None = None
@@ -95,9 +95,9 @@ class TaskManager:
                 task = TaskRecord.model_validate_json(path.read_text(encoding="utf-8"))
                 if task.status in (TaskStatus.RUNNING, TaskStatus.QUEUED):
                     task.status = TaskStatus.FAILED
-                    task.stage = "Przerwano"
+                    task.stage = "Interrupted"
                     task.completed_at = now
-                    task.error = "Zadanie przerwane przez restart aplikacji. Spróbuj ponownie."
+                    task.error = "Task interrupted by an application restart. Please retry."
                     task.error_status_code = 500
                     self._save_task(task)
                     recovered += 1
@@ -127,7 +127,7 @@ class TaskManager:
             kind=kind,
             idempotency_key=idempotency_key,
             status=TaskStatus.QUEUED,
-            stage="Oczekiwanie w kolejce...",
+            stage="Waiting in queue...",
             progress_percent=5,
             created_at=datetime.now(timezone.utc).isoformat(),
             payload=payload,
@@ -177,7 +177,7 @@ class TaskManager:
             task.status = TaskStatus.RUNNING
             task.started_at = started_dt.isoformat()
             task.queued_duration_seconds = round(queued_duration, 2)
-            task.stage = "Rozpoczynanie generowania..."
+            task.stage = "Starting generation..."
             task.progress_percent = 10
             self._save_task(task)
 
@@ -194,8 +194,8 @@ class TaskManager:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now(timezone.utc).isoformat()
                 task.execution_duration_seconds = round(exec_duration, 2)
-                task.stage = "Przekroczono limit czasu"
-                task.error = f"Przekroczono maksymalny budżet czasu wykonywania zadania ({int(self.budget_seconds)} s)."
+                task.stage = "Time limit exceeded"
+                task.error = f"Task execution budget exceeded ({int(self.budget_seconds)} s)."
                 task.error_status_code = 504
                 self._save_task(task)
                 logger.error("Task %s timed out after %.1fs", task_id, exec_duration)
@@ -205,7 +205,7 @@ class TaskManager:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now(timezone.utc).isoformat()
                 task.execution_duration_seconds = round(exec_duration, 2)
-                task.stage = "Błąd autoryzacji"
+                task.stage = "Authentication failed"
                 task.error = str(exc)
                 task.error_status_code = 401
                 self._save_task(task)
@@ -216,7 +216,7 @@ class TaskManager:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now(timezone.utc).isoformat()
                 task.execution_duration_seconds = round(exec_duration, 2)
-                task.stage = "Błąd generowania AI"
+                task.stage = "AI generation failed"
                 task.error = str(exc)
                 task.error_status_code = 502
                 self._save_task(task)
@@ -227,8 +227,8 @@ class TaskManager:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now(timezone.utc).isoformat()
                 task.execution_duration_seconds = round(exec_duration, 2)
-                task.stage = "Nieoczekiwany błąd"
-                task.error = "Wystąpił błąd podczas przetwarzania. Zadanie nie zostało ukończone."
+                task.stage = "Unexpected error"
+                task.error = "Processing failed. The task was not completed."
                 task.error_status_code = 500
                 self._save_task(task)
                 logger.error("Task %s failed unexpectedly (%s)", task_id, type(exc).__name__)
@@ -251,7 +251,7 @@ class TaskManager:
         def on_stage_cb(stage_name: str) -> None:
             self.update_task_progress(task.task_id, stage=stage_name, progress_percent=0)
 
-        on_stage_cb("Rozpoczynanie generowania...")
+        on_stage_cb("Starting generation...")
 
         try:
             response = await app_state.provider.tailor(
@@ -265,13 +265,13 @@ class TaskManager:
             except TypeError:
                 response = await app_state.provider.tailor(job, app_state.profile)
 
-        on_stage_cb("Weryfikacja reguł Truth Lock...")
+        on_stage_cb("Validating Truth Lock...")
 
         response.analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
             response.analysis, f"{job.role}\n{job.job_description}"
         )
 
-        on_stage_cb("Zapisywanie szkicu aplikacji...")
+        on_stage_cb("Saving application draft...")
 
         draft_id = app_state.storage.save_draft(job, response)
         exec_duration = time.perf_counter() - wall_start
@@ -294,7 +294,7 @@ class TaskManager:
 
         task = self.get_task(task.task_id) or task
         task.status = TaskStatus.COMPLETED
-        task.stage = "Projekt gotowy do przeglądu" if response.analysis.is_reliable else "Analiza wymaga ponowienia"
+        task.stage = "Draft ready for review" if response.analysis.is_reliable else "Analysis requires review"
         task.progress_percent = 100
         task.completed_at = datetime.now(timezone.utc).isoformat()
         task.execution_duration_seconds = round(exec_duration, 2)
@@ -326,7 +326,7 @@ class TaskManager:
             pct = 20 + int((idx / total) * 60)
             self.update_task_progress(
                 task.task_id,
-                stage=f"Testowanie modelu {name.capitalize()}...",
+                stage=f"Testing model {name.capitalize()}...",
                 progress_percent=pct,
             )
 
@@ -368,14 +368,14 @@ class TaskManager:
 
         self.update_task_progress(
             task.task_id,
-            stage="Zestawianie wyników...",
+            stage="Preparing results...",
             progress_percent=90,
         )
 
         exec_duration = time.perf_counter() - wall_start
         task = self.get_task(task.task_id) or task
         task.status = TaskStatus.COMPLETED
-        task.stage = "Zakończono pomyślnie"
+        task.stage = "Completed successfully"
         task.progress_percent = 100
         task.completed_at = datetime.now(timezone.utc).isoformat()
         task.execution_duration_seconds = round(exec_duration, 2)

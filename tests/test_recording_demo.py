@@ -186,7 +186,7 @@ def test_demo_prefix_and_cookie_isolation(monkeypatch):
         assert any('Path=/demo' in h for h in result.headers.get_list('set-cookie'))
         page = client.get('/demo/')
         assert page.status_code == 200 and 'action="/demo/logout"' in page.text
-        assert 'Demo — fikcyjne dane' in page.text
+        assert 'Demo — fictional data' in page.text
         assert client.post('/demo/logout', data={'csrf_token': token}, follow_redirects=False).headers['location'] == '/demo/login'
         assert client.cookies.get('session') == 'private-session'
         assert client.cookies.get('csrf_token') == 'private-csrf'

@@ -29,6 +29,7 @@ from app.services.session_store import SessionStore
 from app.services.skills_bank import SkillsBank
 from app.services.storage import Storage
 from app.services.task_manager import TaskManager
+from app.services.ui_language import ui_text
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     app.state.profile_photo = ProfilePhotoStore(settings.profile_photo_path, settings.profile_photo_max_bytes)
     app.state.job_extractor = JobExtractorService(settings)
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    app.state.templates.env.filters["ui_text"] = ui_text
     app.state.pdf_generator = PDFGenerator(
         BASE_DIR / "templates", BASE_DIR / "static", settings.data_dir, app.state.profile_photo
     )

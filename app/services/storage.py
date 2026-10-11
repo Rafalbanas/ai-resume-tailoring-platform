@@ -133,7 +133,10 @@ class Storage:
         photo_enabled: bool | None = None,
         truth_lock_warnings: list[str] | None = None,
         layout_warnings: list[str] | None = None,
+        modern_photo_enabled: bool | None = None,
     ) -> Path:
+        if template_name is not None and template_name not in {"modern_sidebar", "ats_classic"}:
+            raise ValueError("Unsupported resume layout")
         folder = self.application_folder(slug)
         (folder / "resume.json").write_text(resume.model_dump_json(indent=2), encoding="utf-8")
         metadata_path = folder / "metadata.json"
@@ -144,19 +147,30 @@ class Storage:
         if layout_warnings is not None:
             metadata["layout_warnings"] = layout_warnings
             metadata["layout_adjustments"] = layout_warnings
-        if template_name is not None:
-            metadata["template_name"] = template_name
         if photo_enabled is not None:
             metadata["photo_enabled"] = bool(photo_enabled)
+        if template_name is not None:
+            if template_name not in {"modern_sidebar", "ats_classic"}:
+                raise ValueError("Unsupported resume layout")
+            metadata["template_name"] = template_name
+        if modern_photo_enabled is not None:
+            metadata["modern_photo_enabled"] = modern_photo_enabled
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return folder
 
-    def update_presentation(self, slug: str, *, photo_enabled: bool) -> Path:
+    def update_presentation(self, slug: str, *, photo_enabled: bool, template_name: str | None = None,
+                            modern_photo_enabled: bool | None = None) -> Path:
         """Update presentation-only state without rewriting generated resume content."""
         folder = self.application_folder(slug)
         metadata_path = folder / "metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["photo_enabled"] = bool(photo_enabled)
+        if template_name is not None:
+            if template_name not in {"modern_sidebar", "ats_classic"}:
+                raise ValueError("Unsupported resume layout")
+            metadata["template_name"] = template_name
+        if modern_photo_enabled is not None:
+            metadata["modern_photo_enabled"] = modern_photo_enabled
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return folder
 

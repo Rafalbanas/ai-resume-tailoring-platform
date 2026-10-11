@@ -273,7 +273,7 @@ async def test_primary_timeout_triggers_fallback_with_stage_updates(profile):
     assert resp.provider_used == "gemini"
     assert resp.fallback_used is True
     assert "timed out" in resp.fallback_reason
-    assert any("Przełączanie na provider rezerwowy (gemini)" in s for s in stages_reported)
+    assert any("Switching to fallback provider (gemini)" in s for s in stages_reported)
     assert any("Generowanie (gemini)" in s for s in stages_reported)
 
 

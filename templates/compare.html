@@ -47,7 +47,7 @@
         <div>
           <span class="provider-pill {{ provider_key }}">{{ provider_key|upper }}</span>
           <h3>{{ res.model|default(provider_key) }}</h3>
-          {% if provider_key == 'gemini' %}<small class="provider-sub">Porównanie uruchamia Gemini i przesyła dane potrzebne do analizy do zewnętrznego API Google.</small>{% endif %}
+          {% if provider_key == 'gemini' %}<small class="provider-sub">Comparison runs Gemini and sends analysis inputs to Google's external API.</small>{% endif %}
         </div>
         {% if res and res.ok %}
         <span class="latency-badge">{{ res.duration_ms }} ms</span>
@@ -61,13 +61,14 @@
         <div class="score score-{{ res.analysis.match_level|lower }}">
           <small>Match</small>
           {% if res.analysis.match_level == 'UNRELIABLE' or res.analysis.recommendation == 'RETRY' %}
-            <strong class="score-unreliable">Analiza niewiarygodna</strong>
-            <span>Wymaga ponowienia</span>
+            <strong class="score-unreliable">Incomplete analysis — review required</strong>
+            <span>Review required</span>
           {% else %}
             <strong>{{ res.analysis.match_level }}</strong>
             <span>{{ res.analysis.recommendation.replace('_', ' ') }}</span>
           {% endif %}
         </div>
+        {% if res.analysis.analysis_language != "en" %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
         <p class="reasoning-snippet"><em>{{ res.analysis.reasoning_summary }}</em></p>
       </div>
 
@@ -96,12 +97,13 @@
       {% if res.analysis.requirements %}
       <div class="compare-section">
         <h4>Wymagania i dowody ({{ res.analysis.requirements|length }})</h4>
+        {% if res.analysis.analysis_language != "en" %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
         <div class="requirements-table">
           {% for req in res.analysis.requirements %}
           <div class="requirement-row req-status-{{ req.status }}">
             <div class="req-header">
               <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
-              <span class="badge status-badge status-{{ req.status }}">{{ req.status|upper }}</span>
+              <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed absence'}.get(req.status, req.status) }}</span>
               <strong>{{ req.name }}</strong>
             </div>
             {% if req.source_quote %}
@@ -111,7 +113,7 @@
             {% endif %}
             {% if req.evidence %}
             <div class="req-evidence">
-              <small><strong>Dowód:</strong> {{ req.evidence|join('; ') }}</small>
+              <small><strong>Evidence:</strong> {{ req.evidence|join('; ') }}</small>
             </div>
             {% elif req.reason %}
             <div class="req-reason">

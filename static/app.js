@@ -214,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cropSaveBtn) {
       cropSaveBtn.addEventListener("click", () => {
         cropSaveBtn.disabled = true;
-        cropSaveBtn.textContent = "Zapisywanie…";
+        cropSaveBtn.textContent = "Saving…";
         const scale = (cropImage._baseScale || 1) * zoom;
         const natW = cropImage._natW || V;
         const natH = cropImage._natH || V;
@@ -237,7 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
           canvas.toBlob((blob) => {
             if (cropDialog) cropDialog.close();
             cropSaveBtn.disabled = false;
-            cropSaveBtn.textContent = "Zapisz kadr";
+            cropSaveBtn.textContent = "Save crop";
             if (blob) {
               uploadFileDirect(blob, cropX, cropY, cropZoom);
             } else if (currentCropFile) {
@@ -247,7 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (_) {
           if (cropDialog) cropDialog.close();
           cropSaveBtn.disabled = false;
-          cropSaveBtn.textContent = "Zapisz kadr";
+          cropSaveBtn.textContent = "Save crop";
           if (currentCropFile) {
             uploadFileDirect(currentCropFile, cropX, cropY, cropZoom);
           }
@@ -497,7 +497,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const compBtn = compareForm.querySelector('button[type="submit"]');
       if (compBtn) {
         compBtn.disabled = true;
-        compBtn.textContent = "Uruchamianie porównania…";
+        compBtn.textContent = "Starting comparison…";
       }
       try {
         const formData = new FormData(compareForm);
@@ -528,7 +528,7 @@ if (providerSelect && providerOrder) {
   const updateOrder = () => {
     const primary = providerSelect.value === 'gemini' ? 'Gemini' : 'Ollama';
     const secondary = primary === 'Gemini' ? 'Ollama' : 'Gemini';
-    providerOrder.textContent = 'Kolejność: ' + primary + (providerOrder.dataset.fallback === 'true' ? ' → ' + secondary : ' (bez fallbacku)');
+    providerOrder.textContent = 'Order: ' + primary + (providerOrder.dataset.fallback === 'true' ? ' → ' + secondary : ' (fallback disabled)');
   };
   providerSelect.addEventListener('change', updateOrder);
   updateOrder();

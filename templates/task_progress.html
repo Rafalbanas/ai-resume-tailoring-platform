@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Przetwarzanie zadania · CV Tailor{% endblock %}
+{% block title %}Task processing · CV Tailor{% endblock %}
 {% block content %}
 <section class="workspace-head">
   <div>
-    <p class="eyebrow">ZADANIE W TLE</p>
+    <p class="eyebrow">BACKGROUND TASK</p>
     <h1 id="task-title">
       {% if task.kind == 'compare' %}
-        Porównywanie modeli AI
+        Comparing AI models
       {% else %}
-        Generowanie dopasowanego CV
+        Generating tailored CV
       {% endif %}
     </h1>
     <p class="section-sub">
       {% set job = task.payload.get('job', {}) %}
       {% if job.get('role') %}
-        <strong>{{ job.get('role') }}</strong> w <em>{{ job.get('company', 'Nienazwana firma') }}</em>
+        <strong>{{ job.get('role') }}</strong> at <em>{{ job.get('company', 'Unnamed company') }}</em>
       {% else %}
-        Trwa przetwarzanie zlecenia...
+        Processing request...
       {% endif %}
     </p>
   </div>
@@ -27,16 +27,16 @@
     <div>
       <strong id="task-status-text">
         {% if task.status == 'queued' %}
-          Oczekuje w kolejce
+          Queued
         {% elif task.status == 'running' %}
-          W trakcie przetwarzania
+          Processing
         {% elif task.status == 'completed' %}
-          Ukończono
+          Completed
         {% else %}
-          Błąd generowania
+          Generation failed
         {% endif %}
       </strong>
-      <small>Bezpieczne przetwarzanie asynchroniczne w tle na serwerze</small>
+      <small>Background processing on the server</small>
     </div>
   </div>
 </section>
@@ -45,16 +45,16 @@
   <div class="task-card-header">
     <div class="task-stage-badge">
       <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed'] %}display: none;{% endif %}"></span>
-      <span id="task-stage">{{ task.stage }}</span>
+      <span id="task-stage">{{ task.stage|ui_text }}</span>
     </div>
     <div class="task-timer-meta">
       <span id="task-timer">
         {% if task.execution_duration_seconds is not none %}
-          Czas wykonania: {{ task.execution_duration_seconds }} s
+          Execution time: {{ task.execution_duration_seconds }} s
         {% elif task.status == 'queued' %}
-          Oczekiwanie w kolejce...
+          Waiting in queue...
         {% else %}
-          Upłynęło: licznie...
+          Elapsed: calculating...
         {% endif %}
       </span>
     </div>
@@ -64,26 +64,26 @@
     <div class="task-info-note">
       <small id="task-footer-note">
         {% if task.status == 'failed' %}
-          Przetwarzanie zakończone niepowodzeniem. Możesz ponowić generowanie lub poprawić ofertę.
+          Processing failed. Retry generation or edit the job.
         {% else %}
-          ℹ️ To zadanie wykonuje się na serwerze niezależnie od przeglądarki. Możesz bezpiecznie odświeżyć tę stronę, zamknąć kartę lub wrócić za chwilę.
+          ℹ️ This task runs on the server independently of your browser. You may refresh, close this tab, or return later.
         {% endif %}
       </small>
     </div>
     <div class="task-id-badge">
-      <small>ID zadania: <code>{{ task.task_id[:12] }}</code></small>
+      <small>Task ID: <code>{{ task.task_id[:12] }}</code></small>
     </div>
   </div>
 
   <div id="error-container" class="alert" style="{% if task.status != 'failed' %}display: none;{% endif %} margin-top: 1.5rem;">
-    <strong id="error-title">Wystąpił błąd podczas przetwarzania:</strong>
-    <p id="error-message" style="margin-top: 0.5rem; word-break: break-word;">{{ task.error or '' }}</p>
+    <strong id="error-title">Processing failed:</strong>
+    <p id="error-message" style="margin-top: 0.5rem; word-break: break-word;">{{ task.error|ui_text }}</p>
     <div class="task-actions" style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
       <form id="retry-form" action="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/retry" method="post" style="display: inline-block; margin: 0;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" id="retry-btn" class="button primary">Ponów generowanie</button>
+        <button type="submit" id="retry-btn" class="button primary">Retry generation</button>
       </form>
-      <a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Popraw ofertę i ustawienia</a>
+      <a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Edit job and settings</a>
     </div>
   </div>
 </div>
@@ -91,7 +91,7 @@
 <noscript>
   <meta http-equiv="refresh" content="3">
   <p class="field-hint" style="text-align: center; margin-top: 1rem;">
-    Automatyczne odświeżanie strony co 3 sekundy...
+    Refreshing status every 3 seconds...
   </p>
 </noscript>
 
@@ -127,7 +127,7 @@
     const now = Date.now();
     const elapsedSec = Math.max(0, Math.floor((now - start) / 1000));
     if (timerEl) {
-      timerEl.textContent = `Upłynęło: ${formatDuration(elapsedSec)}`;
+      timerEl.textContent = `Elapsed: ${formatDuration(elapsedSec)}`;
     }
   }
 
@@ -145,7 +145,7 @@
       }
       retryBtn.disabled = true;
       retryBtn.setAttribute("aria-busy", "true");
-      retryBtn.textContent = "Uruchamianie ponowienia...";
+      retryBtn.textContent = "Starting retry...";
     });
   }
 
@@ -167,10 +167,10 @@
         }
 
         if (data.status === "running") {
-          if (statusTextEl) statusTextEl.textContent = "W trakcie przetwarzania";
+          if (statusTextEl) statusTextEl.textContent = "Processing";
           if (livePulseEl) livePulseEl.style.display = "inline-block";
         } else if (data.status === "queued") {
-          if (statusTextEl) statusTextEl.textContent = "Oczekuje w kolejce";
+          if (statusTextEl) statusTextEl.textContent = "Queued";
         }
 
         if (data.status === "completed") {
@@ -181,10 +181,10 @@
             badgeIconEl.classList.remove("pulse-indicator");
             badgeIconEl.textContent = "✓";
           }
-          if (statusTextEl) statusTextEl.textContent = "Zakończono!";
-          if (stageEl) stageEl.textContent = "Przekierowywanie do wyniku...";
+          if (statusTextEl) statusTextEl.textContent = "Completed!";
+          if (stageEl) stageEl.textContent = "Opening results...";
           const finalDuration = data.execution_duration_seconds ? ` (${formatDuration(data.execution_duration_seconds)})` : "";
-          if (timerEl) timerEl.textContent = `Ukończono w: ${finalDuration || "gotowe"}`;
+          if (timerEl) timerEl.textContent = `Completed w: ${finalDuration || "done"}`;
           const redirectUrl = (data.result && data.result.redirect_url) || "/";
           setTimeout(() => {
             window.location.href = cvAppUrl(redirectUrl);
@@ -200,17 +200,17 @@
             badgeIconEl.classList.remove("pulse-indicator");
             badgeIconEl.textContent = "⚠️";
           }
-          if (statusTextEl) statusTextEl.textContent = "Błąd generowania";
-          if (stageEl) stageEl.textContent = data.stage || "Wykonywanie nie powiodło się";
+          if (statusTextEl) statusTextEl.textContent = "Generation failed";
+          if (stageEl) stageEl.textContent = data.stage || "Execution failed";
           if (timerEl) {
             const execSec = data.execution_duration_seconds || 0;
-            timerEl.textContent = `Czas wykonania: ${formatDuration(execSec)}`;
+            timerEl.textContent = `Execution time: ${formatDuration(execSec)}`;
           }
           if (footerNoteEl) {
-            footerNoteEl.textContent = "Przetwarzanie zakończone niepowodzeniem. Możesz ponowić generowanie lub poprawić ofertę.";
+            footerNoteEl.textContent = "Processing failed. Retry generation or edit the job.";
           }
           if (errorContainer && errorMessage) {
-            errorMessage.textContent = data.error || "Wystąpił błąd podczas generowania.";
+            errorMessage.textContent = data.error || "Generation failed.";
             errorContainer.style.display = "block";
           }
           return;
@@ -218,7 +218,7 @@
       } else if (res.status === 404) {
         isDone = true;
         clearInterval(timerInterval);
-        if (errorMessage) errorMessage.textContent = "Nie odnaleziono zadania.";
+        if (errorMessage) errorMessage.textContent = "Task not found.";
         if (errorContainer) errorContainer.style.display = "block";
         return;
       }

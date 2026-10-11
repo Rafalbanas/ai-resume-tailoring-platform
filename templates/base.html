@@ -18,8 +18,8 @@
 <body>
   <header class="topbar">
     <a href="{{ app_root_path|default('') }}/" class="brand"><span class="brand-mark">CV</span><span>Tailor</span></a>
-    {% if request.state.authenticated %}<nav aria-label="Primary"><a href="{{ app_root_path|default('') }}/">New match</a><a href="{{ app_root_path|default('') }}/compare">Compare</a><a href="{{ app_root_path|default('') }}/history">History</a><a href="{{ app_root_path|default('') }}/diagnostics">Diagnostics</a><a href="{{ app_root_path|default('') }}/skills">Skills &amp; Evidence</a><a href="{{ app_root_path|default('') }}/references">Reference CVs</a><a href="{{ app_root_path|default('') }}/profile">Profile</a><a href="{{ app_root_path|default('') }}/account/password">Account</a></nav><form action="{{ app_root_path|default('') }}/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Wyloguj</button></form>{% endif %}
+    {% if request.state.authenticated %}<nav aria-label="Primary"><a href="{{ app_root_path|default('') }}/">New match</a><a href="{{ app_root_path|default('') }}/compare">Compare</a><a href="{{ app_root_path|default('') }}/history">History</a><a href="{{ app_root_path|default('') }}/diagnostics">Diagnostics</a><a href="{{ app_root_path|default('') }}/skills">Skills &amp; Evidence</a><a href="{{ app_root_path|default('') }}/references">Reference CVs</a><a href="{{ app_root_path|default('') }}/profile">Profile</a><a href="{{ app_root_path|default('') }}/account/password">Account</a></nav><form action="{{ app_root_path|default('') }}/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Sign out</button></form>{% endif %}
   </header>
-  <main class="shell">{% if demo_mode %}<p class="demo-marker">Demo — fikcyjne dane</p>{% endif %}{% block content %}{% endblock %}</main>
+  <main class="shell">{% if demo_mode %}<p class="demo-marker">Demo — fictional data</p>{% endif %}{% block content %}{% endblock %}</main>
 </body>
 </html>

@@ -319,7 +319,7 @@ class AnalysisValidator:
                 else:
                     _append_unique(result.learning_matches, name)
                     _append_unique(missing, f"{name} (Learning)")
-                    missing_reasons[f"{name} (Learning)"] = "W trakcie nauki (brak potwierdzenia w profilu jako doświadczenie)"
+                    missing_reasons[f"{name} (Learning)"] = "Learning (not confirmed as professional experience)"
 
         # 2. Process strong matches
         for claim in result.strong_matches:
@@ -349,7 +349,7 @@ class AnalysisValidator:
             if or_match:
                 _append_unique(strong, claim)
                 sources[claim] = or_ids
-                evidence[claim] = [f"Potwierdzona alternatywa: {or_branch}"]
+                evidence[claim] = [f"Confirmed alternative: {or_branch}"]
                 continue
 
             claimed_ids = result.match_sources.get(claim, [])
@@ -365,7 +365,7 @@ class AnalysisValidator:
             else:
                 if not (job_text and not is_grounded_in_job(claim, job_text)):
                     _append_unique(missing, claim)
-                    missing_reasons[claim] = "Brak potwierdzenia w profilu"
+                    missing_reasons[claim] = "Not confirmed in profile"
 
         # 3. Process partial matches
         for claim in result.partial_matches:
@@ -394,7 +394,7 @@ class AnalysisValidator:
             if or_match:
                 _append_unique(strong, claim)
                 sources[claim] = or_ids
-                evidence[claim] = [f"Potwierdzona alternatywa: {or_branch}"]
+                evidence[claim] = [f"Confirmed alternative: {or_branch}"]
                 continue
 
             direct_ids = self.catalog.direct_sources(claim)
@@ -408,7 +408,7 @@ class AnalysisValidator:
             else:
                 if not (job_text and not is_grounded_in_job(claim, job_text)):
                     _append_unique(missing, claim)
-                    missing_reasons[claim] = "Brak potwierdzenia w profilu"
+                    missing_reasons[claim] = "Not confirmed in profile"
 
         # 4. Process missing requirements
         for claim in result.missing_requirements:
@@ -438,14 +438,14 @@ class AnalysisValidator:
                 if "kcs" in claim.casefold():
                     kcs_req = "KCS (Knowledge Centered Service methodology)"
                     _append_unique(missing, kcs_req)
-                    missing_reasons[kcs_req] = "Brak potwierdzenia w profilu"
+                    missing_reasons[kcs_req] = "Not confirmed in profile"
                 continue
 
             or_match, or_branch, or_ids = self._matches_or_alternatives(claim)
             if or_match:
                 _append_unique(strong, claim)
                 sources[claim] = or_ids
-                evidence[claim] = [f"Potwierdzona alternatywa: {or_branch}"]
+                evidence[claim] = [f"Confirmed alternative: {or_branch}"]
                 continue
 
             direct_ids = self.catalog.direct_sources(claim)
@@ -454,7 +454,7 @@ class AnalysisValidator:
                 sources[claim] = direct_ids
             else:
                 _append_unique(missing, claim)
-                missing_reasons[claim] = "Brak potwierdzenia w profilu"
+                missing_reasons[claim] = "Not confirmed in profile"
 
         result.strong_matches = strong
         result.partial_matches = partial
@@ -519,7 +519,7 @@ class AnalysisValidator:
                     priority=prio,
                     status=RequirementStatus.PARTIAL,
                     evidence=ev,
-                    reason="Częściowo potwierdzone umiejętnościami transferowalnymi",
+                    reason="Partially supported by transferable skills",
                 )
             )
             req_counter += 1
@@ -527,7 +527,7 @@ class AnalysisValidator:
         for item in result.missing_requirements:
             quote = extract_source_quote(item, job_text)
             prio = detect_priority(item, quote, job_text)
-            reason = missing_reasons.get(item, "Brak potwierdzenia w profilu")
+            reason = missing_reasons.get(item, "Not confirmed in profile")
             requirements_list.append(
                 JobRequirement(
                     id=f"req_{req_counter}",
@@ -552,8 +552,8 @@ class AnalysisValidator:
             result.match_level = MatchLevel.UNRELIABLE
             result.recommendation = Recommendation.RETRY
             result.reasoning_summary = (
-                "Analiza niewiarygodna — wymaga ponowienia. "
-                "Nie udało się poprawnie wyodrębnić wymagań z treści ogłoszenia."
+                "Incomplete analysis — review required — review required. "
+                "Could not reliably extract requirements from the job description."
             )
             return result
 
@@ -570,17 +570,17 @@ class AnalysisValidator:
             result.match_level = MatchLevel.LOW
             result.recommendation = Recommendation.SKIP
 
-        strong_text = ", ".join(strong[:6]) or "brak bezpośrednio potwierdzonych wymagań"
-        partial_text = ", ".join(partial[:4]) or "brak wymagań transferowalnych"
-        missing_text = ", ".join(result.missing_requirements[:5]) or "brak istotnych luk"
+        strong_text = ", ".join(strong[:6]) or "no directly confirmed requirements"
+        partial_text = ", ".join(partial[:4]) or "no transferable requirements"
+        missing_text = ", ".join(result.missing_requirements[:5]) or "no significant unconfirmed conditions"
         result.reasoning_summary = (
-            f"Fakty z profilu bezpośrednio potwierdzają: {strong_text}. "
-            f"Częściowo potwierdzone: {partial_text}. "
-            f"Wymagania bez potwierdzenia w profilu: {missing_text}."
+            f"Profile facts directly confirm: {strong_text}. "
+            f"Partially confirmed: {partial_text}. "
+            f"Requirements not confirmed in profile: {missing_text}."
         )[:600]
         # Legacy callers without the advertisement cannot verify source or priority.
         result.is_reliable = False
         result.match_level = MatchLevel.UNRELIABLE
         result.recommendation = Recommendation.RETRY
-        result.reasoning_summary = "Brak treści ogłoszenia: wymagania i priorytety wymagają weryfikacji źródłowej."
+        result.reasoning_summary = "Job description missing: requirements and priorities need source review."
         return result
