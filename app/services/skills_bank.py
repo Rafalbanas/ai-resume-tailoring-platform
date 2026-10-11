@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.models.candidate import CandidateProfile
 from app.models.skills import SkillEvidence, SkillsDocument, VerifiedSkill
 from app.services.fact_catalog import FactCatalog, normalized_tokens
+from app.services.languages import is_language_skill
 
 
 class SkillsConfigurationError(RuntimeError):
@@ -165,11 +166,11 @@ class SkillsBank:
         if skill.cv_wording:
             dangerous = re.search(r"\b(?:expert|advanced|senior|fluent|native)\b|\d+", skill.cv_wording, re.I)
             if not dangerous or skill.cv_wording.casefold() == skill.name.casefold():
-                return skill.cv_wording
+                return re.sub(r"^hands[- ]on\s+", "", skill.cv_wording, flags=re.I)
         if skill.level == "basic":
             return f"Basic {skill.name}"
         if skill.level == "hands_on":
-            return f"Hands-on {skill.name}"
+            return skill.name
         if skill.level == "advanced":
             return f"Advanced {skill.name}"
         return skill.name
@@ -178,7 +179,7 @@ class SkillsBank:
         self, requested_ids: list[str], job_text: str, *, minimum: int = 0, maximum: int = 16, requested_only: bool = False
     ) -> list[VerifiedSkill]:
         requested = {value for value in requested_ids}
-        eligible = [skill for skill in self.skills if self.eligible(skill)]
+        eligible = [skill for skill in self.skills if self.eligible(skill) and not is_language_skill(skill.name, self.profile)]
         normalized_job = _normal(job_text)
         category_terms = {
             "Windows / Microsoft": ("windows", "microsoft", "active directory", "desktop", "workstation"),
@@ -255,33 +256,48 @@ class SkillsBank:
             aliases = " ".join(self.aliases_for(skill)).casefold()
             direct = self.mentioned(skill, job_text)
             semantic = (
+                (re.search(r"\bsql\b", normalized_job) and _normal(skill.name) in {"sql", "ms sql", "sql server", "microsoft sql server", "t sql", "transact sql", "sql troubleshooting operational queries"})
+                or (re.search(r"\b(?:api|apis|rest)\b", normalized_job) and _normal(skill.name) in {"httpx", "json", "rest api integration", "rest api"})
+                or (re.search(r"\b(?:code|programming|automation|scripting)\b", normalized_job) and skill.name.casefold() in {"python", "powershell", "bash"})
+                or ("troubleshoot" in normalized_job and re.search(r"\b(?:log analysis|network troubleshooting|application troubleshooting)\b", aliases))
+                or
                 ("crm" in normalized_job and any(x in aliases for x in ("salesforce", "crm")))
                 or ("support" in normalized_job and (skill.name.casefold() in {"troubleshooting", "technical troubleshooting", "technical documentation", "operational runbooks", "incident handling", "application support", "tier 2 support", "l1/l2 support"} or (skill.category == "Support / Operations" and "support" in aliases)))
                 or ("problem solving" in normalized_job and skill.name.casefold() in {"troubleshooting", "technical troubleshooting"})
                 or ("documentation" in normalized_job and any(x in aliases for x in ("documentation", "runbook")))
             )
-            return 2 if direct or ("crm" in normalized_job and "salesforce" in aliases) else 1 if semantic else 0
+            operational = "support" in normalized_job and _normal(skill.name) in {"incident handling", "application support", "application log analysis", "network troubleshooting"}
+            return 2 if direct or operational or ("crm" in normalized_job and "salesforce" in aliases) or (semantic and _normal(skill.name) in {"ms sql", "sql server", "microsoft sql server", "t sql", "httpx", "json"}) else 1 if semantic else 0
 
         requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
         ranked = sorted(eligible, key=lambda skill: (role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
+        chosen_labels: set[str] = set()
         families = set()
         for skill in ranked:
             if requested_only and skill.id not in requested:
                 continue
             family = skill.name.casefold().replace("windows administration", "windows")
-            if family in families:
+            if family in {"technical documentation", "operational runbooks", "runbooks"}:
+                family = "technical documentation"
+            if family in {"tier 2 support", "l1/l2 support"}:
+                family = "support levels"
+            if family == "sql troubleshooting / operational queries" and any(re.search(r"\bsql\b", s.name, re.I) for s in chosen):
+                continue
+            label = _normal(self.wording(skill))
+            if family in families or label in chosen_labels:
                 continue
             relevant = role_relevance(skill) > 0 or (requested_only and skill.id in requested)
             if not relevant:
                 continue
             if skill.subcategory == "AI-Assisted Development":
-                if ai_dev_count >= 3:
+                if ai_dev_count >= 1:
                     continue
                 ai_dev_count += 1
             chosen.append(skill)
             families.add(family)
+            chosen_labels.add(label)
             if len(chosen) >= maximum:
                 break
         return chosen

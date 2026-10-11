@@ -41,47 +41,87 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
 
 
 def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
-    entries = [e for e in catalog.prompt_entries if e.kind == 'summary' or (e.kind == 'experience' and ':fact:' in e.source_id)]
-    # Dates/tenure are particularly easy to overstate; experience dates remain visible.
-    entries = [e for e in entries if not re.search(r'\byears?\b|\blat\b', e.text, re.I)]
+    """Build up to four short sentences from attested clauses.
+
+    Only punctuation/capitalization is composed. The one L1/L2 historical clause
+    is extracted from an explicit employment support statement, never a title.
+    Projects can supply integration evidence, but cannot become job experience.
+    """
+    entries = [e for e in catalog.prompt_entries
+               if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)]
+    entries = [e for e in entries if not re.search(r"\byears?\b|\blat\b", e.text, re.I)]
     tokens = normalized_tokens(role)
-    themes = {
-        'support': {'support', 'troubleshooting', 'troubleshoot', 'incident', 'english', 'customer', 'partner', 'documentation', 'salesforce', 'crm'},
-        'crm': {'salesforce', 'crm', 'customer', 'partner', 'support'},
-        'windows': {'windows', 'powershell', 'automation', 'troubleshooting'},
-        'python': {'python', 'automation', 'linux'},
-        'erp': {'support', 'application', 'incident', 'english'},
-        'sap': {'support', 'application', 'incident', 'english'},
-    }
-    for trigger, words in themes.items():
-        if trigger in tokens:
-            tokens |= words
-    ordered = sorted(entries, key=lambda e: len(normalized_tokens(e.text) & tokens), reverse=True)
-    # The current supported occupation gives the reader context even for stretch roles.
-    identity = next((e for e in entries if e.kind == 'summary' and 'support' in e.text.casefold()), None)
-    selected = ([identity] if identity else []) + [e for e in ordered if e != identity]
-    text, ids = '', []
-    for entry in selected:
-        sentence = entry.text.strip()
-        if not sentence:
-            continue
-        sentence += '' if sentence[-1] in '.!?' else '.'
-        if len(text) + len(sentence) + 1 > 700:
-            continue
-        text = f'{text} {sentence}'.strip()
-        ids.append(entry.source_id)
-        if len(ids) == 3:
-            break
-    if normalized_tokens(role) & {"python", "api", "integration", "integrations"}:
-        api_fact = next((e for e in catalog.prompt_entries if e.kind == "project" and ":fact:" in e.source_id and "api" in e.text.casefold()), None)
-        if api_fact and len(text) + len(api_fact.text) + 1 <= 570:
-            text = f"{text} Project work: {api_fact.text}".strip()
-            ids.append(api_fact.source_id)
-    education = next((e for e in catalog.prompt_entries if e.kind == "education" and "computer science" in e.text.casefold() and ":fact:" not in e.source_id and ":thesis:" not in e.source_id), None)
-    if education and tokens & {"degree", "education", "science", "bachelor", "msc"}:
-        source = catalog.profile.education[education.owner_index]
-        sentence = f"{source.qualification}, {source.institution} ({source.dates})."
-        if len(text) + len(sentence) + 1 <= 700:
-            text = f"{text} {sentence}".strip()
-            ids.append(education.source_id)
-    return deduplicate_summary(text, catalog), ids
+    support = bool(tokens & {"support", "troubleshooting", "incident"})
+    if support:
+        tokens |= {"support", "troubleshooting", "incident", "sql", "api", "automation", "english", "logs"}
+    selected_ids: list[str] = []
+    used = set()
+    groups: list[list[str]] = [[], [], [], []]
+
+    def add(index, entry, text=None):
+        if not entry or entry.source_id in used:
+            return
+        clause = (text or entry.text).strip().rstrip(".!?")
+        candidate = [list(g) for g in groups]
+        candidate[index].append(clause)
+        result = " ".join("; ".join(g) + "." for g in candidate if g)
+        if len(result) <= 700:
+            groups[index].append(clause[0].lower() + clause[1:] if groups[index] and clause.startswith(("Analyzes ", "Integrates ", "Automates ", "Used ", "Provided ")) else clause)
+            selected_ids.append(entry.source_id)
+            used.add(entry.source_id)
+
+    def first(pattern, *, kinds=None):
+        return next((e for e in entries if e.source_id not in used
+                     and (not kinds or e.kind in kinds) and re.search(pattern, e.text, re.I)), None)
+
+    # A current employer must be explicitly named in an attested summary, or its
+    # identity comes directly from the dated employment record.
+    identity = first(r"(?:provides|providing).*support", kinds={"summary"}) if support else None
+    if identity:
+        add(0, identity)
+        # Merge only repeated verbatim, attested identity clauses. Keep the
+        # additional detail and both original evidence IDs.
+        for entry in entries:
+            if entry.kind != "experience" or entry.owner_index != 0 or entry.source_id in used:
+                continue
+            merged = deduplicate_summary(identity.text + " " + entry.text, catalog)
+            if len(merged) < len(identity.text + " " + entry.text) and merged != identity.text:
+                groups[0][0] = merged.rstrip(".!?")
+                selected_ids.append(entry.source_id)
+                used.add(entry.source_id)
+                break
+    elif catalog.profile.experience:
+        current = catalog.profile.experience[0]
+        fact = next((e for e in entries if e.kind == "experience" and e.owner_index == 0), None)
+        if fact:
+            add(0, fact, f"{current.title} at {current.company}" if current.end.casefold() in {"present", "current", "now", "obecnie"} else f"Experience as {current.title} at {current.company}")
+    else:
+        add(0, next(iter(entries), None))
+    if support:
+        historical = first(r"\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support", kinds={"experience"})
+        if historical:
+            add(0, historical, "previous roles included L1 and L2 support")
+        add(1, first(r"(?:application.*network|network.*application).*troubleshoot|troubleshoot.*(?:application.*network|network.*application)"))
+        if not groups[1]:
+            add(1, first(r"troubleshoot|incident", kinds={"summary", "experience"}))
+        add(1, first(r"(?:analy[sz].*logs|logs.*root causes)", kinds={"summary", "experience"}))
+        # English has its own last sentence; avoid incident clauses taking all room.
+        add(3, first(r"English.*(?:B2|professional|daily)|(?:documentation|communication).*English", kinds={"summary", "experience"}))
+        add(2, first(r"(?:SQL|T-SQL).*(?:queries|troubleshooting|verification)", kinds={"experience"}))
+        add(2, first(r"(?:REST.*(?:HTTPX|JSON)|HTTPX.*(?:REST|JSON))", kinds={"project"}))
+        add(2, first(r"(?:automates|automated).*Python", kinds={"summary", "experience"}))
+    else:
+        if tokens & {"degree", "education", "science", "bachelor", "master"}:
+            education = next((e for e in catalog.prompt_entries if e.kind == "education"
+                              and "computer science" in e.text.casefold() and ":fact:" not in e.source_id
+                              and ":thesis:" not in e.source_id), None)
+            if education:
+                source = catalog.profile.education[education.owner_index]
+                add(3, education, f"{source.qualification}, {source.institution} ({source.dates})")
+        ranked = sorted(entries, key=lambda e: len(normalized_tokens(e.text) & tokens), reverse=True)
+        for entry in ranked:
+            if len(used) >= 4:
+                break
+            add(min(len(used), 3), entry)
+    text = " ".join("; ".join(group) + "." for group in groups if group)
+    return deduplicate_summary(text, catalog), selected_ids

@@ -13,6 +13,7 @@ from app.models.resume import (
     TailoredResume,
 )
 from app.services.fact_catalog import FactCatalog, normalized_tokens
+from app.services.languages import is_language_skill
 from app.services.professional_summary import build_summary, deduplicate_summary
 from app.services.skills_bank import SkillsBank
 
@@ -38,7 +39,7 @@ class FactValidator:
         def skill_key(value: str) -> str:
             return " ".join(value.casefold().replace("(basic)", "").replace("/", " ").replace("-", " ").split())
 
-        allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values}
+        allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values if not is_language_skill(value, self.profile)}
         clean_skills = []
         if self.skills_bank:
             requested_ids = list(draft.selected_skill_ids)
@@ -89,15 +90,20 @@ class FactValidator:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
 
+        summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}")
         summary_entries = self.catalog.valid(draft.summary_source_fact_ids)
-        summary_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience"} and (e.kind != "experience" or ":fact:" in e.source_id)]
-        if not self.catalog.supports_paraphrase(draft.professional_summary, summary_ids):
-            summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}")
+        model_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience", "project"}
+                     and (e.kind == "summary" or ":fact:" in e.source_id)]
+        sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
+        if (not preserve_skills or draft.professional_summary == summary or sentence_count > 4
+                or not self.catalog.supports_paraphrase(draft.professional_summary, model_ids)):
             if draft.professional_summary != summary:
-                warnings.append("Professional summary rebuilt from verified source sentences; model tone cannot be assessed from this replacement")
+                warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
             draft.professional_summary = summary
+            draft.summary_source_fact_ids = summary_ids
+        else:
+            draft.summary_source_fact_ids = model_ids
         draft.professional_summary = deduplicate_summary(draft.professional_summary, self.catalog)
-        draft.summary_source_fact_ids = summary_ids
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
             bullets = []
@@ -114,9 +120,10 @@ class FactValidator:
                     continue
                 exp_index = bullet_index
                 valid_ids = [entry.source_id for entry in entries]
-                if not self.catalog.supports_paraphrase(bullet.text, valid_ids):
+                if not self.catalog.supports_paraphrase(bullet.text, valid_ids) and bullet.text != self._experience_wording(" ".join(entry.text for entry in entries)):
                     warnings.append(f"Unsupported AI bullet replaced in {self.profile.experience[exp_index].company}")
                     bullet.text = " ".join(entry.text for entry in entries)
+                bullet.text = self._experience_wording(bullet.text)
                 bullet.source_fact_ids = valid_ids
                 bullets.append(bullet)
             if exp_index is None or not bullets:
@@ -138,7 +145,7 @@ class FactValidator:
                         company=source.company,
                         title=source.title,
                         dates=" – ".join(filter(None, [source.start, source.end])),
-                        bullets=[ResumeBullet(text=entry.text, source_fact_ids=[entry.source_id]) for entry in entries],
+                        bullets=[ResumeBullet(text=self._experience_wording(entry.text), source_fact_ids=[entry.source_id]) for entry in entries],
                     )
                 )
         unique_experience = {}
@@ -160,7 +167,7 @@ class FactValidator:
             if entries:
                 clean_experience.append(ResumeExperience(
                     company=source.company, title=source.title, dates=dates,
-                    bullets=[ResumeBullet(text=e.text, source_fact_ids=[e.source_id]) for e in entries],
+                    bullets=[ResumeBullet(text=self._experience_wording(e.text), source_fact_ids=[e.source_id]) for e in entries],
                 ))
         order = {(e.company, e.title): i for i, e in enumerate(self.profile.experience)}
         clean_experience.sort(key=lambda e: order.get((e.company, e.title), len(order)))
@@ -181,7 +188,7 @@ class FactValidator:
             valid_ids = [entry.source_id for entry in entries]
             project.name = source.name
             project.url = source.url if source.url.startswith(("https://", "http://")) else ""
-            canonical_description = source.description or " ".join(source.facts)
+            canonical_description = self._project_description(source, job)
             if project.description != canonical_description:
                 warnings.append(f"Project wording replaced with verified description: {project.name}")
             project.description = canonical_description
@@ -226,7 +233,7 @@ class FactValidator:
                     ResumeProject(
                         name=source.name,
                         url=source.url if source.url.startswith(("https://", "http://")) else "",
-                        description=content.text,
+                        description=self._project_description(source, job),
                         technologies=[
                             tech
                             for tech in source.technologies
@@ -345,59 +352,83 @@ class FactValidator:
                 continue
             clean_certs.append(ResumeCertification(**cert_lookup[cert.name.casefold()].model_dump()))
         draft.certifications = clean_certs
+        warnings.extend(self._coverage_warnings(draft, job))
         return ValidationResult(resume=draft, warnings=warnings)
+
+    @staticmethod
+    def _experience_wording(text: str) -> str:
+        # A supported troubleshooting activity does not establish ownership or
+        # administration. This is a bounded edit, not arbitrary paraphrasing.
+        return re.sub(r"^Supported (.+) troubleshooting[.]$", r"Assisted with \1 troubleshooting.", text)
+
+    @staticmethod
+    def _project_description(source, job: JobRequest) -> str:
+        from app.services.evidence_matching import FAMILIES
+        description = source.description or " ".join(source.facts)
+        # Keep the technology project separate from the employment summary, and
+        # show relevant real tool usage instead of only the project's LLM brand.
+        if re.search(FAMILIES["ai_tools"], job.job_description, re.I):
+            fact = next((f for f in source.facts if re.search(FAMILIES["ai_tools"], f, re.I)), None)
+            if fact and fact not in description:
+                description = description.rstrip(".") + ". " + fact
+        return description
+
+    def _coverage_warnings(self, resume: TailoredResume, job: JobRequest) -> list[str]:
+        """Compare confirmed employer requirements against actual exported content.
+
+        Missing coverage creates a review message; it never manufactures a skill
+        or converts an incomplete requirement into a candidate qualification.
+        """
+        from app.models.candidate import Education, Experience, Project
+        from app.models.job import RequirementStatus
+        from app.services.evidence_matching import EvidenceMatcher
+        from app.services.job_sections import extract_sections
+        from app.services.languages import profile_languages
+
+        visible = self.profile.model_copy(deep=True)
+        visible.summary_facts = [resume.professional_summary] if resume.professional_summary else []
+        visible.skills = {"technical": resume.core_skills, "languages": profile_languages(self.profile)}
+        source_employment = {(e.company, e.title): e for e in self.profile.experience}
+        visible.experience = []
+        for e in resume.experience:
+            source = source_employment.get((e.company, e.title))
+            if source:
+                visible.experience.append(Experience(company=e.company, title=e.title, start=source.start,
+                    end=source.end, facts=[b.text for b in e.bullets]))
+        visible.projects = [Project(name=p.name, description=p.description, technologies=p.technologies)
+                            for p in resume.projects]
+        visible.education = [Education(institution=e.institution, qualification=e.qualification, dates=e.dates,
+            facts=[value for value in (e.specialisation, e.thesis_subline) if value]) for e in resume.education]
+        actual = EvidenceMatcher(FactCatalog(visible))
+        full = EvidenceMatcher(self.catalog, self.skills_bank)
+        warnings, seen = [], set()
+        units, _ = extract_sections(job.job_description)
+        for unit in units:
+            if unit.category not in {"mandatory", "preferred"} or unit.name in seen:
+                continue
+            seen.add(unit.name)
+            confirmed = full.match(unit.name, alternatives=unit.alternatives, operator=unit.operator)
+            shown = actual.match(unit.name, alternatives=unit.alternatives, operator=unit.operator)
+            if (confirmed and confirmed.status == RequirementStatus.STRONG
+                    and (not shown or shown.status != RequirementStatus.STRONG)):
+                warnings.append(f"Confirmed requirement needs CV coverage review: {unit.quote}")
+        return warnings
 
     def _experience_entries(self, index: int, job: JobRequest):
         entries = [e for e in self.catalog.prompt_entries if e.kind == "experience" and e.owner_index == index]
         role_tokens = normalized_tokens(job.role)
         job_tokens = normalized_tokens(job.job_description)
         ranking = sorted(range(len(entries)), key=lambda i: (3 * len(normalized_tokens(entries[i].text) & role_tokens) + len(normalized_tokens(entries[i].text) & job_tokens), -i), reverse=True)
-        return [entries[i] for i in sorted(ranking[:2])]
+        return [entries[i] for i in sorted(ranking[:4])]
 
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
-        capabilities: list[str] = []
-        generic_names = {
-            "troubleshooting",
-            "technical troubleshooting",
-            "technical documentation",
-            "runbooks",
-            "operational runbooks",
-            "documentation",
-            "tier 2 support",
-            "tier 1 support",
-            "incident handling",
-            "customer service",
-            "user support",
-        }
-        if self.skills_bank:
-            hard_skills: list[str] = []
-            generic_skills: list[str] = []
-            for skill_id in selected_ids:
-                skill = self.skills_bank.get(skill_id)
-                if skill and self.skills_bank.eligible(skill):
-                    if skill.name.casefold() in generic_names or skill.category == "Support / Operations":
-                        if skill.name not in generic_skills:
-                            generic_skills.append(skill.name)
-                    else:
-                        if skill.name not in hard_skills:
-                            hard_skills.append(skill.name)
-            capabilities = [self.skills_bank.get(i).name for i in selected_ids if self.skills_bank.get(i) and self.skills_bank.eligible(self.skills_bank.get(i))]
-        else:
-            allowed = {value.casefold(): value for values in self.profile.skills.values() for value in values}
-            for value in core_skills:
-                canonical = allowed.get(value.casefold())
-                if canonical and canonical not in capabilities:
-                    capabilities.append(canonical)
-
-        parts = [self.profile.experience[0].title.strip() if self.profile.experience else "IT professional"]
-        for capability in capabilities:
-            candidate = " | ".join([*parts, capability])
-            if len(candidate) > 75 and len(parts) >= 2:
-                continue
-            if len(parts) >= 4:
-                break
-            parts.append(capability)
-        return " | ".join(parts)[:100]
+        # A target advertisement cannot confer a new occupation or seniority.
+        # Use the real occupation, without a list of unrelated selected skills.
+        if not self.profile.experience:
+            return "Professional Profile"
+        title = self.profile.experience[0].title.strip()
+        title = re.sub(r"\bTier\s*([123])\b", r"L\1", title, flags=re.I)
+        return title[:140]
 
     @staticmethod
     def _is_complete_summary(value: str) -> bool:

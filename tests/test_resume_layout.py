@@ -140,3 +140,18 @@ def test_layout_choice_before_first_export(monkeypatch,resume_payload):
         assert app.state.storage.load_application(slug)[3]['template_name']=='modern_sidebar'
         assert calls==[('pdf','modern_sidebar'),('docx','modern_sidebar')]
         ai.assert_not_awaited()
+
+
+def test_new_modern_cv_keeps_existing_profile_photo(monkeypatch, resume_payload):
+    with TestClient(app) as client:
+        sign_in(client)
+        setup_exports(monkeypatch)
+        monkeypatch.setattr(app.state.profile_photo, 'exists', lambda: True)
+        response = sample_workflow_response('mock', 'fixture')
+        response.resume = TailoredResume.model_validate(resume_payload)
+        draft = app.state.storage.save_draft(job(), response)
+        result = client.post(f'/generate/{draft}', data={
+            'csrf_token': client.cookies.get('csrf_token'), 'template_name': 'modern_sidebar'}, follow_redirects=False)
+        assert result.status_code == 303
+        slug = result.headers['location'].split('/')[-1]
+        assert app.state.storage.load_application(slug)[3]['photo_enabled'] is True

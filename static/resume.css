@@ -80,3 +80,18 @@ body:has(>.modern-sidebar){margin:0}
 .modern-sidebar .tech{break-before:avoid}
 .modern-sidebar .resume-main h1,.modern-sidebar h3,.modern-sidebar p,.modern-sidebar li{overflow-wrap:anywhere}
 .modern-sidebar .resume-main p{margin-bottom:1mm}
+
+/* Contact values remain visible searchable text, even in a narrow sidebar. */
+.contact-block .contact-label{display:block;font-size:7pt;color:#b8ccdf;margin-bottom:.5mm}
+.contact-block a,.contact-block .contact-value{display:block;max-width:100%;overflow-wrap:anywhere;word-break:break-all;line-height:1.35}
+.contact-block p{font-size:8pt;break-inside:avoid;margin-bottom:2mm}
+.sidebar-section{break-inside:avoid}
+.interests-block{margin-bottom:0}
+.interest-list li{font-size:7.8pt;padding:.6mm 0}
+.modern-sidebar-consent{font-size:8pt;color:#526174}
+/* Avoid artificial spaces inside names/headings in geometry-based extractors. */
+.candidate-name{letter-spacing:0}
+.sidebar-section h2,.resume-main section>h2{letter-spacing:.035em}
+.resume-main .overflow-section .skill-list li{color:#172536;border-color:#c7d0d8}
+.interests-continuation{break-inside:avoid}
+body:has(>.modern-sidebar) .consent-footer{font-size:8pt;color:#526174}

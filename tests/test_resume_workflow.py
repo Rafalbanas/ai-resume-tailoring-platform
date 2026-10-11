@@ -335,7 +335,7 @@ def test_edit_save_reject_unsupported_and_reset(verified_profile, platform_job, 
     safe_result = FactValidator(verified_profile).validate(edited, platform_job)
     storage.save_current_resume(slug, safe_result.resume, safe_result.warnings)
     _, saved, generated, _ = storage.load_application(slug)
-    assert saved.headline == "Technical Support Engineer (Tier 2) | Python | Linux"
+    assert saved.headline == "Technical Support Engineer (L2)"
     assert saved.experience[0].bullets[0].text == verified_profile.experience[0].facts[0]
 
     unsupported_form = dict(safe_form)
@@ -403,7 +403,7 @@ def test_pdf_and_docx_use_current_edited_resume(verified_profile, platform_job, 
     docx_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
     assert "Technical Support Engineer" in pdf_text
     assert "Python" in pdf_text
-    assert "Technical Support Engineer (Tier 2) | Linux | Python" in docx_text
+    assert "Technical Support Engineer (L2)" in docx_text
     assert storage.artifact(slug, "resume.pdf").is_file()
     assert storage.artifact(slug, "resume.docx").is_file()
 

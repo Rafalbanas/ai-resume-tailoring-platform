@@ -1,4 +1,3 @@
-from copy import deepcopy
 from pathlib import Path
 
 from docx import Document
@@ -13,6 +12,7 @@ from app.models.resume import TailoredResume
 from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
 from app.services.professional_summary import deduplicate_summary
+from app.services.resume_export import contacts, prepare_resume
 
 
 def add_link(paragraph, text: str, target: str) -> None:
@@ -20,6 +20,7 @@ def add_link(paragraph, text: str, target: str) -> None:
     link.set(qn("r:id"), paragraph.part.relate_to(target, RT.HYPERLINK, is_external=True))
     run = OxmlElement("w:r")
     node = OxmlElement("w:t")
+    node.set(qn("xml:space"), "preserve")
     node.text = text
     run.append(node)
     link.append(run)
@@ -37,7 +38,7 @@ def generate_docx(
 ) -> None:
     if not profile.personal.name.strip():
         raise ValueError("Candidate name is missing from the active master profile.")
-    resume = deepcopy(resume)
+    resume = prepare_resume(resume, profile)
     resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
     document = Document()
     section = document.sections[0]
@@ -72,21 +73,17 @@ def generate_docx(
         if actual_photo and actual_photo.is_file():
             photo = document.add_paragraph()
             photo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            photo.add_run().add_picture(str(actual_photo), width=Inches(1.15), height=Inches(1.15))
+            photo.add_run().add_picture(str(actual_photo), width=Inches(1.15))
     title = document.add_heading(profile.personal.name, level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph = document.add_paragraph()
-    values = [profile.personal.location, profile.personal.email, profile.personal.phone,
-              profile.personal.linkedin, profile.personal.website, profile.personal.github]
-    for value in filter(None, values):
-        if paragraph.text or len(paragraph._p):
+    for index, contact in enumerate(contacts(profile)):
+        if index:
             paragraph.add_run(" · ")
-        if value == profile.personal.email:
-            add_link(paragraph, value, f"mailto:{value}")
-        elif value.startswith(("https://", "http://")):
-            add_link(paragraph, value, value)
+        if contact.target:
+            add_link(paragraph, contact.display, contact.target)
         else:
-            paragraph.add_run(value)
+            paragraph.add_run(contact.display)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     document.add_paragraph(resume.headline).alignment = WD_ALIGN_PARAGRAPH.CENTER
     if resume.professional_summary:

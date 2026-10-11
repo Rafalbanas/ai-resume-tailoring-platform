@@ -1,4 +1,5 @@
 import base64
+import re
 from contextlib import closing
 from copy import deepcopy
 from html import escape
@@ -17,6 +18,7 @@ from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
 from app.services.professional_summary import deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
+from app.services.resume_export import contacts, prepare_resume, validate_layout
 
 
 class PDFGenerator:
@@ -44,7 +46,7 @@ class PDFGenerator:
     ) -> str:
         if not profile.personal.name.strip():
             raise ValueError("Candidate name is missing from the active master profile.")
-        resume = deepcopy(resume)
+        resume = prepare_resume(resume, profile)
         resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
         guide = layout_guide or {}
         if template_name not in {"modern_sidebar", "ats_classic"}:
@@ -59,6 +61,7 @@ class PDFGenerator:
         render_context = dict(
             resume=resume,
             personal=profile.personal,
+            contacts=contacts(profile),
             languages=profile_languages(profile),
             template_name=template_name,
             photo_enabled=include_photo,
@@ -80,7 +83,8 @@ class PDFGenerator:
         css = f"<style>{self.css_path.read_text(encoding='utf-8')}</style>"
         template = self.env.get_template("resume.html")
         markup = template.render(**render_context)
-        return css + markup
+        return ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+                f'<title>{escape(profile.personal.name)} — CV</title>{css}</head><body>{markup}</body></html>')
 
     def render_preview(
         self,
@@ -99,8 +103,9 @@ class PDFGenerator:
         """
         markup = self.render_html(resume, profile, layout_guide, template_name=template_name,
                                   photo_enabled=photo_enabled)
-        document = HTML(string=markup, base_url=str(self.data_dir)).render()
-        pdf = document.write_pdf()
+        document = self._render_document(markup)
+        validate_layout(document)
+        pdf = document.write_pdf(pdf_tags=True)
         reader = PdfReader(BytesIO(pdf))
         pages = []
         with closing(pypdfium2.PdfDocument(pdf)) as raster:
@@ -157,12 +162,72 @@ class PDFGenerator:
         template_name: str = "modern_sidebar",
         photo_enabled: bool | None = None,
     ) -> None:
-        HTML(
-            string=self.render_html(
-                resume, profile, layout_guide, template_name=template_name, photo_enabled=photo_enabled
-            ),
-            base_url=str(self.data_dir),
-        ).write_pdf(output)
+        document = self._render_document(self.render_html(
+            resume, profile, layout_guide, template_name=template_name, photo_enabled=photo_enabled
+        ))
+        validate_layout(document)
+        document.write_pdf(output, pdf_tags=True)
+
+    def _render_document(self, markup: str):
+        """Floats cannot fragment safely: move overflow sections into normal flow.
+
+        WeasyPrint may silently omit a float's final child while reporting one
+        page. Detect actual rendered text and retain whole sections in the main
+        flow; it can paginate without losing facts or reducing font size.
+        """
+        document = HTML(string=markup, base_url=str(self.data_dir)).render()
+        soup = BeautifulSoup(markup, "html.parser")
+        sidebar = soup.select_one("aside.resume-sidebar")
+        if sidebar is None:
+            return document
+        rendered = []
+        for page in document.pages:
+            for box in page._page_box.descendants():
+                element = getattr(box, "element", None)
+                if (element is not None and "resume-sidebar" in element.get("class", "").split()
+                        and type(box).__name__ == "BlockBox"):
+                    rendered.extend(b.text for b in box.descendants() if type(b).__name__ == "TextBox")
+        def key(value):
+            return re.sub(r"\W+", "", value).casefold()
+        actual = key(" ".join(rendered))
+        main = soup.select_one("main .main-sections")
+        moved = False
+        for section in list(sidebar.find_all("section", recursive=False)):
+            if key(section.get_text(" ", strip=True)) not in actual:
+                section.extract()
+                section["class"] = ["overflow-section"]
+                interest_list = section.select_one(".interest-list")
+                if interest_list is not None:
+                    paragraph = soup.new_tag("p")
+                    paragraph.string = " · ".join(item.get_text(" ", strip=True) for item in interest_list.select("li"))
+                    interest_list.replace_with(paragraph)
+                    section["class"].append("interests-continuation")
+                main.append(section)
+                moved = True
+        if moved:
+            document = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+        if len(document.pages) > 1:
+            # Adapt spacing, never font size or facts. Both preview and export
+            # run this same path, including the float overflow repair above.
+            original = BeautifulSoup(markup, "html.parser")
+            article = original.select_one("article.modern-sidebar")
+            if article is not None:
+                classes = list(article.get("class", []))
+                for spacing in ("layout-compact", "layout-tight-bullets"):
+                    if spacing not in classes:
+                        article["class"] = classes + [spacing]
+                        return self._render_document(str(original))
+        # This verifies every expected section remains text, including pages
+        # created by long skills/languages/interests. No silent clipping allowed.
+        actual_all = key(" ".join(b.text for p in document.pages for b in p._page_box.descendants()
+                                  if type(b).__name__ == "TextBox"))
+        for section in soup.select("section"):
+            # Bullet markers are separate boxes; compare each paragraph/list
+            # item rather than relying on a particular PDF reading order.
+            for node in section.select("h2,h3,p,li"):
+                if key(node.get_text(" ", strip=True)) not in actual_all:
+                    raise ValueError("CV content was omitted during pagination; export stopped.")
+        return document
 
     def fit_resume(
         self,
@@ -194,7 +259,7 @@ class PDFGenerator:
         return bool(metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"])
 
     def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> dict[str, float | bool]:
-        document = HTML(string=self.render_html(resume, profile, guide), base_url=str(self.data_dir)).render()
+        document = self._render_document(self.render_html(resume, profile, guide))
         if not document.pages:
             return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}
         # Consent is in the reserved page margin, outside the content box.

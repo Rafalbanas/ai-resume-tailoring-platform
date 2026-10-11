@@ -161,7 +161,7 @@ def test_verified_ai_ml_skill_can_enter_cv(tmp_path, profile):
     ollama = skill("Ollama", category="AI / ML")
     store = bank(tmp_path, profile, [ollama])
     result = FactValidator(profile, store).validate(resume([], [ollama.id]), job("Local Ollama LLM integration"))
-    assert "Hands-on Ollama" in result.resume.core_skills
+    assert "Ollama" in result.resume.core_skills
 
 
 def test_rag_learning_never_enters_cv(tmp_path, profile):
@@ -241,7 +241,7 @@ def test_headline_blocks_job_requirements_and_uses_verified_skill_ids(tmp_path, 
 
     result = FactValidator(profile, store).validate(hostile, platform)
 
-    assert result.resume.headline == "Support Engineer | Python | Linux"
+    assert result.resume.headline == "Support Engineer"
     serialized = result.resume.model_dump_json()
     for unsupported in ("PostgreSQL", "Azure Data Factory", "GitLab CI/CD", "Elasticsearch", "Java"):
         assert unsupported not in result.resume.headline
@@ -257,7 +257,7 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
         "Automates repeatable infrastructure and support workflows with Python and cross-tier."
     )
     result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
-    assert result.resume.professional_summary.startswith(profile.summary_facts[0])
+    assert profile.summary_facts[0] in result.resume.professional_summary
     assert result.resume.professional_summary.endswith(".")
     assert any("source sentences" in warning for warning in result.warnings)
 

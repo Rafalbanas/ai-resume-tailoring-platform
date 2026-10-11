@@ -78,21 +78,21 @@ def test_skills_rank_job_over_model_order_without_padding(tmp_path, profile, res
     candidate.selected_skill_ids = [skills[0].id, skills[1].id]
     support_job = JobRequest(company='Example', role='Customer support', job_description='Provide customer support using CRM and incident handling.')
     result = FactValidator(profile, bank).validate(candidate, support_job)
-    assert 'Hands-on Salesforce' in result.resume.core_skills
+    assert 'Salesforce' in result.resume.core_skills
     assert not any('Windows' in s or 'Linux' in s for s in result.resume.core_skills)
     linux_job = support_job.model_copy(update={'role':'Linux operations', 'job_description':'Administer Linux servers and services.'})
     linux = FactValidator(profile, bank).validate(candidate, linux_job)
-    assert linux.resume.core_skills == ['Hands-on Linux']
+    assert linux.resume.core_skills == ['Linux']
     assert bank.document.skills == skills
 
 
-def test_summary_keeps_verified_subjectless_sentences(profile, resume_payload):
+def test_verified_summary_edits_keep_subjectless_sentences(profile, resume_payload):
     profile.summary_facts = ['Provides customer support for partners.', 'Troubleshoots incidents and documents solutions.']
     candidate = TailoredResume.model_validate(resume_payload)
     candidate.professional_summary = 'Troubleshoots incidents and documents solutions.'
     candidate.summary_source_fact_ids = ['summary:1']
     job = JobRequest(company='Example', role='Support specialist', job_description='Provide customer support and document solutions to incidents.')
-    result = FactValidator(profile).validate(candidate, job)
+    result = FactValidator(profile).validate(candidate, job, preserve_skills=True)
     assert result.resume.professional_summary == candidate.professional_summary
     assert not any('Professional summary rebuilt' in w for w in result.warnings)
     candidate.professional_summary = 'Expert Dynamics consultant.'

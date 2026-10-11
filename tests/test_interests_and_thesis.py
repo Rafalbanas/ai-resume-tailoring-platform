@@ -98,7 +98,7 @@ def test_interests_preserved_in_both_resume_layouts(profile, resume_payload, tmp
     assert "Speciality coffee" in modern_html
 
     ats_html = generator.render_html(resume, profile, template_name="ats_classic")
-    assert "interests-block" not in ats_html
+    assert 'class="sidebar-section interests-block"' not in ats_html
     assert "Gravel cycling" in ats_html
     assert "Speciality coffee" in ats_html
 

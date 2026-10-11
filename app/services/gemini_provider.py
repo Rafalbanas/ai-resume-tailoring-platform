@@ -347,9 +347,9 @@ class GeminiProvider(AIProvider):
         return await self._chat(
             TailoredResume,
             """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
-Set headline to the target role only. Python will deterministically append verified skills; never add technologies,
+Set headline to the target role only. Python will use the verified current occupation; never add technologies,
 capabilities, requirements, or marketing wording to headline.
-Every summary must reference summary source IDs. Every experience bullet must reference experience source IDs.
+Write 3–4 concise factual English summary sentences: current employment, relevant support/technical work, project integrations and professional communication when evidenced. Avoid marketing phrases and a project-dominated summary. Every summary must reference its supplied source IDs. Natural languages belong in Languages, never core_skills. Do not prepend Hands-on to skills. Every experience bullet must reference experience source IDs.
 Every project must use a supplied project name, reference project source IDs, and keep project identity in name.
 Project technologies may contain only supplied skill wording; never place a project name in technologies.
 Every education item must reference its education source ID.

@@ -20,6 +20,7 @@ from app.services.fact_validator import FactValidator
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
+from app.services.resume_export import prepare_resume
 from app.services.storage import compute_pre_fit_diff
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 from app.services.ui_language import ui_text
@@ -310,10 +311,14 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
     result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(response.resume, job)
+    try:
+        prepare_resume(result.resume, request.app.state.profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     layout_guide = {}
     fitted_resume, layout_warnings = result.resume, []
     warnings = result.warnings
-    photo_enabled = False
+    photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
         job,
         response.analysis,

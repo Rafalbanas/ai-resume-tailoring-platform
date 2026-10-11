@@ -290,6 +290,9 @@ def test_retry_task_idempotency_and_form_prefill(tmp_path, monkeypatch):
                                     "csrf_token": client.cookies.get("csrf_token")})
         client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
         tm: TaskManager = app.state.task_manager
+        # This endpoint test controls persisted states; the worker must not race
+        # the manually failed record or finish the rapid-click task in between.
+        client.portal.call(tm.stop_worker)
 
         # 1. Create a failed task
         payload = {

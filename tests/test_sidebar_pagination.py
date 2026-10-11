@@ -124,7 +124,7 @@ def test_preview_pages_match_pdf_and_do_not_mutate_saved_resume(profile, resume_
     assert resume.model_dump_json() == before
 
 
-def test_sidebar_contact_labels_keep_complete_link_targets(profile, resume_payload, tmp_path):
+def test_sidebar_contact_values_keep_complete_link_targets(profile, resume_payload, tmp_path):
     profile.personal.email = 'long.contact.address.for.recruitment@example.com'
     profile.personal.linkedin = 'https://www.linkedin.com/in/' + 'long-contact-' * 12
     profile.personal.website = 'https://example.com/' + 'portfolio/' * 15
@@ -139,13 +139,15 @@ def test_sidebar_contact_labels_keep_complete_link_targets(profile, resume_paylo
         'Website': profile.personal.website,
         'GitHub': profile.personal.github,
     }
-    assert {a.text: a['href'] for a in markup.select('.contact-block a')} == expected
+    assert {p.select_one('.contact-label').text: p.a['href']
+            for p in markup.select('.contact-block p') if p.a} == expected
+    assert all(a.text not in expected for a in markup.select('.contact-block a'))
     pdf = tmp_path / 'contacts.pdf'
     generator.generate(resume, profile, pdf)
     annotations = [a.get_object() for page in PdfReader(pdf).pages for a in page.get('/Annots', [])]
     targets = [str(a.get('/A', {}).get('/URI', '')) for a in annotations]
-    # One clickable label per address, rather than many wrapped link fragments.
-    assert all(targets.count(target) == 1 for target in expected.values())
+    # Every wrapped fragment remains clickable with the complete address.
+    assert all(targets.count(target) >= 1 for target in expected.values())
     assert profile.model_dump_json() == original
 
 
@@ -164,7 +166,7 @@ def test_modern_sidebar_gdpr_clause_styling(profile, resume_payload, tmp_path):
     # Borderless, transparent background, discrete smaller font
     assert footer_block.style['border_top_width'] == 0
     assert footer_block.style['background_color'].alpha == 0.0
-    assert footer_block.style['font_size'] < 10.0  # < 7.5pt (10px)
+    assert 10.0 <= footer_block.style['font_size'] <= 12.0  # readable 8–9pt footer
 
     # Text aligned to main column (>= 61mm / ~230px, specifically ~72mm / ~272px)
     text_boxes = [
