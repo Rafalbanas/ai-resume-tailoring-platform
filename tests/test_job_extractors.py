@@ -138,7 +138,7 @@ async def test_nofluff_uses_full_named_sections_instead_of_jsonld_description():
     assert result.extraction_method == "html"
     assert result.role == "Unix Admin"
     assert result.company == "Mindbox Sp. z o.o."
-    assert result.job_description.startswith("MUST HAVE\n")
+    assert result.job_description.startswith("PORTAL TECHNOLOGY TAGS\n")
     for expected in ("5+ years", "RHEL 6–9", "Bash", "Ansible", "YUM/DNF", "performance tuning", "on-call"):
         assert expected in result.job_description
     for noise in ("What you get in return", "Multisport", "technology image"):

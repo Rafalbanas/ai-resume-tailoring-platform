@@ -279,7 +279,7 @@ async def test_primary_timeout_triggers_fallback_with_stage_updates(profile):
 
 def test_retry_task_idempotency_and_form_prefill(tmp_path, monkeypatch):
     import app.routes.web as web_routes
-    from app.services.task_manager import TaskManager, TaskKind, TaskStatus
+    from app.services.task_manager import TaskKind, TaskManager, TaskStatus
 
     monkeypatch.setattr(web_routes, "guard", lambda _request: None)
     monkeypatch.setattr(web_routes, "validate_csrf", lambda *args, **kwargs: None)

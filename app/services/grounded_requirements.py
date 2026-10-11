@@ -6,6 +6,7 @@ silently omit literal requirements from a recognized requirements section.
 import re
 
 from app.models.job import JobRequirement, MatchLevel, Recommendation, RequirementPriority, RequirementStatus
+from app.services.evidence_matching import required_level, required_years, scoring_key
 from app.services.fact_catalog import normalized_tokens
 
 MANDATORY_HEAD = re.compile(r'^(?:.*?requirements\s*:|.*?wymagania.*|.*?what you bring.*|(?:we are looking for|what we are looking for)(?: you,? if you have)?\s*:?|.*?your profile.*|.*?qualifications.*|.*?must have.*|.*?nasze oczekiwania.*|.*?you bring.*)$', re.I)
@@ -24,7 +25,24 @@ def boundary_contains(needle, text):
     return bool(re.search(r'(?<![\w])' + re.escape(needle.casefold()) + r'(?![\w])', text.casefold()))
 
 
-def verify_requirement(validator, name):
+def verify_requirement(validator, name, unit=None):
+    contextual = validator.matcher.match(name, alternatives=unit.alternatives if unit else None,
+                                         operator=unit.operator if unit else 'single')
+    if contextual is not None:
+        if unit and unit.operator == 'all' and not unit.alternatives:
+            names = list(dict.fromkeys(re.findall(r'(?<![\w-])(?:JavaScript|TypeScript|Python|PowerShell|Bash|SQL|APIs?|Kubernetes|Azure|Terraform|Docker|SaaS)(?![\w-])', name, re.I)))
+            if len(names) > 1:
+                branch_results = [verify_requirement(validator, part) for part in names]
+                if any(branch[0] != RequirementStatus.STRONG for branch in branch_results):
+                    contextual.status = RequirementStatus.PARTIAL if contextual.entries or any(b[1] for b in branch_results) else RequirementStatus.MISSING
+                    contextual.reason += ' Every named technology is required: ' + '; '.join(f'{part}: {b[0].value}' for part, b in zip(names, branch_results, strict=True)) + '.'
+                elif contextual.status == RequirementStatus.STRONG and not validator.catalog.direct_sources(name):
+                    contextual.status = RequirementStatus.PARTIAL
+                    contextual.reason += ' The distinct action scopes in this combined technical condition need confirmation.'
+        if unit and unit.uncertain and contextual.status == RequirementStatus.STRONG:
+            contextual.status = RequirementStatus.PARTIAL
+            contextual.reason += ' The combined source condition needs interpretation; verify every scope in the original quote.'
+        return contextual.legacy_tuple()
     catalog, bank = validator.catalog, validator.skills_bank
     # Optional modifiers remain in the source quote, but cannot strengthen a blocker.
     name = re.split(r",\s*preferably\b", name, maxsplit=1, flags=re.I)[0]
@@ -40,7 +58,7 @@ def verify_requirement(validator, name):
             if bank.eligible(skill):
                 hits.append(skill)
                 evidence.extend(bank.evidence_labels(skill))
-                ids.extend(e.source_id for e in skill.evidence if catalog.get(e.source_id))
+                ids.extend(e.source_id for e in skill.evidence if catalog.get(e.source_id) and bank.evidence_supports(skill, e))
     else:
         for entry in catalog.prompt_entries:
             if entry.kind == 'skill' and boundary_contains(entry.text.replace(' (basic)', ''), name):
@@ -191,8 +209,9 @@ def validate_grounded(validator, candidate, job_text):
     result.role_competencies = []
     for unit in role_competency_units(units):
         if unit.category == "competency":
-            status, evidence, ids, reason = verify_requirement(validator, unit.name)
-            result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill evidence only; prior experience is not a mandatory condition and any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
+            match_name = unit.name + ' ' + unit.level if unit.level and not boundary_contains(unit.level, unit.name) else unit.name
+            status, evidence, ids, reason = verify_requirement(validator, match_name, unit)
+            result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred"}}
     result.completeness_issues = []
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
@@ -235,15 +254,40 @@ def validate_grounded(validator, candidate, job_text):
             continue
         if re.search(r'(?:skill|summary|experience|project|education):|\b[a-f0-9]{12,64}\b', name):
             continue
+        if INJECTION.search(name):
+            continue
         if re.search(r'^(?:preferred|nice.to.have|mile widziane|optional)\b|valued, not required', name, re.I):
             priority = RequirementPriority.PREFERRED
-        status, evidence, ids, reason = verify_requirement(validator, name)
         unit = unit_by_name.get(name)
+        status, evidence, ids, reason = verify_requirement(validator, name, unit)
         requirements.append(JobRequirement(classification_basis=unit.basis if unit else "Literal requirement in source; section not identified", source_section=unit.section if unit else "Unsectioned source", group_id=unit.group if unit else f"source_{len(requirements)+1}", id=f'req_{len(requirements)+1}', name=name, source_quote=unit.quote if unit else name, priority=priority, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
         requirements[-1].source_quotes = [requirements[-1].source_quote]
+        requirement = requirements[-1]
+        requirement.required_level = unit.level if unit and unit.level else required_level(name)
+        requirement.required_years = required_years(name)
+        requirement.operator = unit.operator if unit else 'single'
+        requirement.alternatives = unit.alternatives if unit else []
+        requirement.accepted_alternatives = unit.accepted_alternatives if unit else []
+        requirement.interpretation_uncertain = bool(unit and unit.uncertain)
+        requirement.evidence_sources = validator.matcher.sources(ids)
+        requirement.scoring_key = scoring_key(name)
+        if requirement.required_years is not None:
+            tenure = validator.matcher.match(name, alternatives=unit.alternatives if unit else None,
+                                            operator=unit.operator if unit else 'single')
+            requirement.observed_years = tenure.observed_years if tenure else None
+        if status != RequirementStatus.STRONG or requirement.interpretation_uncertain:
+            requirement.clarification_needed = reason
         seen[key] = requirements[-1]
         sources[name] = ids
     result.requirements = requirements
+    scoring_seen = {}
+    for req in requirements:
+        key = (req.priority, req.scoring_key)
+        if key in scoring_seen:
+            req.duplicate_of = scoring_seen[key].id
+        else:
+            scoring_seen[key] = req
+    result.profile_clarifications = [r.name + ': ' + r.clarification_needed for r in requirements if r.clarification_needed]
     result.strong_matches = [r.name for r in requirements if r.status == RequirementStatus.STRONG]
     result.partial_matches = [r.name for r in requirements if r.status == RequirementStatus.PARTIAL]
     result.missing_requirements = [r.name for r in requirements if r.status == RequirementStatus.MISSING]
@@ -264,7 +308,7 @@ def validate_grounded(validator, candidate, job_text):
     # Organization context and duties are represented separately, not scored.
     covered_quotes = [u.quote for u in units] + [r.source_quote for r in requirements]
     uncovered = [line.strip() for line in job_text.splitlines()
-                 if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line)
+                 if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line) and not INJECTION.search(line)
                  and line.strip().rstrip(':') not in sections
                  and not re.search(r'knowledge with:\s*$', line, re.I)
                  and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
@@ -303,12 +347,26 @@ def validate_grounded(validator, candidate, job_text):
         result.match_level, result.recommendation = MatchLevel.LIMITED, Recommendation.REVIEW
         result.reasoning_summary = result.qualification_assessment + " " + result.role_alignment_summary
         return result
-    # Score each source requirement once, even when independent clauses are displayed separately.
+    # Equivalent clauses share one weight while all source rows remain reviewable.
+    # AND groups use their weakest condition; OR is verified before scoring.
     mandatory = [r for r in requirements if r.priority == RequirementPriority.MANDATORY]
+    if not mandatory:
+        result.match_level, result.recommendation = MatchLevel.LIMITED, Recommendation.REVIEW
+        result.scoring_counts = {'mandatory_groups': 0, 'confirmed': 0, 'partial': 0, 'not_confirmed_or_gap': 0, 'duplicate_rows': 0}
+        result.qualification_assessment = 'Only preferred qualifications are specified; mandatory qualification requirements need source review.'
+        result.reasoning_summary = result.qualification_assessment + ' Preferred matches do not establish full qualification for the role.'
+        return result
     groups = {}
-    for r in mandatory or requirements:
-        groups.setdefault(r.group_id, []).append({RequirementStatus.STRONG: 1, RequirementStatus.PARTIAL: .5, RequirementStatus.MISSING: 0, RequirementStatus.ABSENT: 0}[r.status])
-    score = sum(sum(values)/len(values) for values in groups.values()) / len(groups)
+    for r in mandatory:
+        conjunctive_group = r.operator == 'all' and sum(other.group_id == r.group_id for other in mandatory) > 1
+        key = r.group_id if conjunctive_group else r.scoring_key
+        groups.setdefault(key, []).append({RequirementStatus.STRONG: 1, RequirementStatus.PARTIAL: .5, RequirementStatus.MISSING: 0, RequirementStatus.ABSENT: 0}[r.status])
+    score = sum(min(values) for values in groups.values()) / len(groups)
+    result.scoring_counts = {'mandatory_groups': len(groups) if mandatory else 0,
+                             'confirmed': sum(min(v) == 1 for v in groups.values()),
+                             'partial': sum(min(v) == .5 for v in groups.values()),
+                             'not_confirmed_or_gap': sum(min(v) == 0 for v in groups.values()),
+                             'duplicate_rows': sum(bool(r.duplicate_of) for r in mandatory)}
     blockers = [r for r in mandatory if r.status != RequirementStatus.STRONG]
     if score >= .7 and not blockers:
         result.match_level, result.recommendation = MatchLevel.HIGH, Recommendation.APPLY

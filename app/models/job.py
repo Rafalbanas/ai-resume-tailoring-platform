@@ -42,6 +42,16 @@ class JobRequirement(BaseModel):
     source_quote: str = ""
     source_quotes: list[str] = Field(default_factory=list)
     required_level: str = ""
+    required_years: float | None = None
+    observed_years: float | None = None
+    operator: Literal["single", "all", "any", "ambiguous"] = "single"
+    alternatives: list[str] = Field(default_factory=list)
+    accepted_alternatives: list[str] = Field(default_factory=list)
+    interpretation_uncertain: bool = False
+    scoring_key: str = ""
+    duplicate_of: str = ""
+    evidence_sources: list[dict[str, str]] = Field(default_factory=list)
+    clarification_needed: str = ""
     classification_basis: str = ""
     source_section: str = ""
     group_id: str = ""
@@ -109,3 +119,5 @@ class JobAnalysis(BaseModel):
     role_alignment_summary: str = ""
     role_competency_counts: dict[str, int] = Field(default_factory=dict)
     requirement_counts: dict[str, int] = Field(default_factory=dict)
+    scoring_counts: dict[str, int] = Field(default_factory=dict)
+    profile_clarifications: list[str] = Field(default_factory=list)

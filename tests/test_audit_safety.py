@@ -38,10 +38,11 @@ def test_shared_words_cannot_authorize_new_claims(profile, resume_payload, suffi
     assert 'SAP' not in result.headline
 
 
-def test_mandatory_gap_overrides_many_easy_matches(profile):
+def test_unconfirmed_mandatory_condition_requires_review_without_inventing_gap(profile):
     job = 'Requirements:\nPython\nLinux\nMinimum 6 years as a SAP consultant\nNice to have:\nn8n\n'
     result = AnalysisValidator(profile).validate(analysis(strong=['Python', 'Linux', 'n8n']), job)
-    assert result.recommendation == 'SKIP'
+    assert result.recommendation == 'REASONABLE_STRETCH'
+    assert result.recommendation != 'APPLY'
     gap = next(r for r in result.requirements if '6 years' in r.name)
     assert gap.priority == 'mandatory'
     assert gap.status != 'strong'
@@ -52,7 +53,10 @@ def test_mandatory_gap_overrides_many_easy_matches(profile):
 def test_and_is_not_or(profile):
     result = AnalysisValidator(profile).validate(analysis(), 'Requirements:\nPython and Kubernetes\nPython or Ruby\n')
     by_name = {r.name:r for r in result.requirements}
-    assert by_name['Python and Kubernetes'].status != 'strong'
+    assert by_name['Kubernetes'].status == 'missing'
+    assert by_name['Python'].status == 'strong'
+    assert by_name['Kubernetes'].group_id == by_name['Python'].group_id
+    assert by_name['Kubernetes'].source_quote == 'Python and Kubernetes'
     assert by_name['Python or Ruby'].status == 'strong'
 
 

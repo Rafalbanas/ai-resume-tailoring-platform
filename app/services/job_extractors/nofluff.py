@@ -12,7 +12,7 @@ from app.services.job_extractors.base import (
 )
 
 SECTION_SPECS = (
-    ("MUST HAVE", ("[commonpostingrequirements][branch='musts']",), ("must have", "mandatory", "obowiązkowe")),
+    ("PORTAL TECHNOLOGY TAGS", ("[commonpostingrequirements][branch='musts']",), ("must have", "mandatory", "obowiązkowe")),
     ("NICE TO HAVE", ("[commonpostingrequirements][branch='nices']",), ("nice to have", "optional", "mile widziane")),
     (
         "REQUIREMENTS",
@@ -86,7 +86,7 @@ class NoFluffExtractor(BaseExtractor):
             stop_at_noise=True,
         )
         section_values = (
-            ("MUST HAVE", "\n".join(musts)),
+            ("PORTAL TECHNOLOGY TAGS", "\n".join(musts)),
             ("NICE TO HAVE", "\n".join(nices)),
             ("REQUIREMENTS", requirements_text),
             ("RESPONSIBILITIES", responsibilities),
@@ -148,6 +148,7 @@ class NoFluffExtractor(BaseExtractor):
             return []
         return [
             names.get(str(item.get("code", "")).casefold(), str(item.get("code", "")).upper())
+            + (f" {item['level']}" if re.fullmatch(r'[ABC][12]\+?', str(item.get('level', '')), re.I) else '')
             for item in value
             if isinstance(item, dict) and str(item.get("type", "")).upper() == "MUST" and item.get("code")
         ]

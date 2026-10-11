@@ -126,7 +126,10 @@
             <div class="req-evidence">
               <small><strong>Evidence:</strong> {{ req.evidence|join('; ') }}</small>
             </div>
-            {% elif req.reason %}
+            {% endif %}
+            {% if req.required_level %}<small>Required level: {{ req.required_level }}</small>{% endif %}
+            {% if req.evidence_sources %}<details><summary>Evidence sources</summary>{% for source in req.evidence_sources %}<p>{{ source.owner or source.type }}: {{ source.fact }}<br><small>{{ source.source_id }}</small></p>{% endfor %}</details>{% endif %}
+            {% if req.reason %}
             <div class="req-reason">
               <small>{{ req.reason }}</small>
             </div>

@@ -38,6 +38,7 @@
 {% if analysis.qualification_assessment %}<section class="card"><h2>Qualification assessment</h2><p>{{ analysis.qualification_assessment }}</p>
 <h2>Role alignment — documented experience</h2><p>{{ analysis.role_alignment_summary }}</p></section>{% endif %}
 {% if analysis.requirements and analysis.requirement_counts %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred }} preferred · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
+{% if analysis.scoring_counts %}<p class="muted">{{ analysis.scoring_counts.mandatory_groups }} distinct mandatory conditions used in scoring. Equivalent requirements share one weight; all source rows remain available below. Portal tags have unspecified employer priority.</p>{% endif %}
 <div class="match-grid">
   <section class="card">
     <h2><span class="dot good"></span>Confirmed</h2>
@@ -101,6 +102,12 @@
         <strong>{{ req.name }}</strong>
       </div>
       {% if req.classification_basis %}<small>{{ req.classification_basis }}</small>{% endif %}
+      {% if req.required_level %}<p class="muted">Required level: {{ req.required_level }}</p>{% endif %}
+      {% if req.required_years is not none %}<p class="muted">Required minimum experience: {{ req.required_years }} years. {% if req.observed_years is not none %}Documented relevant employment: {{ req.observed_years }} years.{% endif %}</p>{% endif %}
+      {% if req.alternatives %}<small>{{ req.operator|upper }} alternatives: {{ req.alternatives|join('; ') }}</small>{% endif %}
+      {% if req.accepted_alternatives %}<small>Accepted alternatives: {{ req.accepted_alternatives|join('; ') }}</small>{% endif %}
+      {% if req.interpretation_uncertain %}<p>Interpretation uncertain — review the original quote.</p>{% endif %}
+      {% if req.duplicate_of %}<small>Shares scoring weight with {{ req.duplicate_of }}.</small>{% endif %}
       {% if req.source_quote %}
       <div class="req-quote">
         {% for quote in req.source_quotes|default([req.source_quote], true) %}<small><em>“{{ quote }}”</em></small>{% endfor %}
@@ -110,7 +117,9 @@
       <div class="req-evidence">
         <small><strong>Profile evidence:</strong> {{ req.evidence|join('; ') }}</small>
       </div>
-      {% elif req.reason %}
+      {% endif %}
+      {% if req.evidence_sources %}<details><summary>Evidence sources</summary>{% for source in req.evidence_sources %}<p><strong>{{ source.owner or source.type }}</strong>: {{ source.fact }}<br><small>{{ source.source_id }}</small></p>{% endfor %}</details>{% endif %}
+      {% if req.reason %}
       <div class="req-reason">
         <small>{{ req.reason }}</small>
       </div>
@@ -120,9 +129,16 @@
   </div>
 </section>
 {% endif %}
+{% if analysis.profile_clarifications %}<details class="card"><summary>Profile details worth confirming ({{ analysis.profile_clarifications|length }})</summary><ul>{% for item in analysis.profile_clarifications %}<li>{{ item }}</li>{% endfor %}</ul></details>{% endif %}
 
 {% if analysis.role_competencies %}<section class="card"><h2>Role competencies — evidence and listed levels</h2>
-{% for item in analysis.role_competencies %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}. {% if item.required_level %}Listed level: {{ item.required_level }} — proficiency at this level is not verified.{% else %}Required level unspecified.{% endif %}<br><small>Source: {{ item.source_quote }}. {{ item.classification_basis }}</small><br><small>Evidence: {{ item.evidence|join('; ') }}</small></p>{% endfor %}</section>{% endif %}
+{% for item in analysis.role_competencies %}
+<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}.
+{% if item.required_level %}Listed level: {{ item.required_level }} — proficiency at this level is not verified.{% else %}Required level unspecified.{% endif %}
+<br><small>Source: {{ item.source_quotes|default([item.source_quote], true)|join('; ') }}. {{ item.classification_basis }}</small>
+<br><small>Evidence: {{ item.evidence|join('; ') }}</small><br><small>{{ item.reason }}</small></p>
+{% if item.evidence_sources %}<details><summary>Evidence sources</summary>{% for source in item.evidence_sources %}<p>{{ source.owner or source.type }}: {{ source.fact }}<br><small>{{ source.source_id }}</small></p>{% endfor %}</details>{% endif %}
+{% endfor %}</section>{% endif %}
 {% if analysis.responsibilities %}<section class="card"><h2>Responsibilities — excluded from requirement scoring</h2><ul>{% for item in analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul></section>{% endif %}
 {% if analysis.organization_context %}<details><summary>Organization context — excluded from requirement scoring</summary>{% for item in analysis.organization_context %}<p>{{ item.source_quote }}</p>{% endfor %}</details>{% endif %}
 <p class="muted">This evaluates profile evidence, not hiring probability or a universal ATS score. No confirmation does not mean a lack of skill.</p>

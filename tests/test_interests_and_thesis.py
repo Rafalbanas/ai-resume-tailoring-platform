@@ -34,8 +34,11 @@ def test_interests_candidate_profile_routes(tmp_path, profile, monkeypatch):
         app_build_sha="test",
         app_build_timestamp="now",
         csrf_secret="secret",
+        csrf_cookie_name="csrf_token",
         master_profile_path=profile_file,
+        demo_mode=False,
     )
+    app.state.provider = SimpleNamespace(fallback_enabled=False)
     app.state.limiter = NoopLimiter()
     app.state.profile = profile
     app.state.profile_photo = ProfilePhotoStore(tmp_path / "photo")
@@ -84,7 +87,7 @@ def test_interests_candidate_profile_routes(tmp_path, profile, monkeypatch):
     assert not any(i.id == interest_id for i in app.state.profile.interests)
 
 
-def test_interests_rendered_in_sidebar_and_excluded_from_ats(profile, resume_payload, tmp_path):
+def test_interests_preserved_in_both_resume_layouts(profile, resume_payload, tmp_path):
     generator = PDFGenerator(Path("templates"), Path("static"), tmp_path)
     resume = TailoredResume.model_validate(resume_payload)
     resume.interests = ["Gravel cycling", "Speciality coffee"]
@@ -96,10 +99,11 @@ def test_interests_rendered_in_sidebar_and_excluded_from_ats(profile, resume_pay
 
     ats_html = generator.render_html(resume, profile, template_name="ats_classic")
     assert "interests-block" not in ats_html
-    assert "Gravel cycling" not in ats_html
+    assert "Gravel cycling" in ats_html
+    assert "Speciality coffee" in ats_html
 
 
-def test_interests_removed_first_on_overflow(profile, resume_payload, tmp_path):
+def test_interests_and_experience_retained_on_overflow(profile, resume_payload, tmp_path):
     from app.models.resume import ResumeBullet, ResumeExperience
 
     generator = PDFGenerator(Path("templates"), Path("static"), tmp_path)
@@ -143,8 +147,11 @@ def test_interests_removed_first_on_overflow(profile, resume_payload, tmp_path):
     )
 
     fitted, actions = generator.fit_resume(resume, profile)
-    assert any("removed interests" in a for a in actions)
-    assert fitted.interests == []
+    # The current paginated exporter adapts spacing and preserves content.
+    assert not any("removed" in action for action in actions)
+    assert fitted.interests == resume.interests
+    assert fitted.experience == resume.experience
+    assert fitted.professional_summary == resume.professional_summary
 
 
 def test_thesis_subline_when_thesis_not_in_projects(profile, resume_payload):

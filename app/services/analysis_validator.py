@@ -154,6 +154,8 @@ class AnalysisValidator:
     def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None):
         self.catalog = FactCatalog(profile)
         self.skills_bank = skills_bank
+        from app.services.evidence_matching import EvidenceMatcher
+        self.matcher = EvidenceMatcher(self.catalog, skills_bank)
 
     def _is_candidate_only_fact(self, claim: str, job_text: str) -> bool:
         """Check if claim is an unused candidate interest, thesis, or project not in job."""
@@ -228,7 +230,7 @@ class AnalysisValidator:
                 sk = self.skills_bank.find(part)
                 if sk and self.skills_bank.eligible(sk):
                     matched_labels.append(sk.name)
-                    all_ids.append(f"skill_{sk.id}")
+                    all_ids.extend(e.source_id for e in sk.evidence if self.skills_bank.evidence_supports(sk, e))
             if any(w in p_cf for w in ("telecommunication", "telekomunikac", "telecom")):
                 entries = [
                     e.source_id
