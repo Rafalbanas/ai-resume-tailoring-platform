@@ -1,4 +1,4 @@
-<footer class="consent-footer">I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
+<footer class="consent-footer {% if template_name == 'modern_sidebar' %}modern-sidebar-consent{% else %}ats-classic-consent{% endif %}">I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
 <article class="resume-document {{ template_name|replace('_', '-') }} {{ layout_classes }}">
   {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">

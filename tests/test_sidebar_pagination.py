@@ -147,3 +147,32 @@ def test_sidebar_contact_labels_keep_complete_link_targets(profile, resume_paylo
     # One clickable label per address, rather than many wrapped link fragments.
     assert all(targets.count(target) == 1 for target in expected.values())
     assert profile.model_dump_json() == original
+
+
+def test_modern_sidebar_gdpr_clause_styling(profile, resume_payload, tmp_path):
+    resume = TailoredResume.model_validate(resume_payload)
+    generator = PDFGenerator(Path('templates'), Path('static'), tmp_path)
+    rendered = HTML(string=generator.render_html(resume, profile, template_name='modern_sidebar')).render()
+    page = rendered.pages[0]
+    boxes = list(page._page_box.descendants())
+    footer_block = next(
+        b for b in boxes
+        if type(b).__name__ == 'BlockBox'
+        and getattr(b, 'element', None) is not None
+        and 'consent-footer' in b.element.get('class', '')
+    )
+    # Borderless, transparent background, discrete smaller font
+    assert footer_block.style['border_top_width'] == 0
+    assert footer_block.style['background_color'].alpha == 0.0
+    assert footer_block.style['font_size'] < 10.0  # < 7.5pt (10px)
+
+    # Text aligned to main column (>= 61mm / ~230px, specifically ~72mm / ~272px)
+    text_boxes = [
+        b for b in boxes
+        if type(b).__name__ == 'TextBox'
+        and getattr(b, 'element', None) is not None
+        and 'consent-footer' in b.element.get('class', '')
+    ]
+    assert len(text_boxes) > 0
+    sidebar_width_px = 61 * 96 / 25.4
+    assert all(b.position_x >= sidebar_width_px for b in text_boxes)

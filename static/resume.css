@@ -47,9 +47,21 @@
   size:A4;margin:10mm 0 16mm;
   background:linear-gradient(to right,#102b46 0,#102b46 61mm,#fff 61mm,#fff 100%);
   @top-right{content:string(candidate) " · CV · " counter(page);font:8pt Arial;color:#526174;padding-right:12mm}
-  @bottom-center{content:element(consent);background:#fff}
+  @bottom-center{content:element(consent);background:transparent;vertical-align:middle}
 }
 @page modern:first {margin-top:0;@top-right{content:none}}
+body:has(>.modern-sidebar) .consent-footer,
+.modern-sidebar-consent{
+  font-size:7pt;
+  line-height:1.25;
+  color:#75818d;
+  border:none;
+  box-shadow:none;
+  border-radius:0;
+  background:transparent;
+  padding:0 12mm 0 72mm;
+  text-align:left;
+}
 body:has(>.modern-sidebar){margin:0}
 .modern-sidebar{page:modern;display:block;min-height:0;background:transparent}
 .modern-sidebar>.resume-sidebar{float:left;width:61mm;min-height:0;background:transparent}
