@@ -33,7 +33,7 @@
 {% set truth_warnings = metadata.truth_lock_warnings if metadata.truth_lock_warnings is defined and metadata.truth_lock_warnings is not none else [] %}
 {% if truth_warnings and truth_warnings|length > 0 %}<details class="warnings truth-lock-warnings"><summary>Truth Lock removed or replaced {{ truth_warnings|length }} unsupported item(s)</summary><ul>{% for warning in truth_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% set layout_warns = metadata.layout_adjustments if metadata.layout_adjustments is defined and metadata.layout_adjustments is not none else metadata.layout_warnings|default([], true) %}
-{% if layout_warns and layout_warns|length > 0 %}<details class="warnings layout-adjustments"><summary>Layout applied {{ layout_warns|length }} one-page adjustment(s)</summary><ul>{% for warning in layout_warns %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+{% if layout_warns and layout_warns|length > 0 %}<details class="warnings layout-adjustments"><summary>Layout applied {{ layout_warns|length }} layout adjustment(s)</summary><ul>{% for warning in layout_warns %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% if pre_fit_diff and pre_fit_diff.total_items > 0 %}
 <details class="warnings pre-fit-diff">
   <summary>Page Fit Transparency: View {{ pre_fit_diff.total_items }} item(s) trimmed or shortened for 1-page fit</summary>

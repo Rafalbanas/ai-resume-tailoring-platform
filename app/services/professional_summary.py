@@ -5,12 +5,13 @@ from app.services.fact_catalog import FactCatalog, normalized_tokens
 
 
 def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
-    entries = [e for e in catalog.prompt_entries if e.kind == 'summary']
+    entries = [e for e in catalog.prompt_entries if e.kind == 'summary' or (e.kind == 'experience' and ':fact:' in e.source_id)]
     # Dates/tenure are particularly easy to overstate; experience dates remain visible.
     entries = [e for e in entries if not re.search(r'\byears?\b|\blat\b', e.text, re.I)]
     tokens = normalized_tokens(role)
     themes = {
-        'support': {'support', 'troubleshooting', 'incident', 'english'},
+        'support': {'support', 'troubleshooting', 'troubleshoot', 'incident', 'english', 'customer', 'partner', 'documentation', 'salesforce', 'crm'},
+        'crm': {'salesforce', 'crm', 'customer', 'partner', 'support'},
         'windows': {'windows', 'powershell', 'automation', 'troubleshooting'},
         'python': {'python', 'automation', 'linux'},
         'erp': {'support', 'application', 'incident', 'english'},
@@ -21,7 +22,7 @@ def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
             tokens |= words
     ordered = sorted(entries, key=lambda e: len(normalized_tokens(e.text) & tokens), reverse=True)
     # The current supported occupation gives the reader context even for stretch roles.
-    identity = next((e for e in entries if 'support' in e.text.casefold()), None)
+    identity = next((e for e in entries if e.kind == 'summary' and 'support' in e.text.casefold()), None)
     selected = ([identity] if identity else []) + [e for e in ordered if e != identity]
     text, ids = '', []
     for entry in selected:
@@ -41,7 +42,7 @@ def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
             text = f"{text} Project work: {api_fact.text}".strip()
             ids.append(api_fact.source_id)
     education = next((e for e in catalog.prompt_entries if e.kind == "education" and "computer science" in e.text.casefold() and ":fact:" not in e.source_id and ":thesis:" not in e.source_id), None)
-    if education:
+    if education and tokens & {"degree", "education", "science", "bachelor", "msc"}:
         source = catalog.profile.education[education.owner_index]
         sentence = f"{source.qualification}, {source.institution} ({source.dates})."
         if len(text) + len(sentence) + 1 <= 700:

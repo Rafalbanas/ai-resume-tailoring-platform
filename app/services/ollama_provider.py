@@ -18,6 +18,7 @@ from app.services.ai_provider import (
     build_compact_tailor_payload,
 )
 from app.services.analysis_validator import AnalysisValidator
+from app.services.comparison_capture import record_call
 from app.services.fact_catalog import FactCatalog
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
@@ -112,7 +113,7 @@ class OllamaProvider(AIProvider):
             properties["summary_source_fact_ids"]["minItems"] = 1
             properties["core_skills"]["items"]["enum"] = allowed_skills or []
             properties["selected_skill_ids"]["items"]["enum"] = allowed_skill_ids or []
-            properties["selected_skill_ids"]["minItems"] = min(8, len(allowed_skill_ids or []))
+            properties["selected_skill_ids"]["minItems"] = 0
             properties["selected_skill_ids"]["maxItems"] = 16
             definitions["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"] = ids_by_type[
                 "experience"
@@ -186,6 +187,7 @@ class OllamaProvider(AIProvider):
             content = envelope["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
+            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", schema, content, self.call_metrics[-1])
             return response_model.model_validate_json(content)
         except (KeyError, TypeError, ValidationError) as exc:
             raise AIProviderError("Ollama returned invalid structured JSON. Try again.") from exc
@@ -197,7 +199,9 @@ class OllamaProvider(AIProvider):
             JOB_ANALYSIS_SYSTEM_PROMPT,
             payload,
         )
-        return AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}")
+        validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}")
+        validated._model_output = analysis.model_dump(mode="json")
+        return validated
 
     async def tailor_resume(
         self,
@@ -241,7 +245,7 @@ Every project must use a supplied project name, reference project source IDs, an
 Project technologies may contain only supplied skill wording; never place a project name in technologies.
 Every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
-Select 8-16 relevant existing skill IDs in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
+Select only relevant confirmed existing skill IDs (up to 16; no minimum) in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
 unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
 AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
 The source IDs, not string equality, bind paraphrased wording to verified facts.

@@ -106,7 +106,11 @@ def test_compare_and_diagnostics_web_routes(monkeypatch):
     monkeypatch.setattr(web_routes, "validate_csrf", lambda *args, **kwargs: None)
 
     with TestClient(app) as client:
-        client.auth = ("audit-tests", "isolated-test-password")
+        # Exercise the existing session login; Basic auth does not create a session.
+        import re
+        page = client.get("/login")
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        client.post("/login", data={"username": "audit-tests", "password": "isolated-test-password", "csrf_token": token})
         # Mock providers to avoid waiting for external Ollama/Gemini connections
         mock_p1 = MockAIProvider(app.state.skills_bank)
         mock_p1.name = "ollama"
@@ -133,7 +137,7 @@ def test_compare_and_diagnostics_web_routes(monkeypatch):
                 "company": "Test Compare Co",
                 "role": "Python Backend Developer",
                 "job_description": "We are looking for a Python developer with Linux and Docker knowledge.",
-                "csrf_token": "token",
+                "csrf_token": client.cookies.get("csrf_token"),
             },
         )
         assert compare_post_res.status_code == 202
@@ -145,5 +149,5 @@ def test_compare_and_diagnostics_web_routes(monkeypatch):
         assert "Comparison Results" in compare_result_res.text
 
         # 4. POST /diagnostics/clear
-        clear_res = client.post("/diagnostics/clear", data={"csrf_token": "token"}, follow_redirects=True)
+        clear_res = client.post("/diagnostics/clear", data={"csrf_token": client.cookies.get("csrf_token")}, follow_redirects=True)
         assert clear_res.status_code == 200

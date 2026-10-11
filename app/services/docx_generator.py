@@ -128,7 +128,9 @@ def generate_docx(
     if getattr(resume, "interests", None):
         document.add_heading("Interests", level=1)
         document.add_paragraph(" • ".join(resume.interests))
-    consent = document.add_paragraph("I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).")
+    section.footer_distance = Inches(0.25)
+    consent = section.footer.paragraphs[0]
+    consent.text = ("I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).")
     for run in consent.runs:
         run.font.size = Pt(9)
     document.save(output)

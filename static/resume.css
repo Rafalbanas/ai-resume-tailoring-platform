@@ -43,3 +43,15 @@
 .modern-sidebar>.resume-sidebar{float:left;width:61mm}
 .modern-sidebar>.resume-main{margin-left:61mm}
 .modern-sidebar .resume-main footer{position:static;margin-top:5mm}
+
+/* Reserve a page margin for consent: it cannot paginate on its own or overlap
+   flowing CV text. Running content is repeated on every actual content page. */
+@page modern {size:A4;margin:0 0 16mm;@bottom-center{content:element(consent)}}
+@page ats {size:A4;margin:14mm 16mm 22mm;@bottom-center{content:element(consent)}}
+.consent-footer{position:running(consent);font-family:Arial,Helvetica,sans-serif;font-size:8pt;line-height:1.25;color:#526174;border-top:.2mm solid #c7d0d8;padding:2mm 10mm 0;text-align:left}
+.modern-sidebar{page:modern;min-height:0}
+.modern-sidebar>.resume-sidebar{min-height:281mm}
+.modern-sidebar>.resume-main{min-height:0;padding-bottom:8mm}
+/* Continuation pages need a top margin; retain the full sidebar on page one. */
+@page modern {margin-top:10mm}
+@page modern:first {margin-top:0}

@@ -16,7 +16,7 @@ def job() -> JobRequest:
         company="Acme",
         role="Python Engineer",
         job_url="https://jobs.example.test/python",
-        job_description="Build and support reliable Python services with Docker and Kubernetes in production.",
+        job_description="Requirements\nPython\nDocker\nKubernetes",
     )
 
 

@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, PrivateAttr, field_validator
 
 
 class MatchLevel(StrEnum):
@@ -22,6 +22,7 @@ class RequirementPriority(StrEnum):
     MANDATORY = "mandatory"
     PREFERRED = "preferred"
     NICE_TO_HAVE = "nice_to_have"
+    UNSPECIFIED = "unspecified"
 
 
 class RequirementStatus(StrEnum):
@@ -37,12 +38,14 @@ class JobRequirement(BaseModel):
     id: str = ""
     name: str
     source_quote: str = ""
+    source_quotes: list[str] = Field(default_factory=list)
     classification_basis: str = ""
     source_section: str = ""
     group_id: str = ""
     priority: RequirementPriority = RequirementPriority.MANDATORY
     status: RequirementStatus = RequirementStatus.MISSING
     evidence: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
     reason: str = ""
 
 
@@ -72,6 +75,7 @@ class JobExtraction(BaseModel):
 
 
 class JobAnalysis(BaseModel):
+    _model_output: dict | None = PrivateAttr(default=None)
     model_config = ConfigDict(extra="ignore")
 
     company: str
@@ -96,5 +100,6 @@ class JobAnalysis(BaseModel):
     completeness_issues: list[str] = Field(default_factory=list)
     source_sections: list[str] = Field(default_factory=list)
     responsibilities: list[dict[str, str]] = Field(default_factory=list)
+    role_competencies: list[JobRequirement] = Field(default_factory=list)
     organization_context: list[dict[str, str]] = Field(default_factory=list)
     requirement_counts: dict[str, int] = Field(default_factory=dict)

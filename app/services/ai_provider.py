@@ -40,7 +40,8 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 9. For skill matches, select exact IDs from skills_bank into strong_skill_ids, partial_skill_ids, or learning_skill_ids.
 10. Use qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or SKIP recommendation based solely on the actual job requirements.
 11. All generated reasoning, explanations and status messages MUST be in English. Preserve verbatim source quotes and proper names. Separate mandatory requirements, preferred requirements, responsibilities and organization context. Treat examples (such as) as examples, not cumulative mandatory certifications. If the analysis is incomplete, use UNRELIABLE / RETRY; never make a firm SKIP recommendation.
-12. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps)."""
+12. A responsibility to use a product does not establish mandatory prior experience. Preserve headings and literal quotes. TECH STACK lists role competencies with unspecified required levels, not mandatory qualifications. Assess every qualification-bearing source passage; do not stop at a small subset.
+13. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps)."""
 
 
 def _digest(value: str) -> str:
@@ -242,6 +243,7 @@ def build_compact_tailor_payload(
 
     return {
         "stage": "tailor_resume",
+        "job_description": job.job_description,
         "target_role": job.role,
         "target_company": job.company,
         "analysis_summary": {

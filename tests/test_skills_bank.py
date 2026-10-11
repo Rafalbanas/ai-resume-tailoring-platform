@@ -182,7 +182,7 @@ def test_cv_selects_only_relevant_before_fill(tmp_path, profile):
 def test_cv_has_at_most_16_skills(tmp_path, profile):
     values = [skill(f"Technology {index}") for index in range(20)]
     store = bank(tmp_path, profile, values)
-    selected = store.select_for_job([value.id for value in values], "Technology", maximum=16)
+    selected = store.select_for_job([value.id for value in values], " ".join(v.name for v in values), maximum=16)
     assert len(selected) == 16
 
 
@@ -257,7 +257,7 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
         "Automates repeatable infrastructure and support workflows with Python and cross-tier."
     )
     result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
-    assert result.resume.professional_summary == profile.summary_facts[0]
+    assert result.resume.professional_summary.startswith(profile.summary_facts[0])
     assert result.resume.professional_summary.endswith(".")
     assert any("source sentences" in warning for warning in result.warnings)
 

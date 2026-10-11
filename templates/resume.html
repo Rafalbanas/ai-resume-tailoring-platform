@@ -1,3 +1,4 @@
+<footer class="consent-footer">I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
 <article class="resume-document {{ template_name|replace('_', '-') }} {{ layout_classes }}">
   {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">
@@ -26,6 +27,5 @@
       {% endfor %}
     </div>
     {% if template_name == 'ats_classic' and resume.interests %}<section><h2>Interests</h2><p>{{ resume.interests|join(' · ') }}</p></section>{% endif %}
-    <footer>I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
   </main>
 </article>

@@ -175,7 +175,7 @@ class SkillsBank:
         return skill.name
 
     def select_for_job(
-        self, requested_ids: list[str], job_text: str, *, minimum: int = 8, maximum: int = 16, requested_only: bool = False
+        self, requested_ids: list[str], job_text: str, *, minimum: int = 0, maximum: int = 16, requested_only: bool = False
     ) -> list[VerifiedSkill]:
         requested = {value for value in requested_ids}
         eligible = [skill for skill in self.skills if self.eligible(skill)]
@@ -239,7 +239,7 @@ class SkillsBank:
         def score(skill: VerifiedSkill) -> tuple[int, int, str]:
             direct = self.mentioned(skill, job_text)
             category_score = 35 if any(f" {term} " in f" {normalized_job} " for term in category_terms.get(skill.category, ())) else 0
-            relevance = (200 if skill.id in requested else 0) + (100 if direct else 0) + category_score
+            relevance = (100 if direct else 0) + category_score
             spec = technical_specificity(skill)
             ev = evidence_strength(skill)
             prio = skill.priority * 3
@@ -250,8 +250,20 @@ class SkillsBank:
                 skill.name,
             )
 
+        # CRM relevance includes independently confirmed CRM products in the bank.
+        def role_relevance(skill):
+            aliases = " ".join(self.aliases_for(skill)).casefold()
+            direct = self.mentioned(skill, job_text)
+            semantic = (
+                ("crm" in normalized_job and any(x in aliases for x in ("salesforce", "crm")))
+                or ("support" in normalized_job and (skill.name.casefold() in {"troubleshooting", "technical troubleshooting", "technical documentation", "operational runbooks", "incident handling", "application support", "tier 2 support", "l1/l2 support"} or (skill.category == "Support / Operations" and "support" in aliases)))
+                or ("problem solving" in normalized_job and skill.name.casefold() in {"troubleshooting", "technical troubleshooting"})
+                or ("documentation" in normalized_job and any(x in aliases for x in ("documentation", "runbook")))
+            )
+            return 2 if direct or ("crm" in normalized_job and "salesforce" in aliases) else 1 if semantic else 0
+
         requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
-        ranked = sorted(eligible, key=lambda skill: (skill.id in requested_order, -requested_order.get(skill.id, 0), score(skill)), reverse=True)
+        ranked = sorted(eligible, key=lambda skill: (role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
         families = set()
@@ -261,8 +273,8 @@ class SkillsBank:
             family = skill.name.casefold().replace("windows administration", "windows")
             if family in families:
                 continue
-            relevant = skill.id in requested or self.mentioned(skill, job_text)
-            if not relevant and len(chosen) >= minimum:
+            relevant = role_relevance(skill) > 0 or (requested_only and skill.id in requested)
+            if not relevant:
                 continue
             if skill.subcategory == "AI-Assisted Development":
                 if ai_dev_count >= 3:

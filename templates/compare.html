@@ -11,7 +11,7 @@
     <span>⚖</span>
     <div>
       <strong>Strict Evaluation</strong>
-      <small>Same prompt, master profile, and Truth Lock rules</small>
+      <small>Shared analysis prompt, profile and Truth Lock; provider schemas differ. Resume inputs include each model’s validated analysis.</small>
     </div>
   </div>
 </section>
@@ -37,6 +37,13 @@
 <section class="comparison-results">
   <div class="comparison-header">
     <h2>Comparison Results for {{ job.role }} ({{ job.company }})</h2>
+    {% set ollama_inputs = results.get('ollama', {}).get('input_fingerprints', {}) %}
+    {% set gemini_inputs = results.get('gemini', {}).get('input_fingerprints', {}) %}
+    {% for stage in ['analyze_job', 'tailor_resume'] %}
+      {% if stage in ollama_inputs and stage in gemini_inputs %}
+      <p>{{ stage.replace('_', ' ')|title }}: payloads {{ 'identical' if ollama_inputs[stage].payload_sha256 == gemini_inputs[stage].payload_sha256 else 'different' }}; prompts {{ 'identical' if ollama_inputs[stage].system_prompt_sha256 == gemini_inputs[stage].system_prompt_sha256 else 'different' }}; schemas {{ 'identical' if ollama_inputs[stage].schema_sha256 == gemini_inputs[stage].schema_sha256 else 'different' }}.</p>
+      {% else %}<p>{{ stage.replace('_', ' ')|title }}: exact input comparison unavailable for this run.</p>{% endif %}
+    {% endfor %}
   </div>
 
   <div class="compare-columns">
@@ -84,7 +91,7 @@
       </div>
 
       <div class="compare-section">
-        <h4>Missing Requirements ({{ res.analysis.missing_requirements|length }})</h4>
+        <h4>Not confirmed in profile ({{ res.analysis.missing_requirements|length }})</h4>
         <div class="chips">
           {% for item in res.analysis.missing_requirements %}
           <span>{{ item }}</span>
@@ -96,19 +103,20 @@
 
       {% if res.analysis.requirements %}
       <div class="compare-section">
-        <h4>Wymagania i dowody ({{ res.analysis.requirements|length }})</h4>
+        <h4>Requirements & Evidence ({{ res.analysis.requirements|length }})</h4>
         {% if res.analysis.analysis_language != "en" %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
         <div class="requirements-table">
           {% for req in res.analysis.requirements %}
           <div class="requirement-row req-status-{{ req.status }}">
             <div class="req-header">
               <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
-              <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed absence'}.get(req.status, req.status) }}</span>
+              <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(req.status, req.status) }}</span>
               <strong>{{ req.name }}</strong>
             </div>
             {% if req.source_quote %}
             <div class="req-quote">
-              <small><em>„{{ req.source_quote }}”</em></small>
+              {% for quote in req.source_quotes|default([req.source_quote], true) %}<small><em>“{{ quote }}”</em></small>{% endfor %}
+              <small>{{ req.classification_basis|default('') }}</small>
             </div>
             {% endif %}
             {% if req.evidence %}
@@ -127,12 +135,29 @@
       {% endif %}
 
       <div class="compare-section">
-        <h4>Headline</h4>
+        <h4>Source coverage</h4>
+        <p>{{ res.analysis.responsibilities|default([])|length }} responsibilities; {{ res.analysis.organization_context|default([])|length }} organization passages.</p>
+        {% if res.analysis.responsibilities %}<details><summary>Responsibility source quotes — excluded from prerequisite scoring</summary><ul>{% for item in res.analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul><p>Using a product in this role does not establish mandatory prior experience with it.</p></details>{% endif %}
+        {% for item in res.analysis.role_competencies|default([]) %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}. Required level unspecified.<br><small>{{ item.evidence|join('; ') }}</small></p>{% endfor %}
+      </div>
+      <details class="compare-section"><summary>Model output before validation</summary>
+        {% if res.model_analysis %}<p>Requirements: {{ res.model_analysis.requirements|length }}. {{ res.model_analysis.reasoning_summary }}</p>
+        <p>Model claimed confirmed: {{ res.model_analysis.strong_matches|join('; ') }}.</p>
+        <p>Model claimed partial: {{ res.model_analysis.partial_matches|join('; ') }}.</p>
+        <p>Model did not confirm: {{ res.model_analysis.missing_requirements|join('; ') }}.</p>
+        {% for item in res.model_analysis.requirements %}<p>{{ item.name }} — {{ item.priority }}, {{ item.status }}.<br><small>{{ item.source_quote }}</small></p>{% endfor %}
+        {% else %}<p>Pre-validation analysis was not saved for this run; it cannot be reconstructed.</p>{% endif %}
+        {% if res.model_resume %}<p>Model headline: {{ res.model_resume.headline }}</p><p>{{ res.model_resume.professional_summary }}</p><p>Core skills: {{ res.model_resume.core_skills|join(' · ') }}</p>{% else %}<p>Pre-validation resume was not saved for this run.</p>{% endif %}
+      </details>
+      {% if res.changed_resume_sections %}<p>Truth Lock changed: {{ res.changed_resume_sections|join(', ') }}.</p>{% endif %}
+      <div class="compare-section">
+        <h4>Headline — after Truth Lock</h4>
         <p class="headline-snippet">{{ res.resume.headline }}</p>
       </div>
 
       <div class="compare-section">
-        <h4>Professional Summary</h4>
+        <h4>Professional Summary — after Truth Lock</h4>
+        {% set summary_status = namespace(replaced=res.summary_replaced|default(false)) %}{% for warning in res.truth_warnings|default([]) %}{% if 'Professional summary rebuilt' in warning %}{% set summary_status.replaced = true %}{% endif %}{% endfor %}{% if summary_status.replaced %}<p class="muted">Replaced with verified source sentences. This section does not represent the model’s tone.</p>{% endif %}
         <p class="summary-snippet">{{ res.resume.professional_summary }}</p>
       </div>
 
@@ -148,14 +173,14 @@
       <div class="compare-section">
         <h4>Truth Lock Status</h4>
         {% if res.truth_warnings and res.truth_warnings|length > 0 %}
-        <span class="warning-count">{{ res.truth_warnings|length }} modification(s)</span>
+        <span class="warning-count">{{ res.truth_warnings|length }} validation message(s)</span>
         <ul class="mini-list">
           {% for w in res.truth_warnings %}
           <li>{{ w }}</li>
           {% endfor %}
         </ul>
         {% else %}
-        <span class="clean-count">✓ 100% facts verified without alterations</span>
+        <span class="clean-count">No reported Truth Lock replacements</span>
         {% endif %}
       </div>
 

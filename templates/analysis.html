@@ -93,13 +93,13 @@
     <div class="requirement-row req-status-{{ req.status }}">
       <div class="req-header">
         <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
-        <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed absence'}.get(req.status, req.status) }}</span>
+        <span class="badge status-badge status-{{ req.status }}">{{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(req.status, req.status) }}</span>
         <strong>{{ req.name }}</strong>
       </div>
       {% if req.classification_basis %}<small>{{ req.classification_basis }}</small>{% endif %}
       {% if req.source_quote %}
       <div class="req-quote">
-        <small><em>„{{ req.source_quote }}”</em></small>
+        {% for quote in req.source_quotes|default([req.source_quote], true) %}<small><em>“{{ quote }}”</em></small>{% endfor %}
       </div>
       {% endif %}
       {% if req.evidence %}
@@ -117,6 +117,8 @@
 </section>
 {% endif %}
 
+{% if analysis.role_competencies %}<section class="card"><h2>Role competencies — required levels unspecified</h2>
+{% for item in analysis.role_competencies %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}.<br><small>Source: {{ item.source_quote }}. {{ item.classification_basis }}</small><br><small>Evidence: {{ item.evidence|join('; ') }}</small></p>{% endfor %}</section>{% endif %}
 {% if analysis.responsibilities %}<section class="card"><h2>Responsibilities — excluded from requirement scoring</h2><ul>{% for item in analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul></section>{% endif %}
 {% if analysis.organization_context %}<details><summary>Organization context — excluded from requirement scoring</summary>{% for item in analysis.organization_context %}<p>{{ item.source_quote }}</p>{% endfor %}</details>{% endif %}
 <p class="muted">This evaluates profile evidence, not hiring probability or a universal ATS score. No confirmation does not mean a lack of skill.</p>

@@ -204,9 +204,7 @@ class AnalysisValidator:
         words = re.findall(r"\b[a-z0-9]+\b", claim_cf)
         if "crm" in words:
             sf_entries = [e.source_id for e in self.catalog.entries.values() if "salesforce" in e.text.casefold()]
-            if sf_entries or (
-                self.skills_bank and any("salesforce" in s.name.casefold() for s in self.skills_bank.skills)
-            ):
+            if sf_entries:
                 return True, "Salesforce CRM", sf_entries
         return False, "", []
 
@@ -552,7 +550,7 @@ class AnalysisValidator:
             result.match_level = MatchLevel.UNRELIABLE
             result.recommendation = Recommendation.RETRY
             result.reasoning_summary = (
-                "Incomplete analysis — review required — review required. "
+                "Incomplete analysis — review required. "
                 "Could not reliably extract requirements from the job description."
             )
             return result

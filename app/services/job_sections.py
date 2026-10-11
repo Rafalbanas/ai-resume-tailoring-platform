@@ -17,6 +17,7 @@ PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualificati
 MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:what you bring|your profile|we are looking for|must have|wymagania.*|nasze oczekiwania|you bring)\s*:?$', re.I)
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|your responsibilities|job responsibilities)\s*:?$', re.I)
 ORG = re.compile(r'^(?:company overview|department overview|about (?:us|the company|the team)|who we are|job description)\s*:?$', re.I)
+STACK = re.compile(r"^(?:tech stack|skills used|technologies used)\s*:?$", re.I)
 END = re.compile(r'^(?:benefits|we offer|what we offer|tech stack|travel requirements|relocation provided|position type|referral payment plan|company|eeo statement|equal opportunity.*)\s*:?$', re.I)
 REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity)\b', re.I)
 ORGANIZATION_SIGNAL = re.compile(r'\b(?:global leader|our (?:company|team|division)|we (?:believe|build|offer)|join (?:our|a) team)\b', re.I)
@@ -37,6 +38,8 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             category = 'responsibility'
         elif ORG.fullmatch(line):
             category = 'organization'
+        elif STACK.fullmatch(line):
+            category = 'competency'
         elif END.fullmatch(line):
             category = None
             section = heading
@@ -68,3 +71,18 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
         section = heading
         recognized.append(section)
     return units, list(dict.fromkeys(recognized))
+
+
+def semantic_key(name: str) -> tuple[str, ...]:
+    """Conservative equivalence: retain product, action, level and tenure conditions."""
+    text = name.casefold()
+    for pattern, replacement in (
+        (r"\bcustomer service\b", "customer support"),
+        (r"\bproblem solving\b", "troubleshooting"),
+        (r"\bincident management\b", "incident handling"),
+        (r"\bcrm systems?\b", "crm"),
+        (r"\bknowledge of\b|\bfamiliarity with\b", "knowledge"),
+        (r"\bexperience (?:with|in|using)\b", "experience"),
+    ):
+        text = re.sub(pattern, replacement, text)
+    return tuple(sorted(set(re.findall(r"[a-z0-9+#]+", text)) - {"a", "an", "the", "of", "with", "in", "is", "required", "must", "have"}))

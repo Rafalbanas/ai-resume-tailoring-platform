@@ -307,7 +307,7 @@ def test_generated_resume_is_complete_and_has_no_candidate_placeholder(verified_
     resume = validation.resume
     html = PDFGenerator(Path("templates"), Path("static")).render_html(resume, verified_profile)
 
-    assert not validation.warnings
+    assert any("Professional summary rebuilt" in warning for warning in validation.warnings)
     assert resume.professional_summary
     assert resume.core_skills
     assert resume.experience

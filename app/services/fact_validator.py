@@ -41,7 +41,6 @@ class FactValidator:
         allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values}
         clean_skills = []
         if self.skills_bank:
-            auto_select = not draft.core_skills and not draft.selected_skill_ids
             requested_ids = list(draft.selected_skill_ids)
             for value in draft.core_skills:
                 skill = next((self.skills_bank.get(skill_id) for skill_id in draft.selected_skill_ids
@@ -54,7 +53,7 @@ class FactValidator:
             selected = self.skills_bank.select_for_job(
                 list(dict.fromkeys(requested_ids)),
                 f"{job.role}\n{job.job_description}",
-                minimum=8 if auto_select and not preserve_skills else 0,
+                minimum=0,
                 maximum=16,
                 requested_only=preserve_skills,
             )
@@ -82,7 +81,7 @@ class FactValidator:
                     for key, canonical in allowed_skills.items()
                     if key and (key in job_text or canonical.casefold() in job_text)
                 ]
-                clean_skills = relevant or list(dict.fromkeys(allowed_skills.values()))[:10]
+                clean_skills = relevant
             draft.core_skills = clean_skills[:18]
 
         verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)
@@ -90,10 +89,13 @@ class FactValidator:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
 
-        summary, summary_ids = build_summary(self.catalog, job.role)
-        if draft.professional_summary and draft.professional_summary != summary:
-            warnings.append("Professional summary rebuilt from verified source sentences; review before sending")
-        draft.professional_summary = summary
+        summary_entries = self.catalog.valid(draft.summary_source_fact_ids)
+        summary_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience"} and (e.kind != "experience" or ":fact:" in e.source_id)]
+        if not self.catalog.supports_paraphrase(draft.professional_summary, summary_ids):
+            summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}")
+            if draft.professional_summary != summary:
+                warnings.append("Professional summary rebuilt from verified source sentences; model tone cannot be assessed from this replacement")
+            draft.professional_summary = summary
         draft.summary_source_fact_ids = summary_ids
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
@@ -378,7 +380,7 @@ class FactValidator:
                     else:
                         if skill.name not in hard_skills:
                             hard_skills.append(skill.name)
-            capabilities = hard_skills + generic_skills
+            capabilities = [self.skills_bank.get(i).name for i in selected_ids if self.skills_bank.get(i) and self.skills_bank.eligible(self.skills_bank.get(i))]
         else:
             allowed = {value.casefold(): value for values in self.profile.skills.values() for value in values}
             for value in core_skills:
@@ -389,8 +391,8 @@ class FactValidator:
         parts = [self.profile.experience[0].title.strip() if self.profile.experience else "IT professional"]
         for capability in capabilities:
             candidate = " | ".join([*parts, capability])
-            if len(candidate) > 75 and len(parts) >= 3:
-                break
+            if len(candidate) > 75 and len(parts) >= 2:
+                continue
             if len(parts) >= 4:
                 break
             parts.append(capability)

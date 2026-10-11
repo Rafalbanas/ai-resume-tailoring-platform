@@ -1,8 +1,10 @@
 import asyncio
 import hashlib
 import logging
+import os
 import re
 import time
+from copy import copy
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -14,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.models.job import JobRequest
 from app.services.ai_provider import AIProviderError, GeminiAuthError
 from app.services.analysis_validator import AnalysisValidator
+from app.services.comparison_capture import capture_comparison
 from app.services.fact_validator import FactValidator
 
 logger = logging.getLogger(__name__)
@@ -71,7 +74,10 @@ class TaskManager:
     def _save_task(self, task: TaskRecord) -> None:
         path = self._task_path(task.task_id)
         temp_path = path.with_suffix(".tmp")
-        temp_path.write_text(task.model_dump_json(indent=2), encoding="utf-8")
+        descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(task.model_dump_json(indent=2))
         temp_path.replace(path)
 
     def get_task(self, task_id: str) -> TaskRecord | None:
@@ -315,9 +321,6 @@ class TaskManager:
 
         available_providers = getattr(app_state, "providers", {})
         provider_names = ["ollama", "gemini"]
-        if getattr(app_state.settings, "ai_provider", "") == "mock" or "mock" in available_providers:
-            if "mock" not in provider_names:
-                provider_names.append("mock")
 
         results: dict[str, dict] = {}
         total = len(provider_names)
@@ -343,9 +346,15 @@ class TaskManager:
                 }
                 continue
 
+            provider = copy(provider)
+            if hasattr(provider, "max_retries"):
+                provider.max_retries = 0
             step_start = time.perf_counter()
             try:
-                resp = await provider.tailor(job, app_state.profile)
+                with capture_comparison() as captured_calls:
+                    resp = await provider.tailor(job, app_state.profile)
+                model_analysis = resp.analysis._model_output
+                model_resume = resp.resume.model_dump(mode="json")
                 resp.analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
                     resp.analysis, f"{job.role}\n{job.job_description}"
                 )
@@ -357,6 +366,13 @@ class TaskManager:
                     "analysis": resp.analysis.model_dump(mode="json"),
                     "resume": val.resume.model_dump(mode="json"),
                     "truth_warnings": val.warnings,
+                    "model_analysis": model_analysis,
+                    "model_resume": model_resume,
+                    "summary_replaced": model_resume["professional_summary"] != val.resume.professional_summary,
+                    "changed_resume_sections": [key for key, value in model_resume.items() if value != val.resume.model_dump(mode="json").get(key)],
+                    "private_calls": captured_calls,
+                    "input_fingerprints": {c["stage"]: {key: c[key] for key in ("payload_sha256", "system_prompt_sha256", "schema_sha256")} for c in captured_calls},
+                    "call_metrics": [c["metrics"] for c in captured_calls],
                 }
             except Exception as exc:
                 results[name] = {
@@ -364,6 +380,8 @@ class TaskManager:
                     "duration_ms": int((time.perf_counter() - step_start) * 1000),
                     "model": getattr(provider, "model", name),
                     "error": str(exc),
+                    "private_calls": captured_calls,
+                    "call_metrics": [c["metrics"] for c in captured_calls],
                 }
 
         self.update_task_progress(

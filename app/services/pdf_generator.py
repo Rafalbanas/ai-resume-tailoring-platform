@@ -94,112 +94,22 @@ class PDFGenerator:
         *,
         template_name: str = "modern_sidebar",
     ) -> tuple[TailoredResume, list[str]]:
-        if template_name == "ats_classic":
-            return deepcopy(resume), []
+        fitted = deepcopy(resume)
         guide = layout_guide if layout_guide is not None else {}
+        for key in ("compact_spacing", "compact_bullets", "compact_headings"):
+            guide.pop(key, None)
+        if template_name == "ats_classic":
+            return fitted, []
+        # Only spacing may adapt. Page count is never a reason to delete facts.
+        if self._fits_one_page(fitted, profile, guide):
+            return fitted, []
+        for key in ("compact_spacing", "compact_bullets"):
+            guide[key] = True
+            if self._fits_one_page(fitted, profile, guide):
+                return fitted, self._layout_warnings(resume, fitted, guide)
         guide.pop("compact_spacing", None)
         guide.pop("compact_bullets", None)
-        guide.pop("compact_headings", None)
-        original = deepcopy(resume)
-        fitted = deepcopy(resume)
-        fitted.core_skills = fitted.core_skills[:16]
-        for item in fitted.experience:
-            item.bullets = item.bullets[:4]
-        original = deepcopy(fitted)
-
-        # 1. Remove Interests as first priority upon overflow
-        if not self._fits_one_page(fitted, profile, guide) and fitted.interests:
-            fitted.interests = []
-
-        # 2. Shorten minor project descriptions
-        for limit in (190, 140):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            for project in sorted(fitted.projects, key=lambda item: len(item.description), reverse=True):
-                project.description = self._shorten(project.description, limit)
-                if self._fits_one_page(fitted, profile, guide):
-                    break
-
-        # Trim 3rd project if present and overflowing
-        if not self._fits_one_page(fitted, profile, guide) and len(fitted.projects) > 2:
-            fitted.projects = fitted.projects[:2]
-
-        # 3. Reduce lower-priority skills gradually
-        for min_skills in (14, 12, 10):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            while not self._fits_one_page(fitted, profile, guide) and len(fitted.core_skills) > min_skills:
-                fitted.core_skills.pop()
-                if fitted.selected_skill_ids:
-                    fitted.selected_skill_ids = fitted.selected_skill_ids[: len(fitted.core_skills)]
-
-        # 4. Spacing tightened
-        if not self._fits_one_page(fitted, profile, guide):
-            guide["compact_spacing"] = True
-
-        # Bullet spacing tightened
-        if not self._fits_one_page(fitted, profile, guide):
-            guide["compact_bullets"] = True
-
-        # Heading spacing tightened
-        if not self._fits_one_page(fitted, profile, guide):
-            guide["compact_headings"] = True
-
-        # 5. Shorten overly long summary in stages
-        summary_target = max(350, min(500, int(guide.get("summary_max_chars", 500))))
-        for target in (summary_target, 420, 360, 320):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            if len(fitted.professional_summary) > target:
-                fitted.professional_summary = self._shorten_summary(fitted.professional_summary, target)
-
-        # Shorten longest bullets
-        for limit in (230, 195, 165):
-            if self._fits_one_page(fitted, profile, guide):
-                break
-            longest = sorted(
-                (bullet for item in fitted.experience for bullet in item.bullets if len(bullet.text) > limit),
-                key=lambda bullet: len(bullet.text),
-                reverse=True,
-            )
-            for bullet in longest:
-                bullet.text = self._shorten(bullet.text, limit)
-
-        # 6. Remove lowest-relevance bullets as a last resort
-        preferred_minimums = [2, 1, 2, 2]
-        while not self._fits_one_page(fitted, profile, guide):
-            removable = [
-                (index, len(item.bullets))
-                for index, item in enumerate(fitted.experience)
-                if len(item.bullets) > preferred_minimums[min(index, len(preferred_minimums) - 1)]
-            ]
-            if not removable:
-                break
-            index = max(removable, key=lambda value: (value[1], value[0]))[0]
-            fitted.experience[index].bullets.pop()
-
-        # Emergency overflow fallback only if still overflowing
-        while not self._fits_one_page(fitted, profile, guide):
-            removable = [
-                (index, len(item.bullets))
-                for index, item in enumerate(fitted.experience)
-                if len(item.bullets) > 1
-            ]
-            if not removable:
-                break
-            index = max(removable, key=lambda value: (value[1], value[0]))[0]
-            fitted.experience[index].bullets.pop()
-
-        if not self._fits_one_page(fitted, profile, guide) and len(fitted.projects) > 1:
-            fitted.projects = fitted.projects[:1]
-        if not self._fits_one_page(fitted, profile, guide):
-            fitted.professional_summary = self._shorten_summary(fitted.professional_summary, 280)
-        while not self._fits_one_page(fitted, profile, guide) and len(fitted.experience) > 4:
-            fitted.experience.pop()
-
-        # EXPAND to fill available space
-        fitted = self._expand_to_available_space(fitted, original, profile, guide)
-        return fitted, self._layout_warnings(original, fitted, guide)
+        return fitted, ["Full CV content retained across multiple pages"]
 
     def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:
         metrics = self._layout_metrics(resume, profile, guide)
@@ -209,60 +119,14 @@ class PDFGenerator:
         document = HTML(string=self.render_html(resume, profile, guide), base_url=str(self.data_dir)).render()
         if not document.pages:
             return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}
-        descendants = list(document.pages[0]._page_box.descendants())
-
-        def blocks(class_name: str):
-            return [
-                box
-                for box in descendants
-                if type(box).__name__ in {"BlockBox", "GridBox"}
-                and getattr(box, "element", None) is not None
-                and class_name in box.element.get("class", "").split()
-            ]
-
-        sections = blocks("main-sections")
-        footer = next(
-            (
-                box
-                for box in descendants
-                if type(box).__name__ == "AbsolutePlaceholder"
-                and getattr(box, "element", None) is not None
-                and box.element.tag == "footer"
-            ),
-            None,
-        )
-        article = next(iter(blocks("resume-document")), None)
-        sidebar_sections = blocks("sidebar-section")
-        if not sections or footer is None or article is None:
-            return {
-                "pages": len(document.pages),
-                "main_fits": False,
-                "sidebar_fits": False,
-                "utilization": 1.0,
-                "used_vertical_ratio": 1.0,
-            }
-        main = sections[0]
-        # Main available space excluding footer / GDPR
-        main_available = max(1.0, footer.position_y - main.position_y - 6)
-        main_used = main.height
-        used_vertical_ratio = main_used / main_available
-
-        sidebar_bottom = max(
-            (box.position_y + box.height for box in sidebar_sections),
-            default=article.position_y,
-        )
-        article_bottom = article.position_y + article.height
-        sidebar_available = max(1.0, article_bottom - article.position_y - 12)
-        sidebar_used = max(0.0, sidebar_bottom - article.position_y)
-        sidebar_ratio = sidebar_used / sidebar_available
-
-        return {
-            "pages": len(document.pages),
-            "main_fits": main.position_y + main.height <= footer.position_y - 6,
-            "sidebar_fits": sidebar_bottom <= article_bottom - 8,
-            "used_vertical_ratio": used_vertical_ratio,
-            "utilization": max(used_vertical_ratio, sidebar_ratio),
-        }
+        # Consent is in the reserved page margin, outside the content box.
+        page = document.pages[0]._page_box
+        sections = [b for b in page.descendants() if getattr(b, "element", None) is not None
+                    and "main-sections" in b.element.get("class", "").split() and type(b).__name__ == "BlockBox"]
+        main_bottom = max((b.position_y + b.height for b in sections), default=0)
+        ratio = main_bottom / max(1, page.height)
+        return {"pages": len(document.pages), "main_fits": len(document.pages) == 1,
+                "sidebar_fits": len(document.pages) == 1, "utilization": ratio, "used_vertical_ratio": ratio}
 
     def _expand_to_available_space(
         self,

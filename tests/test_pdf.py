@@ -24,7 +24,7 @@ def test_modern_sidebar_contains_fixed_sections_and_gdpr(profile, resume_payload
     assert "GDPR" in html
 
 
-def test_adaptive_page_fit_uses_shrink_order_and_keeps_one_page(tmp_path, profile, resume_payload):
+def test_long_cv_preserves_content_and_allows_multiple_pages(tmp_path, profile, resume_payload):
     payload = dict(resume_payload)
     payload["core_skills"] = ["Python", "Linux", "n8n"] * 6
     experience = payload["experience"][0]
@@ -38,14 +38,10 @@ def test_adaptive_page_fit_uses_shrink_order_and_keeps_one_page(tmp_path, profil
     output = tmp_path / "fitted.pdf"
     generator.generate(fitted, profile, output)
 
-    assert warnings
-    assert warnings[:2] == [
-        "Adaptive layout tightened section spacing",
-        "Adaptive layout tightened bullet spacing",
-    ]
-    warning_text = " ".join(warnings)
-    assert warning_text.index("shortened") < warning_text.index("lower-priority skill")
-    assert len(PdfReader(output).pages) == 1
+    assert warnings == ["Full CV content retained across multiple pages"]
+    assert fitted == TailoredResume.model_validate(payload)
+    assert len(PdfReader(output).pages) > 1
+    assert all(len(page.extract_text()) > 150 for page in PdfReader(output).pages)
 
 
 def test_page_fit_retains_multiple_bullets_when_layout_has_room(profile, resume_payload):

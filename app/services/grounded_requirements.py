@@ -6,6 +6,7 @@ silently omit literal requirements from a recognized requirements section.
 import re
 
 from app.models.job import JobRequirement, MatchLevel, Recommendation, RequirementPriority, RequirementStatus
+from app.services.fact_catalog import normalized_tokens
 
 MANDATORY_HEAD = re.compile(r'^(?:.*?requirements\s*:|.*?wymagania.*|.*?what you bring.*|(?:we are looking for|what we are looking for)(?: you,? if you have)?\s*:?|.*?your profile.*|.*?qualifications.*|.*?must have.*|.*?nasze oczekiwania.*|.*?you bring.*)$', re.I)
 PREFERRED_HEAD = re.compile(r'^(?:.*?nice.to.have.*|.*?mile widziane.*|.*?preferred qualifications.*|.*?optional.*)$', re.I)
@@ -45,6 +46,24 @@ def verify_requirement(validator, name):
             if entry.kind == 'skill' and boundary_contains(entry.text.replace(' (basic)', ''), name):
                 ids.append(entry.source_id)
                 evidence.append(entry.text)
+    # Semantic equivalents must resolve to existing content facts, never job titles.
+    semantic_patterns = {
+        'customer support': r'(?:(?:support|assist|help)\w*.*(?:customers?|partners?|users?)|(?:customers?|partners?|users?).*support)',
+        'customer service': r'(?:(?:support|assist|help)\w*.*(?:customers?|partners?|users?)|(?:customers?|partners?|users?).*support)',
+        'problem solving': r'troubleshoot\w*|resolv\w*.*(?:incidents?|issues?|problems?)',
+        'troubleshooting': r'troubleshoot\w*|resolv\w*.*(?:incidents?|issues?|problems?)',
+        'incident management': r'(?:handl|manag|resolv)\w*.*incidents?|incident.*(?:handl|manag|resolv)',
+        'it support': r'(?:technical|it|user|partner|customer).*support|support.*(?:technical|users?|partners?|customers?)',
+    }
+    semantic_ids = []
+    semantic_name = re.sub(r"^(?:(?:experience|knowledge|skills?|ability)\s+(?:in|with|of|to)\s+)", "", cf.strip(' .'))
+    semantic_name = re.sub(r"\s+(?:experience|skills?|knowledge)$", "", semantic_name)
+    if semantic_name in semantic_patterns:
+        for entry in catalog.prompt_entries:
+            if entry.kind == 'experience' and ':fact:' in entry.source_id and re.search(semantic_patterns[semantic_name], entry.text, re.I) and not re.search(r'\b(?:no|never|not)\b', entry.text, re.I):
+                semantic_ids.append(entry.source_id)
+                ids.append(entry.source_id)
+                evidence.append(entry.text)
     degree = validator._matches_cs_education(name)
     if not degree[0] and re.search(r"higher education|wykształcenie wyższe|^bachelor(?:'s)? degree[.,]?$", cf):
         entry = next((e for e in catalog.prompt_entries if e.kind == "education" and re.search(r"msc|bachelor|master", e.text, re.I)), None)
@@ -57,10 +76,13 @@ def verify_requirement(validator, name):
     if crm[0]:
         evidence.extend(catalog.get(i).text for i in crm[2] if catalog.get(i))
         ids.extend(crm[2])
-    if crm[0] and not re.search(r'\bkcs\b', cf):
-        crm_confirmed = True
-    else:
-        crm_confirmed = False
+    # General CRM evidence does not prove an extra product, methodology, level
+    # or configuration condition. Keep every additional condition visible.
+    crm_scope = normalized_tokens(name) - {
+        "crm", "system", "systems", "platform", "platforms", "software", "tools",
+        "experience", "knowledge", "familiarity", "understanding", "using", "working",
+    }
+    crm_confirmed = crm[0] and not crm_scope
     # Whole exact claims can be confirmed
     # Word similarity cannot confirm
     # seniority, scope, conjunctions, or a proficiency level.
@@ -71,7 +93,7 @@ def verify_requirement(validator, name):
     status = RequirementStatus.PARTIAL if partial else RequirementStatus.MISSING
     reason = 'Evidence supports part of this requirement; verify its level, scope and remaining conditions.' if partial else 'Not confirmed in profile; this does not establish a lack of skill.'
     exact_skill = bank.find(name) if bank else None
-    if crm_confirmed or direct or (exact_skill and bank.eligible(exact_skill) and exact_skill.level != 'basic'):
+    if semantic_ids or crm_confirmed or direct or (exact_skill and bank.eligible(exact_skill) and exact_skill.level != 'basic'):
         status = RequirementStatus.STRONG
         reason = 'Confirmed in profile sources.'
     # OR is recognized only for explicit alternatives
@@ -142,13 +164,18 @@ def verify_requirement(validator, name):
 
 def validate_grounded(validator, candidate, job_text):
     result = candidate.model_copy(deep=True)
-    from app.services.job_sections import ORGANIZATION_SIGNAL, REQUIREMENT_SIGNAL, extract_sections
+    from app.services.job_sections import ORGANIZATION_SIGNAL, REQUIREMENT_SIGNAL, extract_sections, semantic_key
     units, sections = extract_sections(job_text)
     source = source_lines(job_text)
     result.source_sections = sections
     result.analysis_language = "en"
     result.responsibilities = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "responsibility"]
     result.organization_context = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "organization"]
+    result.role_competencies = []
+    for unit in units:
+        if unit.category == "competency":
+            status, evidence, ids, reason = verify_requirement(validator, unit.name)
+            result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote], source_section=unit.section, classification_basis="Listed technology or role skill; prior experience and required level are unspecified", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred"}}
     result.completeness_issues = []
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
@@ -156,19 +183,19 @@ def validate_grounded(validator, candidate, job_text):
     # Use model phrasing only if it occurs verbatim in the job
     # Otherwise prefer
     # an exact supplied quote, preserving all modifiers from that quote.
-    if not source:
+    if not source and not sections:
         for claim in suggestions:
             if validator._is_candidate_only_fact(claim, job_text) or INJECTION.search(claim) or ORGANIZATION_SIGNAL.search(claim):
                 continue
-            if boundary_contains(claim, job_text):
+            if boundary_contains(claim, job_text) and REQUIREMENT_SIGNAL.search(claim):
                 source.append((claim, RequirementPriority.MANDATORY))
             elif not re.search(r"(?:skill|summary|experience|project|education):|^skill_|^[a-f0-9]{12,64}$", claim):
                 from app.services.analysis_validator import extract_source_quote
                 quote = extract_source_quote(claim, job_text)
-                if quote and quote in job_text and not INJECTION.search(quote) and not ORGANIZATION_SIGNAL.search(quote):
+                if quote and REQUIREMENT_SIGNAL.search(quote) and quote in job_text and not INJECTION.search(quote) and not ORGANIZATION_SIGNAL.search(quote):
                     source.append((quote, RequirementPriority.MANDATORY))
         for req in candidate.requirements:
-            if req.source_quote and req.source_quote in job_text and not INJECTION.search(req.source_quote) and not ORGANIZATION_SIGNAL.search(req.source_quote):
+            if req.source_quote and REQUIREMENT_SIGNAL.search(req.source_quote) and req.source_quote in job_text and not INJECTION.search(req.source_quote) and not ORGANIZATION_SIGNAL.search(req.source_quote):
                 source.append((req.source_quote, req.priority))
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
@@ -179,16 +206,22 @@ def validate_grounded(validator, candidate, job_text):
                 source.append((previous + '\n' + raw.strip(), RequirementPriority.MANDATORY))
         elif re.search(r'hybrid.*(?:office|days)|(?:days|dni).*office|on.site|\bc[12]\b', raw, re.I) and raw.strip():
             source.append((raw.strip(), RequirementPriority.MANDATORY))
-    seen, requirements, sources = set(), [], {}
+    seen, requirements, sources = {}, [], {}
     for name, priority in source:
-        if name.casefold() in seen or re.search(r'(?:skill|summary|experience|project|education):|\b[a-f0-9]{12,64}\b', name):
+        key = (priority, semantic_key(name))
+        if key in seen:
+            existing = seen[key]
+            existing.source_quotes.append(unit_by_name[name].quote if name in unit_by_name else name)
             continue
-        seen.add(name.casefold())
+        if re.search(r'(?:skill|summary|experience|project|education):|\b[a-f0-9]{12,64}\b', name):
+            continue
         if re.search(r'^(?:preferred|nice.to.have|mile widziane|optional)\b|valued, not required', name, re.I):
             priority = RequirementPriority.PREFERRED
         status, evidence, ids, reason = verify_requirement(validator, name)
         unit = unit_by_name.get(name)
-        requirements.append(JobRequirement(classification_basis=unit.basis if unit else "Literal requirement in source; section not identified", source_section=unit.section if unit else "Unsectioned source", group_id=unit.group if unit else f"source_{len(requirements)+1}", id=f'req_{len(requirements)+1}', name=name, source_quote=unit.quote if unit else name, priority=priority, status=status, evidence=evidence, reason=reason))
+        requirements.append(JobRequirement(classification_basis=unit.basis if unit else "Literal requirement in source; section not identified", source_section=unit.section if unit else "Unsectioned source", group_id=unit.group if unit else f"source_{len(requirements)+1}", id=f'req_{len(requirements)+1}', name=name, source_quote=unit.quote if unit else name, priority=priority, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
+        requirements[-1].source_quotes = [requirements[-1].source_quote]
+        seen[key] = requirements[-1]
         sources[name] = ids
     result.requirements = requirements
     result.strong_matches = [r.name for r in requirements if r.status == RequirementStatus.STRONG]
@@ -204,7 +237,7 @@ def validate_grounded(validator, candidate, job_text):
     result.unsupported_keywords = [k for k in candidate.unsupported_keywords if boundary_contains(k, job_text) and not validator.catalog.direct_sources(k)]
     visibly_truncated = bool(re.search(r"\b(?:and|or|i|oraz)\s*$", job_text.strip(), re.I))
     expected = {u.name for u in units if u.category in {"mandatory", "preferred"}}
-    omitted = expected - {r.name for r in requirements}
+    omitted = {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
         result.completeness_issues.append("Some source requirements were not assessed.")
     # Cover source passages even when some headings were successfully recognized.
@@ -218,7 +251,7 @@ def validate_grounded(validator, candidate, job_text):
     if uncovered:
         result.completeness_issues.append("Requirement-bearing source passages are not covered by the analysis.")
     if sections and not source:
-        result.completeness_issues.append("No candidate requirements were identified in the recognized source sections.")
+        result.completeness_issues.append("The supplied source does not specify candidate qualifications or their required levels; duties and listed technologies cannot establish mandatory prior experience.")
     if visibly_truncated:
         result.completeness_issues.append("The source ends in an unfinished sentence.")
     result.is_reliable = bool(requirements) and not result.completeness_issues

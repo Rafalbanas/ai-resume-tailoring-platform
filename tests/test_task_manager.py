@@ -80,7 +80,10 @@ def test_task_status_and_view_endpoints(monkeypatch):
     monkeypatch.setattr(web_routes, "validate_csrf", lambda *args, **kwargs: None)
 
     with TestClient(app) as client:
-        client.auth = ("audit-tests", "isolated-test-password")
+        import re
+        page = client.get("/login")
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        client.post("/login", data={"username":"audit-tests", "password":"isolated-test-password", "csrf_token":token})
         # 1. 404 for unknown task
         res_404 = client.get("/tasks/non_existent_task_id")
         assert res_404.status_code == 404
@@ -92,7 +95,7 @@ def test_task_status_and_view_endpoints(monkeypatch):
                 "company": "Task Corp",
                 "role": "Cloud Architect",
                 "job_description": "We need a cloud engineer with Python and Docker experience in production.",
-                "csrf_token": "token",
+                "csrf_token": client.cookies.get("csrf_token"),
             },
             headers={"Accept": "application/json"},
         )
@@ -121,8 +124,8 @@ def test_task_status_and_view_endpoints(monkeypatch):
 def test_task_endpoints_require_authorization(monkeypatch):
     # Ensure unauthenticated request is blocked by guard
     with TestClient(app) as client:
-        res = client.get("/tasks/some_id")
-        assert res.status_code in (401, 403)
+        res = client.get("/tasks/some_id", follow_redirects=False)
+        assert res.status_code == 303 and res.headers["location"] == "/login"
 
-        res_view = client.get("/tasks/some_id/view")
-        assert res_view.status_code in (401, 403)
+        res_view = client.get("/tasks/some_id/view", follow_redirects=False)
+        assert res_view.status_code == 303 and res_view.headers["location"] == "/login"
