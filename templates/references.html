@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><div><p class="eyebrow">PRIVATE LIBRARY</p><h1>Reference CVs</h1><p>Style and selection examples only. The master profile remains the sole source of facts.</p></div></div>
 {% if errors %}<div class="alert" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
-<form class="job-form reference-upload" action="/references/upload" method="post" enctype="multipart/form-data">
+<form class="job-form reference-upload" action="{{ app_root_path|default('') }}/references/upload" method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>PDF or DOCX files<input class="file-input" type="file" name="files" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple required></label>
   <div class="form-foot"><span>Files and the generated index stay in the private data directory.</span><button class="primary" type="submit">Upload and ingest</button></div>
@@ -13,7 +13,7 @@
     <strong>{{ item.original_filename }}</strong>
     <span>{{ item.target_role or 'Role not detected' }}</span>
     <span class="status-{{ item.status }}">{{ item.status }}{% if item.error %}: {{ item.error }}{% endif %}</span>
-    <form action="/references/{{ item.id }}/remove" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Remove</button></form>
+    <form action="{{ app_root_path|default('') }}/references/{{ item.id }}/remove" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Remove</button></form>
   </article>
   {% else %}<section class="empty"><h2>No reference CVs yet</h2><p>Upload one or more PDF/DOCX files to build the private reference index.</p></section>{% endfor %}
 </div>

@@ -241,7 +241,7 @@ def test_headline_blocks_job_requirements_and_uses_verified_skill_ids(tmp_path, 
 
     result = FactValidator(profile, store).validate(hostile, platform)
 
-    assert result.resume.headline == "Platform Engineer | Python | Linux"
+    assert result.resume.headline == "Support Engineer | Python | Linux"
     serialized = result.resume.model_dump_json()
     for unsupported in ("PostgreSQL", "Azure Data Factory", "GitLab CI/CD", "Elasticsearch", "Java"):
         assert unsupported not in result.resume.headline
@@ -259,7 +259,7 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
     result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
     assert result.resume.professional_summary == profile.summary_facts[0]
     assert result.resume.professional_summary.endswith(".")
-    assert any("truncated or incomplete" in warning for warning in result.warnings)
+    assert any("source sentences" in warning for warning in result.warnings)
 
 
 # ---------------------------------------------------------------------------

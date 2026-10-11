@@ -6,7 +6,14 @@
   <div class="truth-badge"><span>✓</span><div><strong>Truth Lock active</strong><small>Only master profile facts can reach the CV</small></div></div>
 </section>
 {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
-<form action="/analyze" method="post" class="job-form" id="job-form" novalidate>
+<form action="{{ app_root_path|default('') }}/settings/fallback" method="post" class="fallback-settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label><input type="checkbox" name="enabled" {% if fallback_enabled %}checked{% endif %}> Automatyczny fallback</label>
+  <button class="secondary" type="submit">Zapisz</button>
+  <p id="provider-order" data-fallback="{{ 'true' if fallback_enabled else 'false' }}"></p>
+  <small>Wyłączenie fallbacku nie blokuje ręcznego wyboru Gemini.</small>
+</form>
+<form action="{{ app_root_path|default('') }}/analyze" method="post" class="job-form" id="job-form" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-grid">
     <label>Company<input id="company" name="company" value="{{ company or '' }}" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC"></label>
@@ -15,16 +22,16 @@
   <div class="form-grid provider-grid">
     <label>AI Engine
       <select id="llm_provider" name="llm_provider" class="provider-select">
-        <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto ({{ engine_primary }}; fallback: {{ engine_fallback }})</option>
+        <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto (Ollama)</option>
         <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama ({{ ollama_model }})</option>
         <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini ({{ gemini_model }})</option>
       </select>
-      <small class="field-hint">Gemini 3.1 Flash-Lite to ekonomiczny model do analizy ofert i dopasowywania CV. Przesyła profil i ofertę do chmury Google.</small>
+      <small class="field-hint">Użycie Gemini przesyła dane potrzebne do analizy do zewnętrznego API Google.</small>
     </label>
     <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ job_description or '' }}</textarea></label>
-  <div class="form-foot"><span>Source-constrained analysis and CV drafts. <a href="/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
+  <div class="form-foot"><span>Source-constrained analysis and CV drafts. <a href="{{ app_root_path|default('') }}/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
 </form>
 {% endblock %}

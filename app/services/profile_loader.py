@@ -42,8 +42,8 @@ def load_master_profile(settings: Settings) -> tuple[CandidateProfile, ProfileSt
         )
     try:
         profile = CandidateProfile.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValidationError, json.JSONDecodeError) as exc:
-        raise ProfileConfigurationError(f"Master profile at {source} is invalid: {exc}") from exc
+    except (OSError, ValidationError, json.JSONDecodeError):
+        raise ProfileConfigurationError(f"Master profile at {source} is invalid; check the schema and JSON syntax.") from None
 
     is_example = _is_example(profile, path)
     kind = "example" if is_example else "production"

@@ -13,6 +13,7 @@ from app.models.resume import (
     TailoredResume,
 )
 from app.services.fact_catalog import FactCatalog, normalized_tokens
+from app.services.professional_summary import build_summary
 from app.services.skills_bank import SkillsBank
 
 
@@ -30,7 +31,7 @@ class FactValidator:
         self.catalog = FactCatalog(profile)
         self.skills_bank = skills_bank
 
-    def validate(self, candidate: TailoredResume, job: JobRequest) -> ValidationResult:
+    def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)
         warnings: list[str] = []
 
@@ -40,10 +41,12 @@ class FactValidator:
         allowed_skills = {skill_key(value): value for values in self.profile.skills.values() for value in values}
         clean_skills = []
         if self.skills_bank:
-            manual_skill_list = bool(draft.core_skills) and not draft.selected_skill_ids
+            auto_select = not draft.core_skills and not draft.selected_skill_ids
             requested_ids = list(draft.selected_skill_ids)
             for value in draft.core_skills:
-                skill = self.skills_bank.find(value)
+                skill = next((self.skills_bank.get(skill_id) for skill_id in draft.selected_skill_ids
+                    if self.skills_bank.get(skill_id) and self.skills_bank.wording(self.skills_bank.get(skill_id)) == value), None)
+                skill = skill or self.skills_bank.find(value)
                 if skill and self.skills_bank.eligible(skill):
                     requested_ids.append(skill.id)
                 elif value.strip():
@@ -51,8 +54,9 @@ class FactValidator:
             selected = self.skills_bank.select_for_job(
                 list(dict.fromkeys(requested_ids)),
                 f"{job.role}\n{job.job_description}",
-                minimum=0 if manual_skill_list else 8,
+                minimum=8 if auto_select and not preserve_skills else 0,
                 maximum=16,
+                requested_only=preserve_skills,
             )
             draft.selected_skill_ids = [skill.id for skill in selected]
             draft.core_skills = [self.skills_bank.wording(skill) for skill in selected]
@@ -86,17 +90,10 @@ class FactValidator:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
 
-        summary_entries = self.catalog.valid(draft.summary_source_fact_ids, kind="summary")[:4]
-        if not summary_entries:
-            summary_entries = [entry for entry in self.catalog.prompt_entries if entry.kind == "summary"][:3]
-        summary_ids = [entry.source_id for entry in summary_entries]
-        summary_supported = self.catalog.supports_paraphrase(draft.professional_summary, summary_ids)
-        summary_complete = self._is_complete_summary(draft.professional_summary)
-        if not summary_supported or not summary_complete:
-            if draft.professional_summary:
-                reason = "unsupported" if not summary_supported else "truncated or incomplete"
-                warnings.append(f"The {reason} professional summary was replaced with source facts")
-            draft.professional_summary = " ".join(self._complete_sentence(entry.text) for entry in summary_entries)
+        summary, summary_ids = build_summary(self.catalog, job.role)
+        if draft.professional_summary and draft.professional_summary != summary:
+            warnings.append("Professional summary rebuilt from verified source sentences; review before sending")
+        draft.professional_summary = summary
         draft.summary_source_fact_ids = summary_ids
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
@@ -130,11 +127,7 @@ class FactValidator:
             clean_experience.append(exp)
         if not clean_experience:
             for exp_index, source in enumerate(self.profile.experience):
-                entries = [
-                    entry
-                    for entry in self.catalog.prompt_entries
-                    if entry.kind == "experience" and entry.owner_index == exp_index
-                ][:2]
+                entries = self._experience_entries(exp_index, job)
                 if not entries:
                     continue
                 clean_experience.append(
@@ -145,6 +138,29 @@ class FactValidator:
                         bullets=[ResumeBullet(text=entry.text, source_fact_ids=[entry.source_id]) for entry in entries],
                     )
                 )
+        unique_experience = {}
+        for item in clean_experience:
+            key = (item.company, item.title, item.dates)
+            if key not in unique_experience:
+                unique_experience[key] = item
+            else:
+                existing = unique_experience[key]
+                known = {bullet.text for bullet in existing.bullets}
+                existing.bullets = (existing.bullets + [bullet for bullet in item.bullets if bullet.text not in known])[:4]
+        clean_experience = list(unique_experience.values())
+        included = {(item.company, item.title, item.dates) for item in clean_experience}
+        for index, source in enumerate(self.profile.experience):
+            dates = " – ".join(filter(None, [source.start, source.end]))
+            if (source.company, source.title, dates) in included:
+                continue
+            entries = self._experience_entries(index, job)
+            if entries:
+                clean_experience.append(ResumeExperience(
+                    company=source.company, title=source.title, dates=dates,
+                    bullets=[ResumeBullet(text=e.text, source_fact_ids=[e.source_id]) for e in entries],
+                ))
+        order = {(e.company, e.title): i for i, e in enumerate(self.profile.experience)}
+        clean_experience.sort(key=lambda e: order.get((e.company, e.title), len(order)))
         draft.experience = clean_experience
 
         clean_projects: list[ResumeProject] = []
@@ -161,12 +177,15 @@ class FactValidator:
             source = self.profile.projects[index]
             valid_ids = [entry.source_id for entry in entries]
             project.name = source.name
-            if not self.catalog.supports_paraphrase(project.description, valid_ids):
-                if project.description:
-                    warnings.append(f"Unsupported AI project content replaced: {project.name}")
-                project.description = " ".join(entry.text for entry in entries)
+            project.url = source.url if source.url.startswith(("https://", "http://")) else ""
+            canonical_description = source.description or " ".join(source.facts)
+            if project.description != canonical_description:
+                warnings.append(f"Project wording replaced with verified description: {project.name}")
+            project.description = canonical_description
+            project.source_fact_ids = [entry.source_id for entry in self.catalog.prompt_entries
+                if entry.kind == "project" and entry.owner_index == index and ":technology:" not in entry.source_id]
             verified_technologies = [
-                allowed_skills[skill_key(tech)] for tech in source.technologies if skill_key(tech) in allowed_skills
+                tech for tech in source.technologies if skill_key(tech) in allowed_skills
             ]
             requested_technologies = []
             unsupported_technologies = []
@@ -176,7 +195,7 @@ class FactValidator:
                     requested_technologies.append(canonical)
                 else:
                     unsupported_technologies.append(value)
-            source_technology_keys = {skill_key(value) for value in verified_technologies}
+            source_technology_keys = {skill_key(allowed_skills.get(skill_key(value), value)) for value in verified_technologies}
             unsupported_technologies.extend(
                 value for value in requested_technologies if skill_key(value) not in source_technology_keys
             )
@@ -186,8 +205,8 @@ class FactValidator:
                     f"{', '.join(dict.fromkeys(unsupported_technologies))}"
                 )
             project.technologies = verified_technologies
-            project.source_fact_ids = valid_ids
-            clean_projects.append(project)
+            if project.name not in {item.name for item in clean_projects}:
+                clean_projects.append(project)
         selected_project_names = {project.name.casefold() for project in clean_projects}
         for index, source in enumerate(self.profile.projects):
             if source.name.casefold() in selected_project_names:
@@ -203,13 +222,14 @@ class FactValidator:
                 clean_projects.append(
                     ResumeProject(
                         name=source.name,
+                        url=source.url if source.url.startswith(("https://", "http://")) else "",
                         description=content.text,
                         technologies=[
-                            allowed_skills[skill_key(tech)]
+                            tech
                             for tech in source.technologies
                             if skill_key(tech) in allowed_skills
                         ],
-                        source_fact_ids=[content.source_id],
+                        source_fact_ids=[entry.source_id for entry in entries if ":technology:" not in entry.source_id],
                     )
                 )
         ranked_projects = self._rank_projects(clean_projects, job)
@@ -233,6 +253,8 @@ class FactValidator:
                 warnings.append(f"Unsupported AI education removed: {item.institution}")
                 continue
             source = self.profile.education[index]
+            if source.institution in {item.institution for item in clean_education}:
+                continue
             main_entry = next(
                 (
                     entry
@@ -257,8 +279,11 @@ class FactValidator:
                     source_fact_ids=[main_entry.source_id] if main_entry else [],
                 )
             )
-        if not clean_education:
+        included_institutions = {item.institution.casefold() for item in clean_education}
+        if len(included_institutions) < len(self.profile.education):
             for index, source in enumerate(self.profile.education):
+                if source.institution.casefold() in included_institutions:
+                    continue
                 main_entry = next(
                     (
                         entry
@@ -319,6 +344,13 @@ class FactValidator:
         draft.certifications = clean_certs
         return ValidationResult(resume=draft, warnings=warnings)
 
+    def _experience_entries(self, index: int, job: JobRequest):
+        entries = [e for e in self.catalog.prompt_entries if e.kind == "experience" and e.owner_index == index]
+        role_tokens = normalized_tokens(job.role)
+        job_tokens = normalized_tokens(job.job_description)
+        ranking = sorted(range(len(entries)), key=lambda i: (3 * len(normalized_tokens(entries[i].text) & role_tokens) + len(normalized_tokens(entries[i].text) & job_tokens), -i), reverse=True)
+        return [entries[i] for i in sorted(ranking[:2])]
+
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
         capabilities: list[str] = []
         generic_names = {
@@ -354,7 +386,7 @@ class FactValidator:
                 if canonical and canonical not in capabilities:
                     capabilities.append(canonical)
 
-        parts = [role.strip()]
+        parts = [self.profile.experience[0].title.strip() if self.profile.experience else "IT professional"]
         for capability in capabilities:
             candidate = " | ".join([*parts, capability])
             if len(candidate) > 75 and len(parts) >= 3:

@@ -15,7 +15,8 @@ def apply_resume_edits(resume: TailoredResume, form: Mapping[str, object]) -> Ta
     if "core_skills" in form:
         draft.core_skills = _split_values(form.get("core_skills"))
         # A manual list replaces the model selection; Truth Lock resolves it back to bank IDs.
-        draft.selected_skill_ids = []
+        original_ids = dict(zip(resume.core_skills, resume.selected_skill_ids, strict=False))
+        draft.selected_skill_ids = [original_ids[value] for value in draft.core_skills if value in original_ids]
 
     for exp_index, experience in enumerate(draft.experience):
         clean_bullets = []

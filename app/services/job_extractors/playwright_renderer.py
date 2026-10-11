@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.services.job_extractors.fetcher import SafeHttpFetcher
 from app.services.job_extractors.security import PublicUrlGuard
 
 
@@ -34,7 +35,8 @@ class SafePlaywrightRenderer:
                     headless=True,
                     args=["--disable-dev-shm-usage", "--no-sandbox"],
                 )
-                context = await browser.new_context(java_script_enabled=True)
+                context = await browser.new_context(java_script_enabled=True, service_workers="block")
+                await context.route_web_socket("**/*", lambda ws: ws.close())
                 page = await context.new_page()
 
                 async def secure_route(route):
@@ -48,15 +50,17 @@ class SafePlaywrightRenderer:
                         if navigation_requests > self.max_redirects + 1:
                             await route.abort()
                             return
-                    if request.url.startswith(("data:", "blob:", "about:")):
-                        await route.continue_()
+                    if not request.url.startswith(("https://", "http://")):
+                        await route.abort()
                         return
                     try:
-                        await self.guard.validate(request.url)
+                        fetcher = SafeHttpFetcher(self.timeout_ms / 1000, self.max_bytes, self.max_redirects, guard=self.guard)
+                        fetched = await fetcher.fetch(request.url, html_only=False)
+                        await route.fulfill(status=200, content_type=fetched.content_type, body=fetched.html)
                     except Exception:
                         await route.abort()
                         return
-                    await route.continue_()
+                    # All network goes through the address-pinned fetcher.
 
                 await page.route("**/*", secure_route)
                 await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)

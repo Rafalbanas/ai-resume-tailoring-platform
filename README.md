@@ -2,7 +2,7 @@
 
 A private, mobile-first application that fetches or accepts a job description, compares it with a verified master profile, and produces an ATS-friendly PDF and editable DOCX resume. It is a production-shaped portfolio project demonstrating Python, automation, secure web extraction, DevOps, and fact-constrained AI integration.
 
-> **Fact-constrained AI generation prevents the LLM from adding unsupported skills, technologies or certifications.**
+> **Source-constrained export reduces unsupported claims. Review the profile, analysis and rendered exports before every real application; no universal ATS compatibility is claimed.**
 
 ## What it does
 
@@ -10,12 +10,12 @@ A private, mobile-first application that fetches or accepts a job description, c
 - Fetches a single user-supplied job URL through SSRF-protected HTTP, JSON-LD/site adapters, and a Playwright fallback.
 - Sends the job and master profile to an existing n8n webhook; n8n uses its own Google Gemini credential.
 - Validates `JobAnalysis` and `TailoredResume` with Pydantic.
-- Independently enforces Truth Lock in Python by resolving model-selected source IDs back to exact master-profile facts.
+- Independently enforces Truth Lock in Python by resolving model-selected source IDs back to exact master-profile facts; automatic export does not trust word-overlap paraphrases.
 - Shows a qualitative HIGH / MEDIUM / LOW match report with APPLY / REASONABLE STRETCH / SKIP guidance.
 - Renders a deterministic, single-column A4 resume with Jinja2 and WeasyPrint.
 - Exports an editable, ATS-friendly DOCX and keeps local application history.
 - Maintains a private PDF/DOCX reference-CV library for local style examples and deterministic layout guidance.
-- Protects the private UI with HTTP Basic Auth backed by an Argon2id hash, CSRF validation, input limits, rate limiting, safe paths, timeouts, and secret-authenticated n8n calls.
+- Protects private views and APIs with a login page, server-revocable sessions, Argon2id credentials, CSRF validation, input limits, rate limiting, safe paths, timeouts, and secret-authenticated n8n calls.
 
 ## Architecture
 
@@ -116,7 +116,7 @@ Production never falls back to `data/skills.example.json`. For an existing priva
 
 Authenticated users can upload multiple PDF/DOCX files under **Reference CVs**. Files and the generated `data/reference_cvs/index.json` stay inside the ignored private data directory. Ingestion extracts role, summary, skills, experience-bullet examples, and section order. Ollama receives at most two similar references as style-only examples; the verified master profile remains the only permitted source of facts, and Truth Lock still rewrites/removes unsupported output.
 
-PDFs use the deterministic one-page `modern_sidebar` Jinja2/CSS template: navy sidebar, optional private `data/profile_photo/profile_photo.jpg` (ignored), contacts and skills on the left, content on the right, and a fixed GDPR footer. The page-fit pass shortens bullets first, then removes lower-priority skills, without reducing the base font below 8 pt.
+New CVs default to the single-column `ats_classic` template at 10.5 pt, with natural multi-page flow and no text truncation. `modern_sidebar` is an optional compact template: navy sidebar, optional private `data/profile_photo/profile_photo.jpg` (ignored), contacts and skills on the left, content on the right, and a fixed GDPR footer. The optional sidebar fit pass can shorten or remove content. Edits that would lose text are rejected with a prompt to use ATS Classic. Unsupported manual wording is returned with HTTP 422 and kept in the form; saved documents stay intact. Successful edits preserve previous JSON and exports in a private `versions/` folder. Exports render before updating saved content and roll back on write errors.
 
 The **Profile** screen and the clickable avatar in a Modern Sidebar preview accept JPG, PNG, or WEBP photos, validate their declared and actual formats, and store only a normalized 600×600 JPEG under ignored `data/profile_photo/`. The preview control also accepts a pasted clipboard image and refreshes the current preview/PDF/DOCX without regenerating resume text. Modern Sidebar uses the last photo by default when present and always reserves the same circular space; without it, initials are shown. ATS Classic never includes a photo by default. The per-CV setting stores only `photo_enabled` and the template name—never image bytes. DOCX keeps the photo centered at a fixed aspect ratio; because Word does not reproduce the HTML sidebar engine, its layout is a stable editable approximation rather than a pixel-identical copy.
 
@@ -169,3 +169,5 @@ Job extraction is deliberately limited to one URL explicitly supplied by the sig
 1. A master-profile editor with explicit review and version history.
 2. A visual page-fit report that suggests which verified facts to remove before export.
 3. Optional application-status tracking (applied, interview, rejected) in the existing local storage model.
+
+Private recording setup and cleanup: [recording demo](docs/recording-demo.md).

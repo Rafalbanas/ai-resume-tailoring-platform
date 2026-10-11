@@ -14,6 +14,7 @@ class ResumeExperience(BaseModel):
 
 
 class ResumeProject(BaseModel):
+    url: str = ""
     name: str
     description: str = ""
     technologies: list[str] = Field(default_factory=list)

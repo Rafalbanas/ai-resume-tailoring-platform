@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Przetwarzanie zadania · CV Tailor{% endblock %}
+{% block content %}
+<section class="workspace-head">
+  <div>
+    <p class="eyebrow">ZADANIE W TLE</p>
+    <h1 id="task-title">
+      {% if task.kind == 'compare' %}
+        Porównywanie modeli AI
+      {% else %}
+        Generowanie dopasowanego CV
+      {% endif %}
+    </h1>
+    <p class="section-sub">
+      {% set job = task.payload.get('job', {}) %}
+      {% if job.get('role') %}
+        <strong>{{ job.get('role') }}</strong> w <em>{{ job.get('company', 'Nienazwana firma') }}</em>
+      {% else %}
+        Trwa przetwarzanie zlecenia...
+      {% endif %}
+    </p>
+  </div>
+  <div class="truth-badge" id="task-status-badge">
+    <span class="{% if task.status not in ['failed', 'completed'] %}pulse-indicator{% endif %}" id="task-badge-icon">
+      {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% else %}⚡{% endif %}
+    </span>
+    <div>
+      <strong id="task-status-text">
+        {% if task.status == 'queued' %}
+          Oczekuje w kolejce
+        {% elif task.status == 'running' %}
+          W trakcie przetwarzania
+        {% elif task.status == 'completed' %}
+          Ukończono
+        {% else %}
+          Błąd generowania
+        {% endif %}
+      </strong>
+      <small>Bezpieczne przetwarzanie asynchroniczne w tle na serwerze</small>
+    </div>
+  </div>
+</section>
+
+<div class="card task-progress-card" id="task-card">
+  <div class="task-card-header">
+    <div class="task-stage-badge">
+      <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed'] %}display: none;{% endif %}"></span>
+      <span id="task-stage">{{ task.stage }}</span>
+    </div>
+    <div class="task-timer-meta">
+      <span id="task-timer">
+        {% if task.execution_duration_seconds is not none %}
+          Czas wykonania: {{ task.execution_duration_seconds }} s
+        {% elif task.status == 'queued' %}
+          Oczekiwanie w kolejce...
+        {% else %}
+          Upłynęło: licznie...
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="task-card-footer">
+    <div class="task-info-note">
+      <small id="task-footer-note">
+        {% if task.status == 'failed' %}
+          Przetwarzanie zakończone niepowodzeniem. Możesz ponowić generowanie lub poprawić ofertę.
+        {% else %}
+          ℹ️ To zadanie wykonuje się na serwerze niezależnie od przeglądarki. Możesz bezpiecznie odświeżyć tę stronę, zamknąć kartę lub wrócić za chwilę.
+        {% endif %}
+      </small>
+    </div>
+    <div class="task-id-badge">
+      <small>ID zadania: <code>{{ task.task_id[:12] }}</code></small>
+    </div>
+  </div>
+
+  <div id="error-container" class="alert" style="{% if task.status != 'failed' %}display: none;{% endif %} margin-top: 1.5rem;">
+    <strong id="error-title">Wystąpił błąd podczas przetwarzania:</strong>
+    <p id="error-message" style="margin-top: 0.5rem; word-break: break-word;">{{ task.error or '' }}</p>
+    <div class="task-actions" style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+      <form id="retry-form" action="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/retry" method="post" style="display: inline-block; margin: 0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" id="retry-btn" class="button primary">Ponów generowanie</button>
+      </form>
+      <a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Popraw ofertę i ustawienia</a>
+    </div>
+  </div>
+</div>
+
+<noscript>
+  <meta http-equiv="refresh" content="3">
+  <p class="field-hint" style="text-align: center; margin-top: 1rem;">
+    Automatyczne odświeżanie strony co 3 sekundy...
+  </p>
+</noscript>
+
+<script>
+(function() {
+  const taskId = "{{ task.task_id }}";
+  const initialStatus = "{{ task.status }}";
+  const createdTime = new Date("{{ task.created_at }}").getTime();
+  const startTime = "{{ task.started_at }}" ? new Date("{{ task.started_at }}").getTime() : null;
+  const stageEl = document.getElementById("task-stage");
+  const timerEl = document.getElementById("task-timer");
+  const statusTextEl = document.getElementById("task-status-text");
+  const errorContainer = document.getElementById("error-container");
+  const errorMessage = document.getElementById("error-message");
+  const livePulseEl = document.getElementById("task-live-pulse");
+  const badgeIconEl = document.getElementById("task-badge-icon");
+  const footerNoteEl = document.getElementById("task-footer-note");
+  const retryForm = document.getElementById("retry-form");
+  const retryBtn = document.getElementById("retry-btn");
+
+  let timerInterval = null;
+  let isDone = (initialStatus === "completed" || initialStatus === "failed");
+
+  function formatDuration(sec) {
+    const min = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return min > 0 ? `${min}m ${s}s` : `${s}s`;
+  }
+
+  function updateTimer(startedAt) {
+    if (isDone) return;
+    const start = startedAt ? new Date(startedAt).getTime() : createdTime;
+    const now = Date.now();
+    const elapsedSec = Math.max(0, Math.floor((now - start) / 1000));
+    if (timerEl) {
+      timerEl.textContent = `Upłynęło: ${formatDuration(elapsedSec)}`;
+    }
+  }
+
+  if (!isDone) {
+    timerInterval = setInterval(() => updateTimer(window._taskStartedAt), 1000);
+    updateTimer(startTime);
+  }
+
+  // Prevent duplicate submissions on retry button click
+  if (retryForm && retryBtn) {
+    retryForm.addEventListener("submit", function(e) {
+      if (retryBtn.disabled) {
+        e.preventDefault();
+        return;
+      }
+      retryBtn.disabled = true;
+      retryBtn.setAttribute("aria-busy", "true");
+      retryBtn.textContent = "Uruchamianie ponowienia...";
+    });
+  }
+
+  async function pollStatus() {
+    if (isDone) return;
+
+    try {
+      const res = await fetch(cvAppUrl(`/tasks/${taskId}`), {
+        headers: { "Accept": "application/json" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.started_at) {
+          window._taskStartedAt = data.started_at;
+        }
+
+        if (stageEl && data.stage) {
+          stageEl.textContent = data.stage;
+        }
+
+        if (data.status === "running") {
+          if (statusTextEl) statusTextEl.textContent = "W trakcie przetwarzania";
+          if (livePulseEl) livePulseEl.style.display = "inline-block";
+        } else if (data.status === "queued") {
+          if (statusTextEl) statusTextEl.textContent = "Oczekuje w kolejce";
+        }
+
+        if (data.status === "completed") {
+          isDone = true;
+          clearInterval(timerInterval);
+          if (livePulseEl) livePulseEl.style.display = "none";
+          if (badgeIconEl) {
+            badgeIconEl.classList.remove("pulse-indicator");
+            badgeIconEl.textContent = "✓";
+          }
+          if (statusTextEl) statusTextEl.textContent = "Zakończono!";
+          if (stageEl) stageEl.textContent = "Przekierowywanie do wyniku...";
+          const finalDuration = data.execution_duration_seconds ? ` (${formatDuration(data.execution_duration_seconds)})` : "";
+          if (timerEl) timerEl.textContent = `Ukończono w: ${finalDuration || "gotowe"}`;
+          const redirectUrl = (data.result && data.result.redirect_url) || "/";
+          setTimeout(() => {
+            window.location.href = cvAppUrl(redirectUrl);
+          }, 800);
+          return;
+        }
+
+        if (data.status === "failed") {
+          isDone = true;
+          clearInterval(timerInterval);
+          if (livePulseEl) livePulseEl.style.display = "none";
+          if (badgeIconEl) {
+            badgeIconEl.classList.remove("pulse-indicator");
+            badgeIconEl.textContent = "⚠️";
+          }
+          if (statusTextEl) statusTextEl.textContent = "Błąd generowania";
+          if (stageEl) stageEl.textContent = data.stage || "Wykonywanie nie powiodło się";
+          if (timerEl) {
+            const execSec = data.execution_duration_seconds || 0;
+            timerEl.textContent = `Czas wykonania: ${formatDuration(execSec)}`;
+          }
+          if (footerNoteEl) {
+            footerNoteEl.textContent = "Przetwarzanie zakończone niepowodzeniem. Możesz ponowić generowanie lub poprawić ofertę.";
+          }
+          if (errorContainer && errorMessage) {
+            errorMessage.textContent = data.error || "Wystąpił błąd podczas generowania.";
+            errorContainer.style.display = "block";
+          }
+          return;
+        }
+      } else if (res.status === 404) {
+        isDone = true;
+        clearInterval(timerInterval);
+        if (errorMessage) errorMessage.textContent = "Nie odnaleziono zadania.";
+        if (errorContainer) errorContainer.style.display = "block";
+        return;
+      }
+    } catch (err) {
+      console.warn("Poll attempt failed, will retry:", err);
+    }
+
+    if (!isDone) {
+      setTimeout(pollStatus, 2500);
+    }
+  }
+
+  // Start polling if not already completed/failed
+  if (!isDone) {
+    setTimeout(pollStatus, 1500);
+  }
+})();
+</script>
+{% endblock %}

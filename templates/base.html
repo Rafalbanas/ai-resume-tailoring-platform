@@ -5,15 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Private, fact-constrained CV tailoring workflow.">
   <title>{% block title %}CV Tailor{% endblock %}</title>
-  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
-  <script src="/static/app.js?v={{ asset_version }}" defer></script>
+  <link rel="icon" type="image/svg+xml" href="{{ app_root_path|default('') }}/static/favicon.svg">
+  <link rel="stylesheet" href="{{ app_root_path|default('') }}/static/app.css?v={{ asset_version }}">
+  <script>
+    window.cvAppUrl = function(path) {
+      const root = {{ app_root_path|default('')|tojson }};
+      return root && path.startsWith('/') && !path.startsWith('//') && path !== root && !path.startsWith(root + '/') ? root + path : path;
+    };
+  </script>
+  <script src="{{ app_root_path|default('') }}/static/app.js?v={{ asset_version }}" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <a href="/" class="brand"><span class="brand-mark">CV</span><span>Tailor</span></a>
-    <nav aria-label="Primary"><a href="/">New match</a><a href="/compare">Compare</a><a href="/history">History</a><a href="/diagnostics">Diagnostics</a><a href="/skills">Skills &amp; Evidence</a><a href="/references">Reference CVs</a><a href="/profile">Profile</a><a href="/account/password">Account</a></nav>
+    <a href="{{ app_root_path|default('') }}/" class="brand"><span class="brand-mark">CV</span><span>Tailor</span></a>
+    {% if request.state.authenticated %}<nav aria-label="Primary"><a href="{{ app_root_path|default('') }}/">New match</a><a href="{{ app_root_path|default('') }}/compare">Compare</a><a href="{{ app_root_path|default('') }}/history">History</a><a href="{{ app_root_path|default('') }}/diagnostics">Diagnostics</a><a href="{{ app_root_path|default('') }}/skills">Skills &amp; Evidence</a><a href="{{ app_root_path|default('') }}/references">Reference CVs</a><a href="{{ app_root_path|default('') }}/profile">Profile</a><a href="{{ app_root_path|default('') }}/account/password">Account</a></nav><form action="{{ app_root_path|default('') }}/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Wyloguj</button></form>{% endif %}
   </header>
-  <main class="shell">{% block content %}{% endblock %}</main>
+  <main class="shell">{% if demo_mode %}<p class="demo-marker">Demo — fikcyjne dane</p>{% endif %}{% block content %}{% endblock %}</main>
 </body>
 </html>

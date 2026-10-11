@@ -1,11 +1,10 @@
-import base64
 import hashlib
 import hmac
 import secrets
 import time
 from collections import defaultdict, deque
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request
 
 
 class FixedWindowLimiter:
@@ -24,26 +23,9 @@ class FixedWindowLimiter:
         bucket.append(now)
 
 
-def require_basic_auth(request: Request) -> None:
-    header = request.headers.get("authorization", "")
-    if not header.startswith("Basic "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Basic realm=CV Tailor"},
-        )
-    try:
-        raw = base64.b64decode(header[6:], validate=True).decode("utf-8")
-        username, password = raw.split(":", 1)
-    except (ValueError, UnicodeDecodeError):
-        username, password = "", ""
-    valid = request.app.state.auth_store.verify(username, password)
-    if not valid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic realm=CV Tailor"},
-        )
+def require_session(request: Request) -> None:
+    if not getattr(request.state, "authenticated", False):
+        raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def new_csrf_token(secret: str) -> str:

@@ -22,7 +22,7 @@ def reset_password() -> int:
         print(str(exc), file=sys.stderr)
         return 1
     store.reset_password(first)
-    print("Password reset successfully. Existing HTTP Basic credentials are no longer valid.")
+    print("Password reset successfully. Existing sessions are no longer valid.")
     return 0
 
 

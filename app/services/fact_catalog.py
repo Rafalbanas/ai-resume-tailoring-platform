@@ -41,7 +41,7 @@ def normalized_tokens(value: str) -> set[str]:
     }
     for source, target in replacements.items():
         ascii_value = ascii_value.replace(source, target)
-    return {token for token in re.findall(r"[a-z0-9+#.]+", ascii_value) if len(token) > 1 and token not in STOP_WORDS}
+    return {token.rstrip(".") for token in re.findall(r"[a-z0-9+#.]+", ascii_value) if len(token.rstrip(".")) > 1 and token.rstrip(".") not in STOP_WORDS}
 
 
 def _digest(value: str) -> str:
@@ -219,17 +219,11 @@ class FactCatalog:
         entries = self.valid(source_ids)
         if not text.strip() or not entries:
             return False
-        source_text = " ".join(entry.text for entry in entries)
-        source_tokens = normalized_tokens(source_text)
-        text_tokens = normalized_tokens(text)
-        if not text_tokens:
-            return False
-        source_numbers = set(re.findall(r"\b\d+(?:[.+-]\d+)*\b", source_text))
-        text_numbers = set(re.findall(r"\b\d+(?:[.+-]\d+)*\b", text))
-        if not text_numbers <= source_numbers:
-            return False
-        overlap = len(source_tokens & text_tokens) / max(1, min(len(source_tokens), len(text_tokens)))
-        return overlap >= 0.35
+        # Word overlap cannot establish entailment (negation, seniority and new
+        # technologies can share every other word). Only exact source sentences
+        # are accepted at the automatic export boundary.
+        source_text = " ".join(entry.text.strip() for entry in entries)
+        return " ".join(text.split()).rstrip(".") == " ".join(source_text.split()).rstrip(".")
 
     def for_prompt(self) -> list[dict[str, str]]:
         return [

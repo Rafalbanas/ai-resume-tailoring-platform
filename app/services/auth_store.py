@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import secrets
@@ -44,6 +45,10 @@ class AuthStore:
                 raise RuntimeError("auth.json is missing and APP_USERNAME / APP_PASSWORD are unavailable for migration")
             validate_password(self.initial_password)
             self._write(self.initial_username, self.hasher.hash(self.initial_password))
+
+    @property
+    def credential_version(self) -> str:
+        return hashlib.sha256(self.path.read_bytes()).hexdigest()
 
     @property
     def username(self) -> str:

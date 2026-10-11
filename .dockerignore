@@ -13,3 +13,16 @@ data/profile_photo.*
 data/profile_photo/
 data/reference_cvs
 data/generated
+
+data/sessions.sqlite3*
+data/ai_settings.json
+data/.ai-settings-*
+data/tasks
+data/.diagnostics
+
+# Include only fictional example data in the image.
+data/*
+!data/master_profile.example.json
+!data/skills.example.json
+audit/
+AUDIT_REPORT.md

@@ -4,15 +4,15 @@
 <div class="page-head"><div><p class="eyebrow">CANDIDATE / PROFILE</p><h1>Profile photo</h1><p>Private local asset used only when enabled for a CV.</p></div></div>
 {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
 <section class="job-form photo-panel">
-  <div id="photo-preview" class="photo-preview">{% if has_photo %}<img src="/profile/photo/content" alt="Current profile crop">{% else %}<span>No photo</span>{% endif %}</div>
-  <form id="photo-form" action="/profile/photo" method="post" enctype="multipart/form-data">
+  <div id="photo-preview" class="photo-preview">{% if has_photo %}<img src="{{ app_root_path|default('') }}/profile/photo/content" alt="Current profile crop">{% else %}<span>No photo</span>{% endif %}</div>
+  <form id="photo-form" action="{{ app_root_path|default('') }}/profile/photo" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>{{ 'Replace photo' if has_photo else 'Upload photo' }}<input id="profile-photo-input" class="file-input" type="file" name="photo" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.tif,.tiff" required></label>
     <div class="form-grid"><label>Horizontal crop position<input id="crop-x" type="range" name="crop_x" min="0" max="100" value="50"></label><label>Vertical crop position<input id="crop-y" type="range" name="crop_y" min="0" max="100" value="50"></label></div>
     <p><small>Preview crop uses a square frame. The stored image is normalized to 600×600.</small></p>
     <button class="primary" type="submit">{{ 'Replace photo' if has_photo else 'Upload photo' }}</button>
   </form>
-  {% if has_photo %}<form action="/profile/photo/remove" method="post" onsubmit="return confirm('Remove the profile photo?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}
+  {% if has_photo %}<form action="{{ app_root_path|default('') }}/profile/photo/remove" method="post" onsubmit="return confirm('Remove the profile photo?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}
 </section>
 
 <div class="page-head" style="margin-top: 2.5rem;">
@@ -47,11 +47,11 @@
             </span>
           </td>
           <td style="display: flex; gap: 0.5rem;">
-            <form action="/profile/interests/{{ item.id }}/toggle" method="post" style="display:inline; margin:0;">
+            <form action="{{ app_root_path|default('') }}/profile/interests/{{ item.id }}/toggle" method="post" style="display:inline; margin:0;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="secondary" type="submit">{{ 'Disable' if item.enabled else 'Enable' }}</button>
             </form>
-            <form action="/profile/interests/{{ item.id }}/delete" method="post" style="display:inline; margin:0;" onsubmit="return confirm('Delete this interest?')">
+            <form action="{{ app_root_path|default('') }}/profile/interests/{{ item.id }}/delete" method="post" style="display:inline; margin:0;" onsubmit="return confirm('Delete this interest?')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="danger" type="submit">Delete</button>
             </form>
@@ -66,7 +66,7 @@
   {% endif %}
 
   <h3>Add new interest</h3>
-  <form action="/profile/interests/add" method="post" style="margin-top: 1rem;">
+  <form action="{{ app_root_path|default('') }}/profile/interests/add" method="post" style="margin-top: 1rem;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="form-grid">
       <label>Interest name<input name="name" placeholder="e.g. Gravel cycling" required></label>

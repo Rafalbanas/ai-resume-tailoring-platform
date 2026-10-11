@@ -210,7 +210,7 @@ class Storage:
         if filename not in {"resume.pdf", "resume.docx"}:
             raise FileNotFoundError
         path = (self.application_folder(slug) / filename).resolve()
-        if not path.is_file():
+        if path.parent != self.application_folder(slug).resolve() or not path.is_file():
             raise FileNotFoundError
         return path
 

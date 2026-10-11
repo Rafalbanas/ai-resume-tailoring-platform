@@ -16,3 +16,23 @@
 .resume-main ul{margin:1mm 0 0 3.5mm;padding-left:3mm}.resume-main li{margin:0 0 1mm;padding-left:.5mm}.tech{font-size:7.8pt;color:#45647e;font-weight:700}.education-subline{font-size:7.8pt;color:#45647e;margin:0.4mm 0 1mm;line-height:1.22}
 .resume-main footer{position:absolute;left:11mm;right:12mm;bottom:6mm;border-top:.2mm solid #c7d0d8;padding-top:1.7mm;font-size:6.5pt;line-height:1.2;color:#75818d}
 .layout-compact .resume-sidebar{padding-top:11mm;padding-bottom:8mm}.layout-compact .portrait{margin-bottom:6.5mm}.layout-compact .sidebar-section{margin-bottom:5.2mm}.layout-compact .resume-main{padding-top:10.5mm}.layout-compact .resume-main header{padding-bottom:3mm;margin-bottom:3.3mm}.layout-compact .resume-main section{margin-bottom:3mm}.layout-compact .entry{margin-bottom:2mm}.layout-tight-bullets .resume-main ul{margin-top:.6mm}.layout-tight-bullets .resume-main li{margin-bottom:.45mm;line-height:1.2}.layout-tight-headings .resume-main header{padding-bottom:2.2mm;margin-bottom:2.5mm}.layout-tight-headings .resume-main h1{font-size:16.5pt;line-height:1.06}.layout-tight-headings .resume-main section>h2{margin:0 0 1.8mm;padding-bottom:.8mm}
+
+/* ATS uses normal page flow: readable text and no destructive one-page fit. */
+@page ats {size:A4;margin:14mm 16mm}
+.ats-classic{page:ats;width:auto;min-height:0;padding:0;font-size:10.5pt;line-height:1.35}
+.ats-classic .resume-main{min-height:0;padding:0}
+.ats-classic .resume-main header{margin-bottom:4mm;padding-bottom:3mm}
+.ats-classic .candidate-name{font-size:18pt;letter-spacing:0;color:#172536;text-transform:none;font-weight:bold}
+.ats-classic .resume-main h1{font-size:12pt;line-height:1.3}
+.ats-classic .ats-contact{font-size:9pt;color:#172536}
+.ats-classic .resume-main h3{font-size:10.5pt}
+.ats-classic .entry-head{display:block}
+.ats-classic .entry-head span,.ats-classic .education-subline,.ats-classic .tech{font-size:9.5pt;color:#344759}
+.ats-classic section>h2{break-after:avoid;font-size:11pt}
+.ats-classic .entry{break-inside:auto}
+.ats-classic .entry-head,.ats-classic h3{break-after:avoid}
+.ats-classic li{break-inside:avoid}
+.ats-classic footer{position:static!important;margin-top:5mm;font-size:8pt}
+.resume-document a{color:inherit;text-decoration:none;overflow-wrap:anywhere}
+
+.ats-classic footer{font-size:9pt;color:#344759}

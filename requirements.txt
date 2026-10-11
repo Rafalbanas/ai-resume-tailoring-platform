@@ -14,3 +14,4 @@ pypdf==6.1.1
 Pillow==12.3.0
 pillow-heif==1.8.0
 argon2-cffi==25.1.0
+itsdangerous==2.2.0

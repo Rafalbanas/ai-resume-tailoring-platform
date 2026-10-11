@@ -8,13 +8,18 @@
     <p>{{ job.company }}</p>
     <div class="provider-meta">
       <span class="badge provider-badge">Engine: {{ provider_used|default('unknown') }} ({{ model_used|default('unknown') }})</span>
-      {% if fallback_used %}<span class="badge fallback-badge">⚡ Fallback active</span>{% endif %}
+      {% if fallback_used %}<span class="badge fallback-badge">Fallback: tak</span>{% else %}<span class="badge">Fallback: nie</span>{% endif %}
     </div>
   </div>
   <div class="score score-{{ analysis.match_level|lower }}">
-    <small>Match</small>
-    <strong>{{ analysis.match_level }}</strong>
-    <span>{{ analysis.recommendation.replace('_',' ') }}</span>
+    <small>Status dopasowania</small>
+    {% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
+      <strong class="score-unreliable">Analiza niewiarygodna</strong>
+      <span>Wymaga ponowienia</span>
+    {% else %}
+      <strong>{{ analysis.match_level }}</strong>
+      <span>{{ analysis.recommendation.replace('_',' ') }}</span>
+    {% endif %}
   </div>
 </div>
 {% if fallback_used %}
@@ -22,15 +27,101 @@
   <strong>Automatic Fallback Activated:</strong> {{ fallback_reason }}
 </div>
 {% endif %}
-<div class="match-grid">
-  <section class="card"><h2><span class="dot good"></span>Strong matches</h2><div class="chips">{% for item in analysis.strong_matches %}<span>{{ item }}{% if analysis.match_evidence.get(item) %}<small>Verified · {{ analysis.match_evidence[item]|join(', ') }}</small>{% endif %}</span>{% else %}<em>No direct matches found</em>{% endfor %}</div></section>
-  <section class="card"><h2><span class="dot partial"></span>Partial matches</h2><div class="chips">{% for item in analysis.partial_matches %}<span>{{ item }}{% if analysis.match_evidence.get(item) %}<small>Verified · {{ analysis.match_evidence[item]|join(', ') }}</small>{% endif %}</span>{% else %}<em>None identified</em>{% endfor %}</div></section>
-  <section class="card"><h2><span class="dot missing"></span>Missing</h2><div class="chips">{% for item in analysis.missing_requirements %}<span>{{ item }}</span>{% else %}<em>No explicit gaps identified</em>{% endfor %}</div></section>
+{% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
+<div class="alert alert-warning" role="alert" style="margin: 1rem 0; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 1rem; border-radius: 8px;">
+  <strong>⚠️ Analiza niewiarygodna — wymaga ponowienia:</strong>
+  <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
 </div>
-<section class="recommendation"><p class="eyebrow">WHY</p><p>{{ analysis.reasoning_summary }}</p></section>
+{% endif %}
+<div class="match-grid">
+  <section class="card">
+    <h2><span class="dot good"></span>Strong matches</h2>
+    <div class="chips">
+      {% for item in analysis.strong_matches %}
+        <span class="chip-item">
+          <strong>{{ item }}</strong>
+          {% if analysis.match_evidence.get(item) %}
+            <small class="evidence-note">Potwierdzone · {{ analysis.match_evidence[item]|join(', ') }}</small>
+          {% endif %}
+        </span>
+      {% else %}
+        <em>Brak bezpośrednich dopasowań</em>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="card">
+    <h2><span class="dot partial"></span>Partial matches</h2>
+    <div class="chips">
+      {% for item in analysis.partial_matches %}
+        <span class="chip-item">
+          <strong>{{ item }}</strong>
+          {% if analysis.match_evidence.get(item) %}
+            <small class="evidence-note">Potwierdzone · {{ analysis.match_evidence[item]|join(', ') }}</small>
+          {% endif %}
+        </span>
+      {% else %}
+        <em>Brak dopasowań częściowych</em>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="card">
+    <h2><span class="dot missing"></span>Missing</h2>
+    <div class="chips">
+      {% for item in analysis.missing_requirements %}
+        <span class="chip-item">
+          <strong>{{ item }}</strong>
+          <small class="gap-note">Brak potwierdzenia w profilu</small>
+        </span>
+      {% else %}
+        <em>Brak zidentyfikowanych braków</em>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<section class="recommendation">
+  <p class="eyebrow">UZASADNIENIE</p>
+  <p>{{ analysis.reasoning_summary }}</p>
+</section>
+
+{% if analysis.requirements %}
+<section class="card requirements-breakdown" style="margin-top: 1.5rem;">
+  <h2><span class="dot good"></span>Wymagania z ogłoszenia (Weryfikacja źródłowa)</h2>
+  <div class="requirements-table">
+    {% for req in analysis.requirements %}
+    <div class="requirement-row req-status-{{ req.status }}">
+      <div class="req-header">
+        <span class="badge priority-badge {{ req.priority }}">{{ req.priority|upper }}</span>
+        <span class="badge status-badge status-{{ req.status }}">{{ req.status|upper }}</span>
+        <strong>{{ req.name }}</strong>
+      </div>
+      {% if req.source_quote %}
+      <div class="req-quote">
+        <small><em>„{{ req.source_quote }}”</em></small>
+      </div>
+      {% endif %}
+      {% if req.evidence %}
+      <div class="req-evidence">
+        <small><strong>Dowód z profilu:</strong> {{ req.evidence|join('; ') }}</small>
+      </div>
+      {% elif req.reason %}
+      <div class="req-reason">
+        <small>{{ req.reason }}</small>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<p class="muted">Wynik jest oceną dowodów w profilu, nie prawdopodobieństwem zatrudnienia ani uniwersalnym wynikiem ATS. Brak potwierdzenia nie oznacza braku umiejętności.</p>
+{% if provider_used == "mock" %}<div class="alert" role="alert">Tryb demonstracyjny (mock): wymagania i rekomendacja wymagają osobistego przeglądu.</div>{% endif %}
 <div class="actions">
-  <a class="secondary button" href="/">Edit job</a>
-  <a class="secondary button" href="/compare?draft_id={{ draft_id }}">Compare models</a>
-  <form action="/generate/{{ draft_id }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary" type="submit">Generate CV</button></form>
+  <a class="secondary button" href="{{ app_root_path|default('') }}/">Edytuj ofertę</a>
+  <a class="secondary button" href="{{ app_root_path|default('') }}/compare?draft_id={{ draft_id }}">Porównaj modele</a>
+  <form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Generuj dopasowane CV</button>
+  </form>
 </div>
 {% endblock %}

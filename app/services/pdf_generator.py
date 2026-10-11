@@ -7,6 +7,7 @@ from weasyprint import HTML
 
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
+from app.services.languages import profile_languages
 from app.services.profile_photo import ProfilePhotoStore
 
 
@@ -41,10 +42,14 @@ class PDFGenerator:
         include_photo = template_name == "modern_sidebar" and (
             self.photo_store.exists() if photo_enabled is None else photo_enabled and self.photo_store.exists()
         )
-        order = guide.get("section_order", ["summary", "experience", "education", "projects", "certifications"])
+        order = ["summary", "experience", "education", "projects", "certifications"]
+        if template_name == "modern_sidebar":
+            requested = guide.get("section_order", order)
+            order = list(dict.fromkeys([value for value in requested if value in order] + order))
         markup = self.env.get_template("resume.html").render(
             resume=resume,
             personal=profile.personal,
+            languages=profile_languages(profile),
             template_name=template_name,
             photo_enabled=include_photo,
             photo_available=self.photo_store.exists(),
@@ -86,7 +91,11 @@ class PDFGenerator:
         resume: TailoredResume,
         profile: CandidateProfile,
         layout_guide: dict | None = None,
+        *,
+        template_name: str = "modern_sidebar",
     ) -> tuple[TailoredResume, list[str]]:
+        if template_name == "ats_classic":
+            return deepcopy(resume), []
         guide = layout_guide if layout_guide is not None else {}
         guide.pop("compact_spacing", None)
         guide.pop("compact_bullets", None)

@@ -1,7 +1,10 @@
 import asyncio
+import json
 import logging
+import os
+import tempfile
 import time
-from typing import Any
+from typing import Any, Callable
 
 from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
@@ -28,6 +31,8 @@ class ResilientAIProvider(AIProvider):
         default_fallback: str | None = "gemini",
         operation_budget_seconds: float = 300.0,
     ):
+        self.fallback_enabled = True
+        self.settings_path = None
         self.providers = providers
         self.default_primary = default_primary
         self.default_fallback = default_fallback if default_fallback != "none" else None
@@ -35,33 +40,38 @@ class ResilientAIProvider(AIProvider):
         self.name = "resilient"
         self.model = f"primary:{default_primary}"
 
+    def load_settings(self):
+        if self.settings_path and self.settings_path.exists():
+            value = json.loads(self.settings_path.read_text())["automatic_fallback"]
+            if not isinstance(value, bool):
+                raise ValueError("Invalid automatic fallback setting")
+            self.fallback_enabled = value
+
+    def save_settings(self, enabled):
+        fd, path = tempfile.mkstemp(dir=self.settings_path.parent, prefix=".ai-settings-")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                json.dump({"automatic_fallback": enabled}, handle)
+            os.replace(path, self.settings_path)
+            self.fallback_enabled = enabled
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
     def resolve_chain(self, requested: str | None = None) -> tuple[str, str | None]:
         req = (requested or "auto").strip().lower()
-        if req == "auto":
-            primary = self.default_primary
-            fallback = self.default_fallback if self.default_fallback != primary else None
-        elif req == "ollama":
-            primary = "ollama"
-            fallback = "gemini" if "gemini" in self.providers else None
-        elif req == "gemini":
-            primary = "gemini"
-            fallback = "ollama" if "ollama" in self.providers else None
-        elif req in self.providers:
-            primary = req
-            fallback = None
-        else:
-            primary = self.default_primary
-            fallback = self.default_fallback
-
-        if fallback == primary:
-            fallback = None
-        return primary, fallback
+        if req == "auto" and self.default_primary in {"mock", "n8n"}:
+            return self.default_primary, None
+        primary = "gemini" if req == "gemini" else "ollama" if req in {"auto", "ollama"} else req
+        fallback = ("ollama" if primary == "gemini" else "gemini") if primary in {"ollama", "gemini"} else None
+        return primary, fallback if self.fallback_enabled and fallback in self.providers else None
 
     async def tailor(
         self,
         job: JobRequest,
         profile: CandidateProfile,
         requested_provider: str = "auto",
+        on_stage: Callable[[str], None] | None = None,
     ) -> WorkflowResponse:
         primary_name, fallback_name = self.resolve_chain(requested_provider)
         primary = self.providers.get(primary_name)
@@ -74,9 +84,15 @@ class ResilientAIProvider(AIProvider):
             elapsed = time.monotonic() - start_time
             return max(0.0, self.operation_budget_seconds - elapsed)
 
+        async def _call(target: AIProvider, reason: str | None = None) -> WorkflowResponse:
+            try:
+                return await target.tailor(job, profile, on_stage=on_stage)
+            except TypeError:
+                return await target.tailor(job, profile)
+
         # If primary is Gemini and has no key configured
         if primary_name == "gemini" and getattr(primary, "api_key", None) == "":
-            if requested_provider.strip().lower() == "gemini":
+            if not fallback_name:
                 raise GeminiAuthError("Gemini API key is not configured. Set GEMINI_API_KEY in your environment.")
             # In auto mode, skip directly to fallback if available
             if fallback_name and fallback_name in self.providers:
@@ -87,7 +103,11 @@ class ResilientAIProvider(AIProvider):
                     raise AIProviderError(
                         f"Operation budget ({self.operation_budget_seconds}s) exceeded before running fallback."
                     )
-                response = await asyncio.wait_for(fallback.tailor(job, profile), timeout=rem)
+                if on_stage:
+                    on_stage(f"Przełączanie na provider '{fallback_name}'...")
+                response = await asyncio.wait_for(_call(fallback), timeout=rem)
+                response.provider_used = fallback.name
+                response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
                 response.fallback_reason = "Gemini API key not configured; used fallback provider."
                 return response
@@ -99,14 +119,14 @@ class ResilientAIProvider(AIProvider):
             raise AIProviderError(f"Operation budget ({self.operation_budget_seconds}s) exceeded before starting operation.")
 
         try:
-            response = await asyncio.wait_for(primary.tailor(job, profile), timeout=rem)
+            response = await asyncio.wait_for(_call(primary), timeout=rem)
             response.provider_used = primary.name
             response.model_used = getattr(primary, "model", primary.name)
             response.fallback_used = False
             return response
         except GeminiAuthError as auth_err:
             # If user explicitly chose gemini, fail immediately
-            if requested_provider.strip().lower() == "gemini" or not fallback_name or fallback_name not in self.providers:
+            if not fallback_name or fallback_name not in self.providers:
                 raise
             rem_fb = remaining_budget()
             if rem_fb <= 5.0:
@@ -121,8 +141,10 @@ class ResilientAIProvider(AIProvider):
                 rem_fb,
             )
             fallback = self.providers[fallback_name]
+            if on_stage:
+                on_stage(f"Przełączanie na provider rezerwowy ({fallback_name})...")
             try:
-                response = await asyncio.wait_for(fallback.tailor(job, profile), timeout=rem_fb)
+                response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
@@ -160,8 +182,10 @@ class ResilientAIProvider(AIProvider):
                     f"Primary provider '{primary_name}' timed out ({primary_err}), and fallback Gemini is not configured with GEMINI_API_KEY."
                 ) from timeout_err
 
+            if on_stage:
+                on_stage(f"Przełączanie po przekroczeniu limitu czasu na ({fallback_name})...")
             try:
-                response = await asyncio.wait_for(fallback.tailor(job, profile), timeout=rem_fb)
+                response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
@@ -202,8 +226,10 @@ class ResilientAIProvider(AIProvider):
                     f"Primary provider '{primary_name}' failed ({primary_err}), and fallback Gemini is not configured with GEMINI_API_KEY."
                 ) from primary_err
 
+            if on_stage:
+                on_stage(f"Przełączanie na provider rezerwowy ({fallback_name})...")
             try:
-                response = await asyncio.wait_for(fallback.tailor(job, profile), timeout=rem_fb)
+                response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
@@ -247,11 +273,16 @@ class ResilientAIProvider(AIProvider):
                 results[name] = await provider.health()
             except Exception as exc:
                 results[name] = {"status": "error", "error": str(exc), "provider": name}
+        selected_primary, selected_fallback = self.resolve_chain("auto")
+        active = [selected_primary, selected_fallback]
+        ready = any(results.get(name, {}).get("status") == "ok" for name in active if name in results)
+        primary_ready = results.get(self.default_primary, {}).get("status") == "ok"
         return {
-            "status": "ok",
+            "status": "ok" if primary_ready else "degraded" if ready else "unavailable",
             "provider": self.name,
             "default_primary": self.default_primary,
-            "default_fallback": self.default_fallback,
+            "default_fallback": selected_fallback,
+            "automatic_fallback": self.fallback_enabled,
             "operation_budget_seconds": self.operation_budget_seconds,
             "providers": results,
         }

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Logowanie · CVTailor{% endblock %}
+{% block content %}
+<section class="panel login-panel">
+  <p class="eyebrow">PRYWATNY CVTAILOR</p><h1>Zaloguj się</h1>
+  {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+  <form action="{{ app_root_path|default('') }}/login" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Login<input name="username" autocomplete="username" required maxlength="150"></label>
+    <label>Hasło<input type="password" name="password" autocomplete="current-password" required maxlength="256"></label>
+    <button class="primary" type="submit">Zaloguj</button>
+  </form>
+</section>
+{% endblock %}

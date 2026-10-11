@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup, Tag
 
 @dataclass(slots=True)
 class ExtractionCandidate:
+    ambiguous: bool = False
     company: str = ""
     role: str = ""
     job_description: str = ""

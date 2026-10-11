@@ -3,12 +3,13 @@
 {% block content %}
 <div class="page-head">
   <div><p class="eyebrow">EDIT CV</p><h1>{{ metadata.company }} · {{ metadata.role }}</h1></div>
-  <a class="secondary button" href="/preview/{{ slug }}">Cancel</a>
+  <a class="secondary button" href="{{ app_root_path|default('') }}/preview/{{ slug }}">Cancel</a>
 </div>
 {% if error %}<div class="alert">{{ error }}</div>{% endif %}
-<form class="job-form resume-edit-form" action="/edit/{{ slug }}" method="post">
+<form class="job-form resume-edit-form" action="{{ app_root_path|default('') }}/edit/{{ slug }}" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label>Verified headline <small>Built from the target role and verified skills</small><input name="headline" maxlength="140" readonly value="{{ resume.headline }}"></label>
+  <label>Verified headline <small>Built from the confirmed occupation and verified skills</small><input name="headline" maxlength="140" readonly value="{{ resume.headline }}"></label>
+  <p class="muted">Automatic export accepts source-backed wording. Unsupported edits are returned for review without overwriting your saved CV. ATS Classic preserves text across pages; the sidebar can require shortening.</p>
   <label>Professional summary<textarea name="professional_summary" maxlength="700" required>{{ resume.professional_summary }}</textarea></label>
   <label>Skills <small>One per line or comma-separated</small><textarea name="core_skills">{{ resume.core_skills|join('\n') }}</textarea></label>
   <div class="form-grid">
@@ -39,11 +40,11 @@
   {% endfor %}
 
   <div class="actions">
-    <a class="secondary button" href="/preview/{{ slug }}">Cancel</a>
+    <a class="secondary button" href="{{ app_root_path|default('') }}/preview/{{ slug }}">Cancel</a>
     <button class="primary" type="submit">Save changes</button>
   </div>
 </form>
-<form class="reset-form" action="/reset/{{ slug }}" method="post" onsubmit="return confirm('Reset to generated version?')">
+<form class="reset-form" action="{{ app_root_path|default('') }}/reset/{{ slug }}" method="post" onsubmit="return confirm('Reset to generated version?')">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button class="secondary" type="submit">Reset to generated version</button>
 </form>

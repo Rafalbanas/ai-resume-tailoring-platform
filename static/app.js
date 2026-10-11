@@ -70,7 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const request = async (path, options = {}) => {
       showToast("Saving…", "info", 0);
       try {
-        const response = await fetch(`/preview/${encodeURIComponent(slug)}/photo${path}`, {
+        const response = await fetch(cvAppUrl(`/preview/${encodeURIComponent(slug)}/photo${path}`), {
           method: "POST",
           credentials: "same-origin",
           headers: {"X-CSRF-Token": csrf, ...(options.headers || {})},
@@ -290,7 +290,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (adjustBtn) {
       adjustBtn.addEventListener("click", () => {
-        openCropModal(`/profile/photo/content?v=${Date.now()}`);
+        openCropModal(cvAppUrl(`/profile/photo/content?v=${Date.now()}`));
       });
     }
 
@@ -409,13 +409,14 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     }
     if (fetching) return false;
+    const beforeFetch = [companyInput.value, roleInput.value, descriptionInput.value];
     fetching = true;
     fetchButton.disabled = true;
     fetchButton.textContent = "Fetching…";
     setStatus("Fetching the job offer…");
     try {
       const csrfToken = form.querySelector('[name="csrf_token"]').value;
-      const response = await fetch("/api/extract-job-url", {
+      const response = await fetch(cvAppUrl("/api/extract-job-url"), {
         method: "POST",
         credentials: "same-origin",
         headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
@@ -427,8 +428,12 @@ document.addEventListener("DOMContentLoaded", () => {
         setStatus("Could not extract this job automatically. Paste the job description manually.", "error");
         return false;
       }
-      companyInput.value = result.company || companyInput.value;
-      roleInput.value = result.role || roleInput.value;
+      if ([companyInput.value, roleInput.value, descriptionInput.value].some((value, index) => value !== beforeFetch[index])) {
+        setStatus("You edited the offer while fetching. Your changes were kept; fetch again to replace them.", "error");
+        return false;
+      }
+      companyInput.value = result.company || "";
+      roleInput.value = result.role || "";
       descriptionInput.value = result.job_description;
       setStatus("Job details fetched. Review and edit them before analysis.", "success");
       return fieldsAreComplete();
@@ -455,7 +460,77 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Enter company, role, and at least 30 characters of the job description.", "error");
       return;
     }
-    submitLabel.textContent = "Analyzing…";
+    event.preventDefault();
+    submitLabel.textContent = "Uruchamianie zadania…";
     submitButton.disabled = true;
+    try {
+      const formData = new FormData(form);
+      const res = await fetch(cvAppUrl("/analyze"), {
+        method: "POST",
+        headers: { "Accept": "application/json" },
+        body: formData,
+      });
+      if (res.status === 202) {
+        const data = await res.json();
+        window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
+        return;
+      }
+      const html = await res.text();
+      document.open();
+      document.write(html);
+      document.close();
+    } catch (err) {
+      form.submit();
+    }
   });
+
+  const compareForm = document.getElementById("compare-form");
+  if (compareForm) {
+    compareForm.addEventListener("submit", async (event) => {
+      const companyVal = compareForm.querySelector('[name="company"]')?.value.trim();
+      const roleVal = compareForm.querySelector('[name="role"]')?.value.trim();
+      const descVal = compareForm.querySelector('[name="job_description"]')?.value.trim();
+      if (!companyVal || !roleVal || (descVal && descVal.length < 30)) {
+        return; // Let standard HTML5 validation handle empty fields
+      }
+      event.preventDefault();
+      const compBtn = compareForm.querySelector('button[type="submit"]');
+      if (compBtn) {
+        compBtn.disabled = true;
+        compBtn.textContent = "Uruchamianie porównania…";
+      }
+      try {
+        const formData = new FormData(compareForm);
+        const res = await fetch(cvAppUrl("/compare"), {
+          method: "POST",
+          headers: { "Accept": "application/json" },
+          body: formData,
+        });
+        if (res.status === 202) {
+          const data = await res.json();
+          window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
+          return;
+        }
+        const html = await res.text();
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (err) {
+        compareForm.submit();
+      }
+    });
+  }
 });
+
+const providerSelect = document.getElementById('llm_provider');
+const providerOrder = document.getElementById('provider-order');
+if (providerSelect && providerOrder) {
+  const updateOrder = () => {
+    const primary = providerSelect.value === 'gemini' ? 'Gemini' : 'Ollama';
+    const secondary = primary === 'Gemini' ? 'Ollama' : 'Gemini';
+    providerOrder.textContent = 'Kolejność: ' + primary + (providerOrder.dataset.fallback === 'true' ? ' → ' + secondary : ' (bez fallbacku)');
+  };
+  providerSelect.addEventListener('change', updateOrder);
+  updateOrder();
+}
+window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });

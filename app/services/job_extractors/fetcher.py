@@ -14,6 +14,7 @@ class JobFetchError(RuntimeError):
 class FetchedPage:
     url: str
     html: str
+    content_type: str = "text/html"
 
 
 class SafeHttpFetcher:
@@ -31,7 +32,7 @@ class SafeHttpFetcher:
         self.guard = guard or PublicUrlGuard()
         self.transport = transport
 
-    async def fetch(self, url: str) -> FetchedPage:
+    async def fetch(self, url: str, *, html_only: bool = True) -> FetchedPage:
         current_url = url
         timeout = httpx.Timeout(self.timeout_seconds, connect=min(self.timeout_seconds, 5.0))
         headers = {
@@ -47,17 +48,23 @@ class SafeHttpFetcher:
                 headers=headers,
             ) as client:
                 for redirect_number in range(self.max_redirects + 1):
-                    await self.guard.validate(current_url)
-                    async with client.stream("GET", current_url) as response:
+                    addresses = await self.guard.resolve_public(current_url)
+                    original = httpx.URL(current_url)
+                    pinned = original.copy_with(host=addresses[0])
+                    # Connect to the already validated address; retain Host and
+                    # certificate verification/SNI for the original hostname.
+                    async with client.stream("GET", pinned,
+                                             headers={"Host": original.netloc.decode("ascii")},
+                                             extensions={"sni_hostname": original.host}) as response:
                         if response.is_redirect:
                             location = response.headers.get("location")
                             if not location or redirect_number >= self.max_redirects:
                                 raise JobFetchError("Too many or invalid redirects")
-                            current_url = urljoin(str(response.url), location)
+                            current_url = urljoin(current_url, location)
                             continue
                         response.raise_for_status()
                         content_type = response.headers.get("content-type", "").lower()
-                        if content_type and not any(value in content_type for value in ("text/html", "application/xhtml+xml")):
+                        if html_only and content_type and not any(value in content_type for value in ("text/html", "application/xhtml+xml")):
                             raise JobFetchError("URL did not return HTML")
                         declared_size = response.headers.get("content-length")
                         if declared_size:
@@ -74,7 +81,7 @@ class SafeHttpFetcher:
                                 raise JobFetchError("Response is too large")
                             chunks.append(chunk)
                         encoding = response.encoding or "utf-8"
-                        return FetchedPage(str(response.url), b"".join(chunks).decode(encoding, errors="replace"))
+                        return FetchedPage(current_url, b"".join(chunks).decode(encoding, errors="replace"), content_type or "text/html")
         except (httpx.HTTPError, TimeoutError, UnicodeError) as exc:
             raise JobFetchError("Could not fetch job page") from exc
         raise JobFetchError("Could not fetch job page")

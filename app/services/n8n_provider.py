@@ -1,12 +1,13 @@
 import json
 
 import httpx
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.models.candidate import CandidateProfile
 from app.models.job import JobRequest
 from app.models.resume import WorkflowResponse
-from app.services.ai_provider import AIProvider
+from app.services.ai_provider import AIProvider, ProviderResponseError, ProviderUnavailableError
 from app.services.fact_catalog import FactCatalog
 from app.services.skills_bank import SkillsBank
 
@@ -34,14 +35,19 @@ class N8NGeminiProvider(AIProvider):
             },
         }
         headers = {"X-Webhook-Secret": self.secret, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            response = await client.post(self.url, json=payload, headers=headers)
-            response.raise_for_status()
-        data = response.json()
-        if isinstance(data, list) and len(data) == 1:
-            data = data[0]
-        if isinstance(data, dict) and "output" in data:
-            data = data["output"]
-        if isinstance(data, str):
-            data = json.loads(data.strip().removeprefix("```json").removesuffix("```").strip())
-        return WorkflowResponse.model_validate(data)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+                response = await client.post(self.url, json=payload, headers=headers)
+                response.raise_for_status()
+            data = response.json()
+            if isinstance(data, list) and len(data) == 1:
+                data = data[0]
+            if isinstance(data, dict) and "output" in data:
+                data = data["output"]
+            if isinstance(data, str):
+                data = json.loads(data.strip().removeprefix("```json").removesuffix("```").strip())
+            return WorkflowResponse.model_validate(data)
+        except httpx.HTTPError as exc:
+            raise ProviderUnavailableError("The n8n provider request failed. Check availability and configuration.") from exc
+        except (ValueError, ValidationError) as exc:
+            raise ProviderResponseError("The n8n provider returned invalid structured data.") from exc

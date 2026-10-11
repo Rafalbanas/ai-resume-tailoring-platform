@@ -26,6 +26,19 @@ data/profile_photo/
 data/reference_cvs/
 data/.drafts/
 data/.diagnostics/
+data/tasks/
 data/generated/
 *.pdf
 *.docx
+
+# Isolated audit runtime: credentials, copied private evidence, task payloads
+audit/**/private/
+
+data/sessions.sqlite3*
+data/ai_settings.json
+data/.ai-settings-*
+
+# Local reports/results may contain private candidate data.
+AUDIT_REPORT.md
+audit/
+data/test_*_result.json

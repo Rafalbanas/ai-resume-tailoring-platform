@@ -32,6 +32,10 @@ class PublicUrlGuard:
         self.resolver = resolver
 
     async def validate(self, url: str) -> str:
+        await self.resolve_public(url)
+        return url
+
+    async def resolve_public(self, url: str) -> list[str]:
         parsed = urlsplit(url)
         if parsed.scheme.lower() not in {"http", "https"}:
             raise UnsafeUrlError("Only HTTP and HTTPS URLs are allowed")
@@ -54,4 +58,4 @@ class PublicUrlGuard:
                 raise UnsafeUrlError("URL host could not be resolved") from exc
         if not addresses or any(not address.is_global for address in addresses):
             raise UnsafeUrlError("Private, local, reserved, and metadata addresses are blocked")
-        return url
+        return [str(address) for address in addresses]

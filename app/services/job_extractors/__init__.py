@@ -43,6 +43,8 @@ class JobExtractorService:
     def _extract_html(self, url: str, html: str) -> tuple[ExtractionCandidate, str]:
         adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
         structured = self.jsonld.extract(html)
+        if structured.ambiguous:
+            return structured, "manual_required"
         if adapter and adapter.prefer_over_jsonld:
             extracted = adapter.extract(html)
             if extracted.usable:
@@ -57,6 +59,8 @@ class JobExtractorService:
         return extracted, "html"
 
     def _result(self, candidate: ExtractionCandidate, source: str, method: str) -> JobExtraction:
+        if candidate.ambiguous or len(candidate.role) > 150 or len(candidate.company) > 150 or len(candidate.job_description) > self.max_description_chars:
+            return JobExtraction(source=source, extraction_method="manual_required")
         return JobExtraction(
             company=candidate.company[:150],
             role=candidate.role[:150],
@@ -71,7 +75,7 @@ class JobExtractorService:
             page = await self.fetcher.fetch(url)
             source = page.url
             candidate, method = self._extract_html(page.url, page.html)
-            if candidate.usable:
+            if candidate.usable or candidate.ambiguous:
                 return self._result(candidate, source, method)
         except UnsafeUrlError:
             return JobExtraction(source=url, extraction_method="manual_required")
@@ -83,7 +87,7 @@ class JobExtractorService:
                 page = await self.renderer.render(url)
                 source = page.url
                 candidate, _ = self._extract_html(page.url, page.html)
-                if candidate.usable:
+                if candidate.usable or candidate.ambiguous:
                     return self._result(candidate, source, "playwright")
             except (UnsafeUrlError, BrowserRenderError):
                 logger.info("Browser job page extraction failed", extra={"stage": "job_fetch_browser"})

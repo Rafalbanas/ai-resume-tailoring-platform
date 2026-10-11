@@ -106,13 +106,14 @@ def test_compare_and_diagnostics_web_routes(monkeypatch):
     monkeypatch.setattr(web_routes, "validate_csrf", lambda *args, **kwargs: None)
 
     with TestClient(app) as client:
+        client.auth = ("audit-tests", "isolated-test-password")
         # Mock providers to avoid waiting for external Ollama/Gemini connections
         mock_p1 = MockAIProvider(app.state.skills_bank)
         mock_p1.name = "ollama"
         mock_p1.model = "qwen3.5:9b"
         mock_p2 = MockAIProvider(app.state.skills_bank)
         mock_p2.name = "gemini"
-        mock_p2.model = "gemini-2.5-flash"
+        mock_p2.model = "gemini-3.1-flash-lite"
         monkeypatch.setattr(app.state, "providers", {"ollama": mock_p1, "gemini": mock_p2})
 
         # 1. GET /diagnostics
@@ -135,8 +136,13 @@ def test_compare_and_diagnostics_web_routes(monkeypatch):
                 "csrf_token": "token",
             },
         )
-        assert compare_post_res.status_code == 200
-        assert "Comparison Results" in compare_post_res.text
+        assert compare_post_res.status_code == 202
+        task_id = compare_post_res.headers.get("X-Task-ID")
+        assert task_id is not None
+        # Verify result page via task_id
+        compare_result_res = client.get(f"/compare?task_id={task_id}")
+        assert compare_result_res.status_code == 200
+        assert "Comparison Results" in compare_result_res.text
 
         # 4. POST /diagnostics/clear
         clear_res = client.post("/diagnostics/clear", data={"csrf_token": "token"}, follow_redirects=True)

@@ -162,7 +162,7 @@ def test_platform_analysis_rejects_example_technologies_and_recovers_real_requir
     assert all(result.match_sources[item] for item in result.strong_matches)
 
 
-def test_truth_lock_preserves_supported_source_referenced_paraphrase(verified_profile, platform_job):
+def test_truth_lock_resolves_paraphrase_to_exact_source_sentences(verified_profile, platform_job):
     catalog = FactCatalog(verified_profile)
     summary_id = catalog.direct_sources("support operations")[0]
     experience_id = next(
@@ -195,8 +195,9 @@ def test_truth_lock_preserves_supported_source_referenced_paraphrase(verified_pr
 
     result = FactValidator(verified_profile).validate(candidate, platform_job)
 
-    assert result.resume.professional_summary == candidate.professional_summary
-    assert result.resume.experience[0].bullets[0].text == candidate.experience[0].bullets[0].text
+    assert candidate.professional_summary != result.resume.professional_summary
+    assert "MSc in Computer Science" in result.resume.professional_summary
+    assert result.resume.experience[0].bullets[0].text == verified_profile.experience[0].facts[1]
     assert result.resume.experience[0].company == "Motorola Solutions"
     assert result.resume.core_skills == ["Python", "Bash (basic)"]
 
@@ -282,8 +283,8 @@ def test_project_titles_are_verified_separately_from_technologies(verified_profi
     by_name = {project.name: project for project in result.resume.projects}
     assert "Linux VPS / banas.dev" in by_name
     assert "Python ML thesis project" in by_name
-    assert by_name["Linux VPS / banas.dev"].technologies == ["Hands-on Linux administration"]
-    assert by_name["Python ML thesis project"].technologies == ["Python automation"]
+    assert by_name["Linux VPS / banas.dev"].technologies == ["Linux"]
+    assert by_name["Python ML thesis project"].technologies == ["Python"]
     assert all(project.name not in project.technologies for project in result.resume.projects)
     assert any("PostgreSQL" in warning for warning in result.warnings)
     assert not any("Linux VPS / banas.dev:" in warning for warning in result.warnings)
@@ -334,8 +335,8 @@ def test_edit_save_reject_unsupported_and_reset(verified_profile, platform_job, 
     safe_result = FactValidator(verified_profile).validate(edited, platform_job)
     storage.save_current_resume(slug, safe_result.resume, safe_result.warnings)
     _, saved, generated, _ = storage.load_application(slug)
-    assert saved.headline == "Platform Engineer | Python | Linux"
-    assert saved.experience[0].bullets[0].text == safe_form["experience_0_bullet_0"]
+    assert saved.headline == "Technical Support Engineer (Tier 2) | Python | Linux"
+    assert saved.experience[0].bullets[0].text == verified_profile.experience[0].facts[0]
 
     unsupported_form = dict(safe_form)
     unsupported_form["core_skills"] = "Python\nKubernetes"
@@ -400,9 +401,9 @@ def test_pdf_and_docx_use_current_edited_resume(verified_profile, platform_job, 
     pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(folder / "resume.pdf").pages)
     document = Document(folder / "resume.docx")
     docx_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-    assert "Platform Engineer" in pdf_text
+    assert "Technical Support Engineer" in pdf_text
     assert "Python" in pdf_text
-    assert "Platform Engineer | Linux | Python" in docx_text
+    assert "Technical Support Engineer (Tier 2) | Linux | Python" in docx_text
     assert storage.artifact(slug, "resume.pdf").is_file()
     assert storage.artifact(slug, "resume.docx").is_file()
 

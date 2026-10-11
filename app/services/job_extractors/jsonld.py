@@ -25,6 +25,7 @@ def _is_job_posting(item: dict) -> bool:
 class JsonLdExtractor(BaseExtractor):
     def extract(self, html: str) -> ExtractionCandidate:
         soup = BeautifulSoup(html, "html.parser")
+        candidates = []
         for script in soup.find_all("script", attrs={"type": lambda value: value and "ld+json" in value.lower()}):
             try:
                 payload = json.loads(script.string or script.get_text())
@@ -35,9 +36,12 @@ class JsonLdExtractor(BaseExtractor):
                     continue
                 organization = item.get("hiringOrganization")
                 company = organization.get("name", "") if isinstance(organization, dict) else ""
-                return ExtractionCandidate(
+                candidates.append(ExtractionCandidate(
                     company=normalized_text(str(company or "")),
                     role=normalized_text(str(item.get("title") or "")),
                     job_description=normalized_text(str(item.get("description") or "")),
-                )
-        return ExtractionCandidate()
+                ))
+        unique = {(c.company, c.role, c.job_description): c for c in candidates}
+        if len(unique) > 1:
+            return ExtractionCandidate(ambiguous=True)
+        return next(iter(unique.values()), ExtractionCandidate())

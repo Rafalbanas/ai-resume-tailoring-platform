@@ -39,7 +39,7 @@
   <div class="table-head-row">
     <h2>Recent Runs ({{ runs|length }})</h2>
     {% if runs %}
-    <form action="/diagnostics/clear" method="post" onsubmit="return confirm('Clear local diagnostic logs?')">
+    <form action="{{ app_root_path|default('') }}/diagnostics/clear" method="post" onsubmit="return confirm('Clear local diagnostic logs?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="secondary button small" type="submit">Clear Logs</button>
     </form>

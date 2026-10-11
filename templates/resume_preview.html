@@ -3,22 +3,22 @@
 {% block content %}
 <div class="preview-head">
   <div>
-    <p class="eyebrow">READY TO USE</p>
+    <p class="eyebrow">REVIEW BEFORE SENDING</p>
     <h1>{{ metadata.company }} · {{ metadata.role }}</h1>
     <p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p>
     <div class="provider-meta">
       <span class="badge provider-badge">Engine: {{ metadata.provider_used|default('ollama') }} ({{ metadata.model_used|default('qwen3.5:9b') }})</span>
-      {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">⚡ Fallback used</span>{% endif %}
+      {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">Fallback: tak</span>{% else %}<span class="badge">Fallback: nie</span>{% endif %}
     </div>
   </div>
   <div class="actions">
-    <a class="secondary button" href="/edit/{{ slug }}">Edit CV</a>
+    <a class="secondary button" href="{{ app_root_path|default('') }}/edit/{{ slug }}">Edit CV</a>
     {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
     <button class="secondary button" id="preview-photo-options-btn" type="button">{% if photo_available %}Photo options{% else %}Add photo{% endif %}</button>
     {% endif %}
-    <a class="secondary button" href="/download/{{ slug }}/docx">Download DOCX</a>
-    <a class="primary button" href="/download/{{ slug }}/pdf">Download PDF</a>
-    <form action="/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')">
+    <a class="secondary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/docx">Download DOCX</a>
+    <a class="primary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/pdf">Download PDF</a>
+    <form action="{{ app_root_path|default('') }}/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="danger" type="submit">Delete</button>
     </form>
@@ -32,7 +32,7 @@
 <details class="warnings pre-fit-diff">
   <summary>Page Fit Transparency: View {{ pre_fit_diff.total_items }} item(s) trimmed or shortened for 1-page fit</summary>
   <div class="diff-content-wrapper">
-    <p class="diff-notice">The AI model drafted these facts, but the 1-page layout engine tightened them to maintain A4 boundaries. You can re-include or edit any items via <a href="/edit/{{ slug }}">Edit CV</a>.</p>
+    <p class="diff-notice">The AI model drafted these facts, but the 1-page layout engine tightened them to maintain A4 boundaries. You can re-include or edit any items via <a href="{{ app_root_path|default('') }}/edit/{{ slug }}">Edit CV</a>.</p>
     {% if pre_fit_diff.trimmed_skills %}
     <div class="diff-group">
       <strong>Lower-priority skills trimmed:</strong>

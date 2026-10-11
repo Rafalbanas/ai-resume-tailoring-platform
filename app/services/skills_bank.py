@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from app.models.candidate import CandidateProfile
 from app.models.skills import SkillEvidence, SkillsDocument, VerifiedSkill
-from app.services.fact_catalog import FactCatalog
+from app.services.fact_catalog import FactCatalog, normalized_tokens
 
 
 class SkillsConfigurationError(RuntimeError):
@@ -86,7 +86,27 @@ class SkillsBank:
         return next((skill for skill in self.skills if skill.id == skill_id), None)
 
     def eligible(self, skill: VerifiedSkill) -> bool:
-        return skill.enabled and skill.verified and skill.allowed_in_cv and skill.level != "learning" and bool(skill.evidence)
+        return (skill.enabled and skill.verified and skill.allowed_in_cv
+                and skill.level != "learning" and bool(skill.evidence)
+                and (self.confirmed_profile_skill(skill) or any(self.evidence_supports(skill, e) for e in skill.evidence)))
+
+    def confirmed_profile_skill(self, skill: VerifiedSkill) -> bool:
+        names = [normalized_tokens(value.replace(" (basic)", "")) for values in self.profile.skills.values() for value in values]
+        return any(normalized_tokens(alias) in names for alias in self.aliases_for(skill))
+
+    def evidence_supports(self, skill: VerifiedSkill, evidence: SkillEvidence) -> bool:
+        if evidence.source_type == "manual_verified":
+            return bool(evidence.description.strip())
+        entry = self.catalog.get(evidence.source_id)
+        if not entry:
+            return False
+        # A valid source ID is not proof of the named skill. In particular, a
+        # PowerShell automation bullet cannot verify SQL troubleshooting.
+        generic = {"hands", "basic", "administration", "support", "operational", "queries", "troubleshooting", "service", "logs", "technical", "workflow", "automation"}
+        source_tokens = normalized_tokens(entry.text)
+        names = [skill.name, *skill.aliases]
+        return any((tokens := normalized_tokens(name) - generic) and tokens <= source_tokens for name in names)
+
 
     def aliases_for(self, skill: VerifiedSkill) -> list[str]:
         return list(dict.fromkeys([skill.name, *skill.aliases]))
@@ -126,15 +146,26 @@ class SkillsBank:
     def evidence_labels(self, skill: VerifiedSkill) -> list[str]:
         labels = []
         for evidence in skill.evidence:
+            if not self.evidence_supports(skill, evidence):
+                continue
             entry = self.catalog.get(evidence.source_id)
             label = entry.owner_name if entry and entry.owner_name else evidence.description
             if label and label not in labels:
                 labels.append(label)
+        if not labels and self.confirmed_profile_skill(skill):
+            for alias in self.aliases_for(skill):
+                for source_id in self.catalog.direct_sources(alias):
+                    entry = self.catalog.get(source_id)
+                    label = entry.owner_name or entry.text
+                    if label not in labels:
+                        labels.append(label)
         return labels
 
     def wording(self, skill: VerifiedSkill) -> str:
         if skill.cv_wording:
-            return skill.cv_wording
+            dangerous = re.search(r"\b(?:expert|advanced|senior|fluent|native)\b|\d+", skill.cv_wording, re.I)
+            if not dangerous or skill.cv_wording.casefold() == skill.name.casefold():
+                return skill.cv_wording
         if skill.level == "basic":
             return f"Basic {skill.name}"
         if skill.level == "hands_on":
@@ -144,7 +175,7 @@ class SkillsBank:
         return skill.name
 
     def select_for_job(
-        self, requested_ids: list[str], job_text: str, *, minimum: int = 8, maximum: int = 16
+        self, requested_ids: list[str], job_text: str, *, minimum: int = 8, maximum: int = 16, requested_only: bool = False
     ) -> list[VerifiedSkill]:
         requested = {value for value in requested_ids}
         eligible = [skill for skill in self.skills if self.eligible(skill)]
@@ -207,7 +238,7 @@ class SkillsBank:
 
         def score(skill: VerifiedSkill) -> tuple[int, int, str]:
             direct = self.mentioned(skill, job_text)
-            category_score = 35 if any(term in normalized_job for term in category_terms.get(skill.category, ())) else 0
+            category_score = 35 if any(f" {term} " in f" {normalized_job} " for term in category_terms.get(skill.category, ())) else 0
             relevance = (200 if skill.id in requested else 0) + (100 if direct else 0) + category_score
             spec = technical_specificity(skill)
             ev = evidence_strength(skill)
@@ -219,10 +250,17 @@ class SkillsBank:
                 skill.name,
             )
 
-        ranked = sorted(eligible, key=score, reverse=True)
+        requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
+        ranked = sorted(eligible, key=lambda skill: (skill.id in requested_order, -requested_order.get(skill.id, 0), score(skill)), reverse=True)
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
+        families = set()
         for skill in ranked:
+            if requested_only and skill.id not in requested:
+                continue
+            family = skill.name.casefold().replace("windows administration", "windows")
+            if family in families:
+                continue
             relevant = skill.id in requested or self.mentioned(skill, job_text)
             if not relevant and len(chosen) >= minimum:
                 continue
@@ -231,6 +269,7 @@ class SkillsBank:
                     continue
                 ai_dev_count += 1
             chosen.append(skill)
+            families.add(family)
             if len(chosen) >= maximum:
                 break
         return chosen

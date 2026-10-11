@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    app_root_path: str = ""
+    demo_mode: bool = False
+    session_ttl_seconds: int = Field(default=28800, ge=1)
     app_username: str | None = None
     app_password: str | None = None
     csrf_secret: str = "change-this-csrf-secret"
@@ -47,6 +50,14 @@ class Settings(BaseSettings):
     job_fetch_max_bytes: int = 2_000_000
     job_fetch_max_redirects: int = 3
     job_fetch_playwright_enabled: bool = True
+
+    @property
+    def csrf_cookie_name(self) -> str:
+        return "demo_csrf_token" if self.demo_mode else "csrf_token"
+
+    @property
+    def session_cookie_name(self) -> str:
+        return "demo_session" if self.demo_mode else "session"
 
     @property
     def active_llm_provider(self) -> str:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
 import statistics
+import zipfile
 from collections import Counter
 from pathlib import Path
 from uuid import uuid4
@@ -78,6 +80,18 @@ class ReferenceCVLibrary:
             raise ReferenceCVError("The uploaded CV is empty.")
         if len(content) > self.max_bytes:
             raise ReferenceCVError("The uploaded CV exceeds the size limit.")
+        if safe_name.endswith(".docx"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    expanded = sum(member.file_size for member in archive.infolist())
+                    if expanded > min(40_000_000, self.max_bytes * 10) or len(archive.infolist()) > 2000:
+                        raise ReferenceCVError("DOCX expanded content exceeds the processing limit.")
+                    if "word/document.xml" not in archive.namelist():
+                        raise ReferenceCVError("Upload is not a Word document.")
+            except zipfile.BadZipFile as exc:
+                raise ReferenceCVError("Upload is not a valid DOCX archive.") from exc
+        elif not content.lstrip().startswith(b"%PDF-"):
+            raise ReferenceCVError("Upload is not a valid PDF document.")
         stored_name = f"{uuid4().hex}_{safe_name}"
         path = self.directory / stored_name
         path.write_bytes(content)

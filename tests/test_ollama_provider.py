@@ -109,7 +109,7 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
 
     result = await provider(httpx.MockTransport(handler)).tailor(job(), profile)
 
-    assert result.analysis.strong_matches == ["Python", "Linux"]
+    assert result.analysis.strong_matches == ["Python"]
     assert result.resume.core_skills == ["Python"]
     assert [request["messages"][1]["content"] for request in requests]
     assert json.loads(requests[0]["messages"][1]["content"])["stage"] == "analyze_job"
