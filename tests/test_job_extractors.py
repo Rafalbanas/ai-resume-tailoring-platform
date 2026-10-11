@@ -49,6 +49,20 @@ def test_generic_html_removes_navigation_and_cookie_noise():
     assert "Other roles marketing" not in result.job_description
 
 
+@pytest.mark.parametrize("noise_class", ["cookie-consent", "related-jobs", "newsletter"])
+def test_generic_html_removes_nested_noise_without_reading_decomposed_children(noise_class):
+    html = f"""<main><h1>Support Engineer</h1>
+    <section id="job-description"><p>Investigate API failures using logs and SQL queries.
+    Own support tickets and work with engineering teams to resolve production issues.</p></section>
+    <div class="{noise_class}"><div><span>Unwanted content</span></div></div></main>"""
+
+    result = GenericHtmlExtractor().extract(html)
+
+    assert result.usable
+    assert "Investigate API failures" in result.job_description
+    assert "Unwanted content" not in result.job_description
+
+
 @pytest.mark.asyncio
 async def test_unsupported_site_uses_generic_html_fallback():
     html = """<main><h1>Backend Engineer</h1><div class="company-name">Unknown Co</div>
@@ -128,6 +142,38 @@ async def test_nofluff_uses_full_named_sections_instead_of_jsonld_description():
     for expected in ("5+ years", "RHEL 6–9", "Bash", "Ansible", "YUM/DNF", "performance tuning", "on-call"):
         assert expected in result.job_description
     for noise in ("What you get in return", "Multisport", "technology image"):
+        assert noise not in result.job_description
+
+
+@pytest.mark.asyncio
+async def test_nofluff_polish_support_offer_with_nested_marketing_recommendation():
+    html = Path("tests/fixtures/nofluff_onerail_support.html").read_text(encoding="utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+
+    service = JobExtractorService(Settings(_env_file=None, job_fetch_playwright_enabled=False))
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+    result = await service.extract(
+        "https://nofluffjobs.com/pl/job/technical-support-engineer-l2-onerail-poland-krakow-2"
+    )
+
+    assert result.extraction_method == "html"
+    assert result.company == "OneRail Poland Sp. z o.o."
+    assert result.role == "Technical Support Engineer (L2)"
+    for expected in (
+        "2–4 years of experience",
+        "JavaScript",
+        "REST APIs",
+        "SQL",
+        "B2+",
+        "Identify recurring issues and trends",  # Last task, hidden in the initial page UI.
+        "front-line technical partner",
+    ):
+        assert expected in result.job_description
+    for noise in ("Salesforce Marketing Cloud", "Similar offer", "Opis oferty", "Oryginalny tekst."):
         assert noise not in result.job_description
 
 

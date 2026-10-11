@@ -66,6 +66,9 @@ def cleaned_soup(html: str) -> BeautifulSoup:
     for node in soup.select("script, style, noscript, nav, footer, aside, form, svg, canvas, button"):
         node.decompose()
     for node in list(soup.find_all(True)):
+        # Removing a container also decomposes its descendants in this snapshot.
+        if node.decomposed:
+            continue
         marker = " ".join([str(node.get("id", "")), *(str(item) for item in node.get("class", []))]).lower()
         if any(term in marker for term in NOISE_TERMS):
             node.decompose()

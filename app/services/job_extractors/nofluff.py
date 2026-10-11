@@ -12,22 +12,22 @@ from app.services.job_extractors.base import (
 )
 
 SECTION_SPECS = (
-    ("MUST HAVE", ("[commonpostingrequirements][branch='musts']",), ("must have", "mandatory")),
-    ("NICE TO HAVE", ("[commonpostingrequirements][branch='nices']",), ("nice to have", "optional")),
+    ("MUST HAVE", ("[commonpostingrequirements][branch='musts']",), ("must have", "mandatory", "obowiązkowe")),
+    ("NICE TO HAVE", ("[commonpostingrequirements][branch='nices']",), ("nice to have", "optional", "mile widziane")),
     (
         "REQUIREMENTS",
         (),
-        ("requirements description",),
+        ("requirements description", "opis wymagań"),
     ),
     (
         "RESPONSIBILITIES",
         ("#posting-tasks", "[commonpostingtasks]"),
-        ("your responsibilities", "your daily tasks on the job"),
+        ("your responsibilities", "your daily tasks on the job", "zakres obowiązków"),
     ),
     (
         "OFFER DESCRIPTION",
         ("#posting-description", "[commonpostingdescription][id*='project' i]"),
-        ("offer description", "brief job description"),
+        ("offer description", "brief job description", "opis oferty"),
     ),
 )
 
@@ -39,6 +39,8 @@ UI_LINES = {
     "show translation",
     "technology image",
     "show on map",
+    "oryginalny tekst.",
+    "pokaż tłumaczenie",
 }
 STOP_MARKERS = ("what you get in return", "benefits", "job details", "offer valid until")
 
@@ -76,10 +78,11 @@ class NoFluffExtractor(BaseExtractor):
         requirements_text = self._html_text(requirements.get("description"), stop_markers=("joining this project",))
         tasks = specs.get("dailyTasks") if isinstance(specs.get("dailyTasks"), list) else []
         responsibilities = "\n".join(str(value).strip() for value in tasks if str(value).strip())
-        offer_node = self._find_section(soup, ("#posting-description",), ("offer description", "brief job description"))
+        offer_headings = ("offer description", "brief job description", "opis oferty")
+        offer_node = self._find_section(soup, ("#posting-description",), offer_headings)
         offer = self._section_text(
             offer_node,
-            ("offer description", "brief job description"),
+            offer_headings,
             stop_at_noise=True,
         )
         section_values = (
