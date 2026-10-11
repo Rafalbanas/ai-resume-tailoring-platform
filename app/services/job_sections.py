@@ -1,6 +1,6 @@
 """Source sections and auditable requirement units; never infer facts about a candidate."""
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -11,6 +11,8 @@ class SourceUnit:
     basis: str
     section: str
     group: str
+    supporting_quotes: list[str] = field(default_factory=list)
+    level: str = ""
 
 
 PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|optional(?: requirements)?|desirable(?: skills| qualifications)?|mile widziane)\s*:?$', re.I)
@@ -50,6 +52,12 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             # An introductory category has no independently assessable condition.
             if line.endswith(':') and re.search(r'(?:following|knowledge with|skills and experience)', line, re.I):
                 continue
+            if re.match(r'develop yourself\b', line, re.I):
+                category = 'organization'
+            if category == 'competency' and re.fullmatch(r'regular|basic|intermediate|advanced|expert|junior|senior|B[12]|C[12]', line, re.I) and units and units[-1].category == 'competency':
+                units[-1].level = line
+                units[-1].supporting_quotes.append(line)
+                continue
             unit_category = category
             if category == 'mandatory' and re.search(r'^(?:preferred|preferably|nice.to.have)|(?:is a plus|considered an asset)\b', line, re.I):
                 unit_category = 'preferred'
@@ -58,13 +66,14 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             # Independent evidence: CRM and KCS must not be confirmed as one skill.
             if re.search(r'\bCRM\b', line, re.I) and re.search(r'\bKCS\b', line, re.I) and re.search(r'\band\b', line, re.I):
                 pieces = re.split(r'\s+and\s+(?=working|knowledge|experience|KCS)', line, maxsplit=1, flags=re.I)
-            elif 'Fluency' in line or re.search(r'\bfluent\b', line, re.I):
+            elif 'Fluency' in line or re.search(r'\bfluent\b|would be a plus|is a plus', line, re.I):
                 pieces = re.split(r'(?<=[.!?])\s+(?=[A-Z])', line)
             for piece in pieces:
-                basis = (f'{unit_category.title()} section: {section}' if unit_category == category else 'Explicit preference in source text')
+                piece_category = 'preferred' if unit_category == 'mandatory' and re.search(r'would be a plus|is a plus|considered an asset', piece, re.I) else unit_category
+                basis = (f'{piece_category.title()} section: {section}' if piece_category == category else 'Explicit preference in source text')
                 if unit_category == 'mandatory' and re.search(r',\s*preferably\b', piece, re.I):
                     basis += '; the preferably clause is optional'
-                units.append(SourceUnit(piece, line, unit_category,
+                units.append(SourceUnit(piece, line, piece_category,
                                         basis,
                                         section, group))
             continue
@@ -86,3 +95,31 @@ def semantic_key(name: str) -> tuple[str, ...]:
     ):
         text = re.sub(pattern, replacement, text)
     return tuple(sorted(set(re.findall(r"[a-z0-9+#]+", text)) - {"a", "an", "the", "of", "with", "in", "is", "required", "must", "have"}))
+
+
+def role_competency_units(units: list[SourceUnit]) -> list[SourceUnit]:
+    """List skills plus literal named tools in duties; never infer prerequisites.
+
+    Repeated long/short product references share one competency. Configuration
+    and other actions stay in the separately preserved responsibility quotes.
+    """
+    candidates = [u for u in units if u.category == 'competency']
+    for unit in units:
+        if unit.category != 'responsibility':
+            continue
+        # Capitalized tool names following use/operation context. A version or
+        # product number ends the family name; retain the full duty as evidence.
+        for match in re.finditer(r'\b(?:using|within|with|on|via)\s+((?:[A-Z][A-Za-z+#-]*\s+){0,3}[A-Z][A-Za-z+#-]*(?:\s+\d+(?:\.\d+)*)?)', unit.name):
+            name = match.group(1).strip()
+            candidates.append(SourceUnit(name, unit.quote, 'competency',
+                'Named product used in a responsibility; prior experience and level unspecified', unit.section, unit.group))
+    merged = []
+    for unit in candidates:
+        equivalent = next((u for u in merged if semantic_key(u.name) == semantic_key(unit.name)
+                           or u.name.casefold().endswith(' ' + unit.name.casefold())
+                           or unit.name.casefold().endswith(' ' + u.name.casefold())), None)
+        if equivalent is None:
+            merged.append(unit)
+        elif unit.quote not in [equivalent.quote, *equivalent.supporting_quotes]:
+            equivalent.supporting_quotes.append(unit.quote)
+    return merged

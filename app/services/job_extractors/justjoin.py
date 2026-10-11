@@ -85,18 +85,35 @@ class JustJoinExtractor(BaseExtractor):
             return ""
         ignored = {value.casefold().strip(" :") for value in ignored_headings}
         lines = []
+        skipping_benefits = False
         for block in node.find_all(("h1", "h2", "h3", "h4", "h5", "h6", "p", "li")):
             if block.find(("h1", "h2", "h3", "h4", "h5", "h6", "p", "li")):
                 continue
             line = re.sub(r"\s+", " ", block.get_text(" ", strip=True)).strip()
             folded = line.casefold().strip(" :")
             heading = re.sub(r"^[^\w]+", "", folded).strip(" :")
+            if heading == "benefits" and heading in stop_headings:
+                skipping_benefits = True
+                continue
             if heading in stop_headings:
                 break
+            if skipping_benefits:
+                if re.fullmatch(r"(?:.*qualifications|.*requirements|nice.to.have|your profile|responsibilities)", heading):
+                    skipping_benefits = False
+                else:
+                    continue
             if not line or heading in ignored or heading in UI_LINES:
                 continue
             if not lines or line != lines[-1]:
                 lines.append(line)
+            if ignored_headings == TECH_STACK_HEADINGS and block.name in {"h3", "h4", "h5"}:
+                for sibling in block.find_next_siblings():
+                    if sibling.name in {"h3", "h4", "h5"}:
+                        break
+                    level = normalized_text(sibling)
+                    if re.fullmatch(r"regular|basic|intermediate|advanced|expert|junior|senior|B[12]|C[12]", level, re.I):
+                        lines.append(level)
+                        break
         if not lines:
             return normalized_text(node)
         return "\n".join(lines)

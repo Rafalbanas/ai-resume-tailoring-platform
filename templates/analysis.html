@@ -16,6 +16,8 @@
     {% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
       <strong class="score-unreliable">Incomplete analysis — review required</strong>
       <span>Review required</span>
+    {% elif analysis.match_level == 'LIMITED' %}
+      <strong>Limited role assessment</strong><span>Review scope and product gaps</span>
     {% else %}
       <strong>{{ analysis.match_level }}</strong>
       <span>{{ analysis.recommendation.replace('_',' ') }}</span>
@@ -33,7 +35,9 @@
   <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
 </div>
 {% endif %}
-{% if analysis.requirement_counts %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred }} preferred · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
+{% if analysis.qualification_assessment %}<section class="card"><h2>Qualification assessment</h2><p>{{ analysis.qualification_assessment }}</p>
+<h2>Role alignment — documented experience</h2><p>{{ analysis.role_alignment_summary }}</p></section>{% endif %}
+{% if analysis.requirements and analysis.requirement_counts %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred }} preferred · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
 <div class="match-grid">
   <section class="card">
     <h2><span class="dot good"></span>Confirmed</h2>
@@ -117,8 +121,8 @@
 </section>
 {% endif %}
 
-{% if analysis.role_competencies %}<section class="card"><h2>Role competencies — required levels unspecified</h2>
-{% for item in analysis.role_competencies %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}.<br><small>Source: {{ item.source_quote }}. {{ item.classification_basis }}</small><br><small>Evidence: {{ item.evidence|join('; ') }}</small></p>{% endfor %}</section>{% endif %}
+{% if analysis.role_competencies %}<section class="card"><h2>Role competencies — evidence and listed levels</h2>
+{% for item in analysis.role_competencies %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}. {% if item.required_level %}Listed level: {{ item.required_level }} — proficiency at this level is not verified.{% else %}Required level unspecified.{% endif %}<br><small>Source: {{ item.source_quote }}. {{ item.classification_basis }}</small><br><small>Evidence: {{ item.evidence|join('; ') }}</small></p>{% endfor %}</section>{% endif %}
 {% if analysis.responsibilities %}<section class="card"><h2>Responsibilities — excluded from requirement scoring</h2><ul>{% for item in analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul></section>{% endif %}
 {% if analysis.organization_context %}<details><summary>Organization context — excluded from requirement scoring</summary>{% for item in analysis.organization_context %}<p>{{ item.source_quote }}</p>{% endfor %}</details>{% endif %}
 <p class="muted">This evaluates profile evidence, not hiring probability or a universal ATS score. No confirmation does not mean a lack of skill.</p>

@@ -31,9 +31,9 @@ def test_duties_and_stack_never_imply_prior_experience(profile):
         'JOB DESCRIPTION\nResponsibilities\nConfigure and maintain customer service processes within Dynamics 365.\nTECH STACK\nCRM\nCustomer Support')
     assert not result.requirements
     assert len(result.responsibilities) == 1
-    assert [r.name for r in result.role_competencies] == ['CRM', 'Customer Support']
-    assert result.match_level == 'UNRELIABLE' and result.recommendation == 'RETRY'
-    assert 'Incomplete analysis — review required' in result.reasoning_summary
+    assert [r.name for r in result.role_competencies] == ['CRM', 'Customer Support', 'Dynamics 365']
+    assert result.is_reliable and result.match_level == 'LIMITED' and result.recommendation == 'REVIEW'
+    assert 'Qualification requirements are not specified.' in result.reasoning_summary
 
 
 def test_semantic_duplicates_keep_quotes_but_configuration_remains_separate(profile):

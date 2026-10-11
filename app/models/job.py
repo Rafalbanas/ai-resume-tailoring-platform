@@ -9,6 +9,7 @@ class MatchLevel(StrEnum):
     MEDIUM = "MEDIUM"
     LOW = "LOW"
     UNRELIABLE = "UNRELIABLE"
+    LIMITED = "LIMITED"
 
 
 class Recommendation(StrEnum):
@@ -16,6 +17,7 @@ class Recommendation(StrEnum):
     REASONABLE_STRETCH = "REASONABLE_STRETCH"
     SKIP = "SKIP"
     RETRY = "RETRY"
+    REVIEW = "REVIEW"
 
 
 class RequirementPriority(StrEnum):
@@ -39,6 +41,7 @@ class JobRequirement(BaseModel):
     name: str
     source_quote: str = ""
     source_quotes: list[str] = Field(default_factory=list)
+    required_level: str = ""
     classification_basis: str = ""
     source_section: str = ""
     group_id: str = ""
@@ -102,4 +105,7 @@ class JobAnalysis(BaseModel):
     responsibilities: list[dict[str, str]] = Field(default_factory=list)
     role_competencies: list[JobRequirement] = Field(default_factory=list)
     organization_context: list[dict[str, str]] = Field(default_factory=list)
+    qualification_assessment: str = ""
+    role_alignment_summary: str = ""
+    role_competency_counts: dict[str, int] = Field(default_factory=dict)
     requirement_counts: dict[str, int] = Field(default_factory=dict)

@@ -164,18 +164,35 @@ def verify_requirement(validator, name):
 
 def validate_grounded(validator, candidate, job_text):
     result = candidate.model_copy(deep=True)
-    from app.services.job_sections import ORGANIZATION_SIGNAL, REQUIREMENT_SIGNAL, extract_sections, semantic_key
+    from app.services.job_sections import (
+        ORGANIZATION_SIGNAL,
+        REQUIREMENT_SIGNAL,
+        extract_sections,
+        role_competency_units,
+        semantic_key,
+    )
     units, sections = extract_sections(job_text)
     source = source_lines(job_text)
     result.source_sections = sections
     result.analysis_language = "en"
     result.responsibilities = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "responsibility"]
+    # Responsibility overlap is indicative, not proof of the full duty or an
+    # implicit prerequisite. Only content facts can support these scope notes.
+    for duty in result.responsibilities:
+        tokens = normalized_tokens(duty["name"]) - {"support", "work", "using", "customer", "service"}
+        facts = [e for e in validator.catalog.prompt_entries
+                 if e.kind == 'experience' and ':fact:' in e.source_id
+                 and len(tokens & normalized_tokens(e.text)) >= 2
+                 and not re.search(r'\b(?:no|never|not)\b', e.text, re.I)]
+        duty["evidence"] = "; ".join(e.text for e in facts)
+        duty["status"] = "partial" if facts else "missing"
+        duty["reason"] = "Related documented experience; full duty scope needs review." if facts else "Not confirmed in profile; not a mandatory blocker."
     result.organization_context = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "organization"]
     result.role_competencies = []
-    for unit in units:
+    for unit in role_competency_units(units):
         if unit.category == "competency":
             status, evidence, ids, reason = verify_requirement(validator, unit.name)
-            result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote], source_section=unit.section, classification_basis="Listed technology or role skill; prior experience and required level are unspecified", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
+            result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill evidence only; prior experience is not a mandatory condition and any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, reason=reason))
     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred"}}
     result.completeness_issues = []
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
@@ -200,7 +217,10 @@ def validate_grounded(validator, candidate, job_text):
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
-        if re.fullmatch(r'\s*(?:B[12]|C[12]|Advanced|Expert|Intermediate|Basic)\s*', raw, re.I) and index:
+        if any(u.category in {"responsibility", "organization", "preferred", "competency"}
+               and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
+            continue
+        if re.fullmatch(r'\s*(?:B[12]|C[12]|Advanced|Expert|Intermediate|Basic)\s*', raw, re.I) and index and not any(u.level == raw.strip() and u.name == job_lines[index-1].strip() for u in units):
             previous = job_lines[index-1].strip()
             if previous:
                 source.append((previous + '\n' + raw.strip(), RequirementPriority.MANDATORY))
@@ -250,11 +270,26 @@ def validate_grounded(validator, candidate, job_text):
                  and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
     if uncovered:
         result.completeness_issues.append("Requirement-bearing source passages are not covered by the analysis.")
-    if sections and not source:
-        result.completeness_issues.append("The supplied source does not specify candidate qualifications or their required levels; duties and listed technologies cannot establish mandatory prior experience.")
     if visibly_truncated:
         result.completeness_issues.append("The source ends in an unfinished sentence.")
-    result.is_reliable = bool(requirements) and not result.completeness_issues
+    result.is_reliable = bool(requirements or result.role_competencies or result.responsibilities) and not result.completeness_issues
+    result.qualification_assessment = (
+        "Explicit qualification requirements assessed against documented profile evidence."
+        if requirements else
+        "Qualification requirements are not specified. Assessment is based on listed role competencies and responsibilities."
+    )
+    result.role_competency_counts = {
+        status.value: sum(r.status == status for r in result.role_competencies)
+        for status in RequirementStatus
+    }
+    result.role_alignment_summary = (
+        f"Role evidence: {result.role_competency_counts['strong']} confirmed competencies, "
+        f"{result.role_competency_counts['partial']} partial matches, "
+        f"{result.role_competency_counts['missing']} not confirmed in profile, "
+        f"{result.role_competency_counts['absent']} confirmed gaps. "
+        "This assesses the supplied text only, not completeness of the original webpage. This compares documented experience only; it does not establish proficiency at an unknown required level. "
+        f"{len(result.responsibilities)} responsibility source passages are available for scope review and do not create mandatory blockers."
+    )
     result.requirement_counts = {"mandatory": sum(r.priority == RequirementPriority.MANDATORY for r in requirements),
                                  "preferred": sum(r.priority != RequirementPriority.MANDATORY for r in requirements),
                                  "confirmed": len(result.strong_matches), "partial": len(result.partial_matches),
@@ -263,6 +298,10 @@ def validate_grounded(validator, candidate, job_text):
     if not result.is_reliable:
         result.match_level, result.recommendation = MatchLevel.UNRELIABLE, Recommendation.RETRY
         result.reasoning_summary = "Incomplete analysis — review required. " + " ".join(result.completeness_issues or ["No requirements with a verifiable source were identified."])
+        return result
+    if not requirements:
+        result.match_level, result.recommendation = MatchLevel.LIMITED, Recommendation.REVIEW
+        result.reasoning_summary = result.qualification_assessment + " " + result.role_alignment_summary
         return result
     # Score each source requirement once, even when independent clauses are displayed separately.
     mandatory = [r for r in requirements if r.priority == RequirementPriority.MANDATORY]

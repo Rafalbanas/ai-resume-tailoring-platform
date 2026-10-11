@@ -64,12 +64,15 @@
       </div>
 
       {% if res and res.ok %}
+      {% if res.validation_replay %}<p class="alert">Validation replay of saved data — no new model generation. Original result is preserved. CV content is reused from the original run.</p>{% endif %}
       <div class="compare-section">
         <div class="score score-{{ res.analysis.match_level|lower }}">
           <small>Match</small>
           {% if res.analysis.match_level == 'UNRELIABLE' or res.analysis.recommendation == 'RETRY' %}
             <strong class="score-unreliable">Incomplete analysis — review required</strong>
             <span>Review required</span>
+          {% elif res.analysis.match_level == 'LIMITED' %}
+            <strong>Limited role assessment</strong><span>Review scope and product gaps</span>
           {% else %}
             <strong>{{ res.analysis.match_level }}</strong>
             <span>{{ res.analysis.recommendation.replace('_', ' ') }}</span>
@@ -80,7 +83,7 @@
       </div>
 
       <div class="compare-section">
-        <h4>Strong Matches ({{ res.analysis.strong_matches|length }})</h4>
+        <h4>Confirmed qualifications ({{ res.analysis.strong_matches|length }})</h4>
         <div class="chips">
           {% for item in res.analysis.strong_matches %}
           <span>{{ item }}</span>
@@ -91,7 +94,7 @@
       </div>
 
       <div class="compare-section">
-        <h4>Not confirmed in profile ({{ res.analysis.missing_requirements|length }})</h4>
+        <h4>Qualifications not confirmed in profile ({{ res.analysis.missing_requirements|length }})</h4>
         <div class="chips">
           {% for item in res.analysis.missing_requirements %}
           <span>{{ item }}</span>
@@ -134,11 +137,16 @@
       </div>
       {% endif %}
 
+      {% if res.analysis.qualification_assessment %}<div class="compare-section">
+        <h4>Qualification assessment</h4><p>{{ res.analysis.qualification_assessment }}</p>
+        <h4>Role alignment — documented experience</h4><p>{{ res.analysis.role_alignment_summary }}</p>
+      </div>{% endif %}
       <div class="compare-section">
         <h4>Source coverage</h4>
         <p>{{ res.analysis.responsibilities|default([])|length }} responsibilities; {{ res.analysis.organization_context|default([])|length }} organization passages.</p>
-        {% if res.analysis.responsibilities %}<details><summary>Responsibility source quotes — excluded from prerequisite scoring</summary><ul>{% for item in res.analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul><p>Using a product in this role does not establish mandatory prior experience with it.</p></details>{% endif %}
-        {% for item in res.analysis.role_competencies|default([]) %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}. Required level unspecified.<br><small>{{ item.evidence|join('; ') }}</small></p>{% endfor %}
+        {% if res.analysis.responsibilities %}<details><summary>Responsibility source quotes — excluded from prerequisite scoring</summary><ul>{% for item in res.analysis.responsibilities %}<li>{{ item.source_quote }}{% if item.evidence %}<br><small>Related profile evidence: {{ item.evidence }}. {{ item.reason }}</small>{% endif %}</li>{% endfor %}</ul><p>Using a product in this role does not establish mandatory prior experience with it.</p></details>{% endif %}
+        <h4>Role competencies — evidence and listed levels</h4>
+        {% for item in res.analysis.role_competencies|default([]) %}<p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}. {% if item.required_level %}Listed level: {{ item.required_level }} — proficiency at this level is not verified.{% else %}Required level unspecified.{% endif %}<br><small>Source: {{ item.source_quote }}<br>{{ item.evidence|join('; ') or item.reason }}</small></p>{% endfor %}
       </div>
       <details class="compare-section"><summary>Model output before validation</summary>
         {% if res.model_analysis %}<p>Requirements: {{ res.model_analysis.requirements|length }}. {{ res.model_analysis.reasoning_summary }}</p>
