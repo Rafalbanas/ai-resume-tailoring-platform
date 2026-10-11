@@ -1,4 +1,16 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const resumePreview = document.getElementById("resume-preview");
+  const previewEnlarge = document.getElementById("preview-enlarge");
+  const previewFit = document.getElementById("preview-fit");
+  if (resumePreview && previewEnlarge && previewFit) {
+    const setPreviewZoom = (enlarged) => {
+      resumePreview.classList.toggle("preview-enlarged", enlarged);
+      previewEnlarge.setAttribute("aria-pressed", String(enlarged));
+      if (!enlarged) resumePreview.scrollLeft = 0;
+    };
+    previewEnlarge.addEventListener("click", () => setPreviewZoom(true));
+    previewFit.addEventListener("click", () => setPreviewZoom(false));
+  }
   const photoInput = document.getElementById("profile-photo-input");
   const photoPreview = document.getElementById("photo-preview");
   const cropX = document.getElementById("crop-x");

@@ -122,3 +122,28 @@ def test_preview_pages_match_pdf_and_do_not_mutate_saved_resume(profile, resume_
         assert 'Invented Kubernetes achievement' in '\n'.join(p.text for p in doc.paragraphs)
         assert 'GDPR' in doc.sections[0].footer.paragraphs[0].text
     assert resume.model_dump_json() == before
+
+
+def test_sidebar_contact_labels_keep_complete_link_targets(profile, resume_payload, tmp_path):
+    profile.personal.email = 'long.contact.address.for.recruitment@example.com'
+    profile.personal.linkedin = 'https://www.linkedin.com/in/' + 'long-contact-' * 12
+    profile.personal.website = 'https://example.com/' + 'portfolio/' * 15
+    profile.personal.github = 'https://github.com/long-contact-name'
+    original = profile.model_dump_json()
+    resume = TailoredResume.model_validate(resume_payload)
+    generator = PDFGenerator(Path('templates'), Path('static'), tmp_path)
+    markup = BeautifulSoup(generator.render_html(resume, profile), 'html.parser')
+    expected = {
+        'Email': 'mailto:' + profile.personal.email,
+        'LinkedIn': profile.personal.linkedin,
+        'Website': profile.personal.website,
+        'GitHub': profile.personal.github,
+    }
+    assert {a.text: a['href'] for a in markup.select('.contact-block a')} == expected
+    pdf = tmp_path / 'contacts.pdf'
+    generator.generate(resume, profile, pdf)
+    annotations = [a.get_object() for page in PdfReader(pdf).pages for a in page.get('/Annots', [])]
+    targets = [str(a.get('/A', {}).get('/URI', '')) for a in annotations]
+    # One clickable label per address, rather than many wrapped link fragments.
+    assert all(targets.count(target) == 1 for target in expected.values())
+    assert profile.model_dump_json() == original

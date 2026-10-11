@@ -74,7 +74,12 @@
 </details>
 {% endif %}
 <div id="quick-photo-toast" class="quick-photo-toast" role="status" aria-live="polite" hidden></div>
-<div class="paper-frame">{{ resume_html|safe }}</div>
+<div class="preview-controls" aria-label="Preview zoom">
+  <button type="button" class="secondary" id="preview-fit" aria-controls="resume-preview">Fit width</button>
+  <button type="button" class="secondary" id="preview-enlarge" aria-controls="resume-preview" aria-pressed="false">Enlarge</button>
+  <small>Zoom affects only the preview. Scroll sideways when enlarged, or pinch to zoom.</small>
+</div>
+<div class="paper-frame" id="resume-preview" tabindex="0" aria-label="CV pages">{{ resume_html|safe }}</div>
 {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
 <input id="quick-photo-file" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/tiff,.jpg,.jpeg,.png,.webp,.heic,.heif,.tif,.tiff">
 <dialog class="quick-photo-dialog crop-dialog" id="quick-photo-crop-dialog" data-slug="{{ slug }}" data-csrf="{{ csrf_token }}">
