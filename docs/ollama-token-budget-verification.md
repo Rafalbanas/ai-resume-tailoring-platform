@@ -68,3 +68,7 @@ The model also returned alias repetitions (a concise capability title and the or
 There were six complete local development analysis trials and one focused eight-passage test while diagnosing output, coverage and alias handling. Earlier incomplete semantic results were rejected; they are not silently counted as successes. All were local Ollama calls; **zero Gemini inference calls** were made during this work. Only the final accepted run is used in the before/after table. This is a recorded validation case, not a guarantee that every unknown future offer completes in one call.
 
 Private profile, bank, existing history and global provider configuration were not written by these test scripts. Generated validation artifacts remain in a protected local directory outside the repository. The isolated worktree also leaves the original working directory's pre-existing uncommitted changes untouched.
+
+## Final automated validation
+
+Full suite: **434 passed, 2 skipped**, with 48 deprecation warnings, in 145.40 s. `ruff check app tests` and `git diff --check` both passed.
