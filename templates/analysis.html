@@ -90,6 +90,7 @@
   <p>{{ analysis.reasoning_summary }}</p>
 </section>
 
+{% include '_token_usage.html' %}
 {% if analysis.requirements %}
 <section class="card requirements-breakdown" style="margin-top: 1.5rem;">
   <h2><span class="dot good"></span>Source-backed requirements</h2>

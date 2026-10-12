@@ -289,6 +289,7 @@ async def analysis_view(request: Request, draft_id: str):
             request,
             job=job,
             analysis=response.analysis,
+            token_usage=response.token_usage,
             evidence_questions=evidence_questions(response.analysis),
             draft_id=draft_id,
             provider_used=getattr(response, "provider_used", "unknown"),
@@ -1092,7 +1093,7 @@ async def compare_view(
                 results = task.result["results"]
                 return request.app.state.templates.TemplateResponse(
                     "compare.html",
-                    context(request, job=job, results=results, task_id=task_id),
+                    context(request, job=job, results=results, task_id=task_id, token_usage=task.token_usage),
                 )
             if task.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
                 return request.app.state.templates.TemplateResponse(

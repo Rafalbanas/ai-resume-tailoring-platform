@@ -31,6 +31,7 @@ from app.services.ollama_analysis import (
 )
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
+from app.services.token_progress import new_call, report
 
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -160,6 +161,7 @@ class OllamaProvider(AIProvider):
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
@@ -182,18 +184,22 @@ class OllamaProvider(AIProvider):
                     envelope = response.json()
         except httpx.TimeoutException as exc:
             metrics["error_kind"] = "timeout"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("timeout", "Ollama timed out while generating the response. Try again.") from exc
         except httpx.RequestError as exc:
             metrics["error_kind"] = "unavailable"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         except httpx.HTTPStatusError as exc:
             kind = "context_budget" if any(w in exc.response.text.casefold() for w in ("context", "prompt too long")) else "http"
             metrics["error_kind"] = kind
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError(kind, "Ollama rejected the request (context budget or HTTP error).") from exc
         except ValueError as exc:
             metrics["error_kind"] = "envelope"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError("envelope", "Ollama returned an invalid HTTP JSON envelope.") from exc
 
         if not isinstance(envelope, dict) or not isinstance(envelope.get("message"), dict):
@@ -211,6 +217,10 @@ class OllamaProvider(AIProvider):
                        done_reason=envelope.get("done_reason"),
                        thinking_present=bool(envelope.get("message", {}).get("thinking")),
                        reasoning_tokens=envelope.get("thinking_eval_count"))
+        metrics["tokens_per_second"] = eval_tokens/(eval_ms/1000) if eval_ms > 0 and envelope.get("eval_count") is not None else None
+        report(progress_id, phase="done", input_tokens=envelope.get("prompt_eval_count"), output_tokens=envelope.get("eval_count"),
+               total_tokens=prompt_tokens+eval_tokens if envelope.get("prompt_eval_count") is not None and envelope.get("eval_count") is not None else None,
+               tokens_per_second=metrics["tokens_per_second"])
         logger.info(
             "Ollama call completed: model=%s, load=%.1fms, prompt_eval=%.1fms (%s tokens), eval=%.1fms (%s tokens), total=%.1fms",
             self.model,
