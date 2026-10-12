@@ -84,7 +84,7 @@ def language_check_name(name, level):
     return name + " " + level
 
 
-def _facts(validator, item):
+def _facts(validator, item, *, practical_scope=False):
     lookup = {e.source_id: e for e in validator.matcher.entries}
     entries = [lookup[i] for i in dict.fromkeys(item.source_fact_ids) if i in lookup and lookup[i].kind != "interest"]
     item.source_fact_ids = [e.source_id for e in entries]
@@ -101,6 +101,28 @@ def _facts(validator, item):
     if item.status == Status.ABSENT and (not scoped_gap or scoped_gap.status != Status.ABSENT):
         item.status = Status.MISSING
         item.reason += " No explicit negative evidence supports a confirmed gap."
+    from app.services.evidence_strength import ci_ceiling, evidence_strength
+
+    practical = practical_scope or bool(
+        re.search(
+            r"\bexperience\b|\bpractical\b|hands.on|\bproficien\w*|\b(?:install|configur|develop|implement|deploy|troubleshoot|script)\w*|working|production",
+            item.name + " " + getattr(item, "source_quote", ""),
+            re.I,
+        )
+    )
+    if (
+        item.status == Status.STRONG
+        and entries
+        and practical
+        and all(evidence_strength(e) == "declaration" for e in entries)
+    ):
+        item.status = Status.PARTIAL
+        item.reason += " Declared knowledge is documented; practical use and the requested scope/level are not established by a technology name alone."
+
+    ceiling = ci_ceiling(item.name, entries)
+    if ceiling and item.status == Status.STRONG and ceiling[0] != "strong":
+        item.status = Status(ceiling[0])
+        item.reason += " " + ceiling[1]
     if hasattr(item, "required_level"):
         language_name = language_check_name(item.name, item.required_level)
         language = validator.matcher._language(language_name)
@@ -118,12 +140,12 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
     from app.services.job_sections import extract_sections
 
     def heading_key(value):
-        return value.replace('\u200b', '').replace('\ufeff', '').strip(' #:\t\r\n').casefold()
+        return value.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold()
 
     headings = {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "responsibility", "competency"}
-    context_text = ' '.join(' '.join(u.quote.split()) for u in units if u.category in excluded)
+    context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
         quotes = resolve_source_quotes(req.source_quote, job_text) if req.source_quote.strip() else []
@@ -136,8 +158,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if all(
-            (any(u.category in excluded and quote in u.quote for u in units)
-             or ' '.join(quote.split()) in context_text)
+            (any(u.category in excluded and quote in u.quote for u in units) or " ".join(quote.split()) in context_text)
             and not any(u.category in qualification_categories and quote in u.quote for u in units)
             for quote in quotes
         ):
@@ -212,7 +233,17 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             component.required_level = (
                 quoted_language_level(component.name, " ".join(quotes)) or component.required_level
             )
-            _facts(validator, component)
+            _facts(
+                validator,
+                component,
+                practical_scope=bool(
+                    re.search(
+                        r"\bexperience\b|\bpractical\b|hands.on|\bproficien\w*|\b(?:install|configur|develop|implement|deploy|troubleshoot|script)\w*|working|production",
+                        req.name + " " + " ".join(quotes),
+                        re.I,
+                    )
+                ),
+            )
         if req.components and req.operator in {"all", "any"}:
             req.alternatives = [c.name for c in req.components] if req.operator == "any" else req.alternatives
             statuses = [c.status for c in req.components]
@@ -280,3 +311,91 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         req.id = f"req_{index + 1}"
         req.group_id = req.group_id or req.id
     return requirements, issues
+
+
+def merge_equivalent_source_rows(requirements):
+    """Merge alias labels for the same assessed source scope, not AND children.
+
+    A shared quote alone is insufficient: source, priority, tenure, proficiency
+    and substantive labels must agree. Single-token branches remain independent.
+    """
+    boilerplate = {
+        "experience",
+        "knowledge",
+        "familiarity",
+        "understanding",
+        "proficiency",
+        "working",
+        "tools",
+        "tool",
+        "technology",
+        "technologies",
+        "skill",
+        "skills",
+        "e.g",
+    }
+
+    def terms(req):
+        values = normalized_tokens(re.sub(r"\be\.g\.\s*", "", req.name, flags=re.I)) - boilerplate
+        actions = {"troubleshooting": "troubleshoot", "debugging": "debug", "deployments": "deployment"}
+        return {actions.get(v, v) for v in values}
+
+    def source_title(req):
+        name = req.name.strip(" .;")
+        quote = req.source_quote.strip(" .;")
+        return name == quote or (len(name) >= 80 and quote.startswith(name))
+
+    result = []
+    for req in requirements:
+        match = None
+        for previous in result:
+            same_scope = (
+                previous.source_quote == req.source_quote
+                and previous.priority == req.priority
+                and previous.required_level == req.required_level
+                and previous.required_years == req.required_years
+            )
+            left, right = terms(previous), terms(req)
+            overlap = len(left & right)
+            equivalent = left == right or (
+                min(len(left), len(right)) >= 2
+                and (
+                    overlap / len(left | right) >= 0.8
+                    or (
+                        (source_title(previous) or source_title(req))
+                        and (
+                            overlap / min(len(left), len(right)) >= 0.8
+                            or (overlap >= 3 and not re.search(r"\band\b|\boraz\b", req.source_quote, re.I))
+                        )
+                    )
+                )
+            )
+            if same_scope and equivalent:
+                match = previous
+                break
+        if match is None:
+            result.append(req)
+            continue
+        match.source_fact_ids = list(dict.fromkeys(match.source_fact_ids + req.source_fact_ids))
+        match.evidence_sources = list(
+            {e["source_id"]: e for e in match.evidence_sources + req.evidence_sources}.values()
+        )
+        match.evidence = list(dict.fromkeys(match.evidence + req.evidence))
+        match.source_quotes = list(dict.fromkeys(match.source_quotes + req.source_quotes))
+        if len(req.components) > len(match.components):
+            match.components = req.components
+            match.operator = req.operator
+        if match.status != req.status:
+            match.interpretation_uncertain = True
+            # Conflicting duplicate claims cannot improve a match without proof.
+            order = {Status.STRONG: 3, Status.PARTIAL: 2, Status.MISSING: 1, Status.ABSENT: 0}
+            match.status = min([match.status, req.status], key=order.get)
+            match.reason += (
+                " Duplicate interpretations disagree; the conservative source-backed status is retained for review."
+            )
+        match.interpretation_uncertain |= req.interpretation_uncertain
+    for i, req in enumerate(result):
+        req.id = f"req_{i + 1}"
+        req.group_id = req.id
+        req.duplicate_of = ""
+    return result

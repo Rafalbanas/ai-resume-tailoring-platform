@@ -318,6 +318,25 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     if semantic and candidate.requirements:
         requirements, model_issues = validated_model_requirements(validator, candidate, job_text, units, requirements)
         result.completeness_issues.extend(model_issues)
+    if semantic and candidate.role_competencies:
+        # Unknown headings can contain soft skills/capabilities. Retain the model's
+        # source-backed role rows instead of discarding them after coverage checks.
+        role_candidate = candidate.model_copy(deep=True)
+        role_candidate.requirements = candidate.role_competencies
+        model_roles, role_issues = validated_model_requirements(
+            validator, role_candidate, job_text, [u for u in units if u.category != 'competency'], [])
+        result.completeness_issues.extend(role_issues)
+        for role in model_roles:
+            role.priority = RequirementPriority.UNSPECIFIED
+            same_name = next((i for i, old in enumerate(result.role_competencies)
+                              if old.name.casefold() == role.name.casefold()), None)
+            if same_name is not None:
+                result.role_competencies[same_name] = role
+            elif not any(old.source_quote == role.source_quote for old in result.role_competencies):
+                result.role_competencies.append(role)
+    if semantic:
+        from app.services.semantic_requirements import merge_equivalent_source_rows
+        requirements = merge_equivalent_source_rows(requirements)
     result.requirements = requirements
     # Metadata indexes reflect the selected, validated requirements, not stale
     # heuristic classifications constructed for legacy/source-review coverage.
