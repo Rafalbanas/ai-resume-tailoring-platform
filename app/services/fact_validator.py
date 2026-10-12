@@ -3,7 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from app.models.candidate import CandidateProfile
-from app.models.job import JobRequest
+from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import (
     ResumeBullet,
     ResumeCertification,
@@ -27,10 +27,38 @@ class ValidationResult:
 class FactValidator:
     """Turns model output into profile-backed data; prompts are never the trust boundary."""
 
-    def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None):
+    def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None, analysis: JobAnalysis | None = None):
         self.profile = profile
         self.catalog = FactCatalog(profile)
         self.skills_bank = skills_bank
+        self.analysis = analysis
+        self.fact_priorities: dict[str, float] = {}
+        if analysis:
+            for position, requirement in enumerate([*analysis.requirements, *analysis.role_competencies]):
+                if requirement.status not in {'strong', 'partial'}:
+                    continue
+                # Preserve the model's ordering within the same priority rather
+                # than allowing a long, generic citation to dominate the summary.
+                weight = (3 if requirement.priority == 'mandatory' else 1) / (1 + position * 0.05)
+                for source_id in requirement.source_fact_ids:
+                    self.fact_priorities[source_id] = max(weight, self.fact_priorities.get(source_id, 0))
+            # Resolve the verified skills index back to its documented usage.
+            # Ranking can use these facts; it does not upgrade a skill's level.
+            if self.skills_bank:
+                for source_id, weight in list(self.fact_priorities.items()):
+                    entry = self.catalog.get(source_id)
+                    skill = self.skills_bank.get(source_id.removeprefix('skill:'))
+                    skill = skill or (self.skills_bank.find(entry.text) if entry else None)
+                    if entry and entry.kind == 'skill':
+                        terms = normalized_tokens(entry.text) - {'basic', 'administration', 'automation', 'scripting', 'working', 'knowledge'}
+                        if terms:
+                            for fact in self.catalog.prompt_entries:
+                                if fact.kind in {'summary', 'experience', 'project'} and terms <= normalized_tokens(fact.text):
+                                    self.fact_priorities[fact.source_id] = max(weight, self.fact_priorities.get(fact.source_id, 0))
+                    if skill and self.skills_bank.eligible(skill):
+                        for evidence in skill.evidence:
+                            if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
+                                self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)
@@ -58,6 +86,11 @@ class FactValidator:
                 maximum=16,
                 requested_only=preserve_skills,
             )
+            if self.fact_priorities and not preserve_skills:
+                requested_order = {i: rank for rank, i in enumerate(dict.fromkeys(requested_ids))}
+                selected.sort(key=lambda s: (
+                    s.id not in requested_order, requested_order.get(s.id, len(requested_order)),
+                    -max((self.fact_priorities.get(i, 0) for i in [f'skill:{s.id}', *(e.source_id for e in s.evidence)]), default=0)))
             draft.selected_skill_ids = [skill.id for skill in selected]
             draft.core_skills = [self.skills_bank.wording(skill) for skill in selected]
             allowed_skills = {
@@ -86,16 +119,32 @@ class FactValidator:
             draft.core_skills = clean_skills[:18]
 
         verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)
+        # Accept a model-selected direction only as exact eligible skill wording
+        # after the real occupation. A target job never confers a new title.
+        pieces = [s.strip() for s in draft.headline.split('|')]
+        pieces[0] = re.sub(r'\bTier\s*([123])\b', r'L\1', pieces[0], flags=re.I)
+        if len(pieces) == 2 and pieces[0] == verified_headline and pieces[1] in draft.core_skills:
+            verified_headline = pieces[0] + ' | ' + pieces[1]
+        elif len(pieces) == 2 and pieces[0] == verified_headline:
+            suffixes = pieces[1].split(' · ')
+            if 1 <= len(suffixes) <= 2 and all(s in draft.core_skills for s in suffixes):
+                verified_headline = pieces[0] + ' | ' + pieces[1]
+        if self.analysis is not None and draft.headline.strip() == job.role.strip() and draft.headline.strip() != verified_headline:
+            # A rejected advertised title can still communicate direction through
+            # exact, already eligible skill labels selected by the model.
+            suffix = ' · '.join(draft.core_skills[:2])
+            if suffix and len(verified_headline + ' | ' + suffix) <= 140:
+                verified_headline += ' | ' + suffix
         if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
 
-        summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}")
+        summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}", priorities=self.fact_priorities)
         summary_entries = self.catalog.valid(draft.summary_source_fact_ids)
         model_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience", "project"}
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
-        if (draft.professional_summary == summary or sentence_count > 4
+        if (draft.professional_summary == summary or sentence_count > 5
                 or not self.catalog.supports_paraphrase(draft.professional_summary, model_ids)):
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
@@ -133,6 +182,12 @@ class FactValidator:
             exp.company = source.company
             exp.title = source.title
             exp.dates = " – ".join(filter(None, [source.start, source.end]))
+            if self.fact_priorities and not preserve_skills:
+                cited = {i for b in bullets for i in b.source_fact_ids}
+                for entry in self._experience_entries(exp_index, job):
+                    if self.fact_priorities.get(entry.source_id, 0) and entry.source_id not in cited:
+                        bullets.append(ResumeBullet(text=self._experience_wording(entry.text), source_fact_ids=[entry.source_id]))
+                bullets.sort(key=lambda b: max((self.fact_priorities.get(i, 0) for i in b.source_fact_ids), default=0), reverse=True)
             exp.bullets = bullets[:4]
             clean_experience.append(exp)
         if not clean_experience:
@@ -190,9 +245,12 @@ class FactValidator:
             project.url = source.url if source.url.startswith(("https://", "http://")) else ""
             canonical_description = self._project_description(source, job)
             attested_descriptions = {source.description, *source.facts}
-            if project.description not in attested_descriptions and project.description != canonical_description:
+            attested_descriptions.add(canonical_description)
+            if project.description not in attested_descriptions:
                 warnings.append(f"Project wording replaced with verified description: {project.name}")
             if project.description not in attested_descriptions:
+                project.description = canonical_description
+            elif self.fact_priorities and project.description == source.description and not preserve_skills:
                 project.description = canonical_description
             project.source_fact_ids = [entry.source_id for entry in self.catalog.prompt_entries
                 if entry.kind == "project" and entry.owner_index == index and ":technology:" not in entry.source_id]
@@ -363,20 +421,21 @@ class FactValidator:
         # administration. This is a bounded edit, not arbitrary paraphrasing.
         return re.sub(r"^Supported (.+) troubleshooting[.]$", r"Assisted with \1 troubleshooting.", text)
 
-    @staticmethod
-    def _project_description(source, job: JobRequest) -> str:
-        from app.services.evidence_matching import FAMILIES
-        description = source.description or " ".join(source.facts)
-        # Keep the technology project separate from the employment summary, and
-        # show relevant real tool usage instead of only the project's LLM brand.
-        from app.services.job_sections import extract_sections
-        units, _ = extract_sections(job.job_description)
-        relevant_text = " ".join(u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have", "responsibility"})
-        if re.search(FAMILIES["ai_tools"], relevant_text, re.I):
-            fact = next((f for f in source.facts if re.search(FAMILIES["ai_tools"], f, re.I)), None)
-            if fact and fact not in description:
-                description = description.rstrip(".") + ". " + fact
-        return description
+    def _project_description(self, source, job: JobRequest) -> str:
+        entries = [e for e in self.catalog.prompt_entries if e.kind == 'project'
+                   and e.owner_name == source.name and (':fact:' in e.source_id or ':description:' in e.source_id)]
+        ranked = sorted(entries, key=lambda e: self._entry_relevance(e, job), reverse=True)
+        selected = []
+        for entry in ranked:
+            if not any(self._entry_relevance(entry, job)):
+                continue
+            if entry.text.strip() and entry.text not in selected:
+                candidate = ' '.join([*selected, entry.text])
+                if len(candidate) <= 500 or not selected:
+                    selected.append(self._complete_sentence(entry.text))
+            if len(selected) == 2:
+                break
+        return ' '.join(selected) or source.description or ' '.join(source.facts[:2])
 
     def _coverage_warnings(self, resume: TailoredResume, job: JobRequest) -> list[str]:
         """Compare confirmed employer requirements against actual exported content.
@@ -420,11 +479,17 @@ class FactValidator:
         return warnings
 
     def _experience_entries(self, index: int, job: JobRequest):
-        entries = [e for e in self.catalog.prompt_entries if e.kind == "experience" and e.owner_index == index]
-        role_tokens = normalized_tokens(job.role)
-        job_tokens = normalized_tokens(job.job_description)
-        ranking = sorted(range(len(entries)), key=lambda i: (3 * len(normalized_tokens(entries[i].text) & role_tokens) + len(normalized_tokens(entries[i].text) & job_tokens), -i), reverse=True)
-        return [entries[i] for i in sorted(ranking[:4])]
+        entries = [e for e in self.catalog.prompt_entries if e.kind == "experience" and e.owner_index == index
+                   and ':fact:' in e.source_id]
+        return sorted(entries, key=lambda e: self._entry_relevance(e, job), reverse=True)[:4]
+
+    def _entry_relevance(self, entry, job: JobRequest) -> tuple[float, int]:
+        from app.services.job_sections import relevance_text
+        terms = normalized_tokens(relevance_text(f'{job.role}\n{job.job_description}'))
+        # The LLM's cited match evidence supplies the primary ordering; literal
+        # overlap is only a fallback/tiebreaker, never proof of competence.
+        overlap = normalized_tokens(entry.text) & terms
+        return self.fact_priorities.get(entry.source_id, 0), len(overlap)
 
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
         # A target advertisement cannot confer a new occupation or seniority.
@@ -452,7 +517,8 @@ class FactValidator:
         return text if not text or text[-1] in ".!?" else f"{text}."
 
     def _project_relevance(self, project: ResumeProject, job: JobRequest) -> int:
-        job_tokens = normalized_tokens(f"{job.role} {job.job_description}")
+        from app.services.job_sections import relevance_text
+        job_tokens = normalized_tokens(relevance_text(f"{job.role}\n{job.job_description}"))
         role_tokens = normalized_tokens(job.role)
         generic = {
             "built",
@@ -485,11 +551,12 @@ class FactValidator:
     def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
         profile_projects = {project.name.casefold(): project for project in self.profile.projects}
 
-        def score(project: ResumeProject) -> tuple[int, int, str]:
+        def score(project: ResumeProject) -> tuple[float, int, int]:
             source = profile_projects.get(project.name.casefold())
             technologies = source.technologies if source else project.technologies
             relevance = self._project_relevance(project, job)
-            return relevance, len(technologies), project.name
+            evidence_priority = max((self.fact_priorities.get(i, 0) for i in project.source_fact_ids), default=0)
+            return evidence_priority, relevance, len(technologies)
 
         return sorted(projects, key=score, reverse=True)
 

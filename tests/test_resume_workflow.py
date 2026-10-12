@@ -336,7 +336,8 @@ def test_edit_save_reject_unsupported_and_reset(verified_profile, platform_job, 
     storage.save_current_resume(slug, safe_result.resume, safe_result.warnings)
     _, saved, generated, _ = storage.load_application(slug)
     assert saved.headline == "Technical Support Engineer (L2)"
-    assert saved.experience[0].bullets[0].text == verified_profile.experience[0].facts[0]
+    assert verified_profile.experience[0].facts[0] in [b.text for b in saved.experience[0].bullets]
+    assert all(b.text in verified_profile.experience[0].facts for b in saved.experience[0].bullets)
 
     unsupported_form = dict(safe_form)
     unsupported_form["core_skills"] = "Python\nKubernetes"

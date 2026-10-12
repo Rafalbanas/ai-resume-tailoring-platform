@@ -358,7 +358,7 @@ class TaskManager:
                 resp.analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
                     resp.analysis, f"{job.role}\n{job.job_description}"
                 )
-                val = FactValidator(app_state.profile, app_state.skills_bank).validate(resp.resume, job)
+                val = FactValidator(app_state.profile, app_state.skills_bank, resp.analysis).validate(resp.resume, job)
                 results[name] = {
                     "ok": True,
                     "duration_ms": int((time.perf_counter() - step_start) * 1000),

@@ -18,7 +18,7 @@ from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
 from app.services.professional_summary import build_summary, deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
-from app.services.resume_export import contacts, prepare_resume, validate_layout, validate_pdf_output
+from app.services.resume_export import contacts, link_display, prepare_resume, validate_layout, validate_pdf_output
 
 
 class PDFGenerator:
@@ -62,6 +62,7 @@ class PDFGenerator:
             resume=resume,
             personal=profile.personal,
             contacts=contacts(profile),
+            link_display=link_display,
             languages=profile_languages(profile),
             template_name=template_name,
             photo_enabled=include_photo,

@@ -203,6 +203,21 @@ def semantic_key(name: str) -> tuple[str, ...]:
     return tuple(sorted(set(re.findall(r"[a-z0-9+#]+", text)) - {"a", "an", "the", "of", "with", "in", "is", "required", "must", "have"}))
 
 
+def relevance_text(text: str) -> str:
+    """Ranking hints only; the complete source still goes to the LLM.
+
+    Benefits must not boost an unrelated skill/project. Unknown sections remain
+    eligible for ranking rather than being discarded by a keyword dictionary.
+    """
+    units, _ = extract_sections(text)
+    if not units:
+        return text
+    return '\n'.join([text.splitlines()[0] if text.splitlines() else '', *(
+        u.quote for u in units
+        if u.category in {'mandatory', 'preferred', 'nice_to_have', 'responsibility', 'competency', 'unknown'}
+    )])
+
+
 def role_competency_units(units: list[SourceUnit]) -> list[SourceUnit]:
     """List skills plus literal named tools in duties; never infer prerequisites.
 

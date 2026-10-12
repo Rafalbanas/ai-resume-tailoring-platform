@@ -50,6 +50,22 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 18. Preserve source_context for benefits/employment/recruitment/company passages, responsibilities separately, and role_competencies for portal tags. These do not add mandatory qualification blockers. Use ambiguous operator and interpretation_uncertain when the source is unclear. Unknown headings do not justify discarding actual qualifications."""
 
 
+RESUME_TAILOR_SYSTEM_PROMPT = """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
+Start the headline with the candidate’s actual current occupation, not the advertised job title. You may append a short | suffix containing at most two relevant eligible skill wordings separated by · exactly as supplied, including basic-level qualifiers. Never imply an unheld job title or advanced expertise.
+Write 3–5 concise factual English summary sentences. Lead with the strongest documented evidence for this offer, then connect it to current experience and projects. Use requirements_with_evidence priorities and cited facts, not a fixed support-first template. Do not duplicate the first experience bullet. Avoid marketing phrases, invented results and a project-dominated summary. Every summary must reference its supplied source IDs. Natural languages belong in Languages, never core_skills. Do not prepend Hands-on to skills. Every experience bullet must reference experience source IDs. Select concrete source details (action, tools, environment, problem and documented result) and order bullets by relevance. Do not invent metrics or results. Preserve employment chronology and all documented roles; less relevant jobs may use fewer bullets. Prefer concise, complete attested sentences or clauses: the export boundary checks them against the supplied facts.
+Rank projects by documented evidence for the requirements, not project title or buzzwords. Every project must use a supplied project name, reference project source IDs, and keep project identity in name. Describe relevant implemented functionality using the source facts; planned, experimental or non-working features cannot become completed deployments. A workflow file alone does not prove a working CI/CD pipeline. Select supported technologies in relevance order. Preserve provided project links.
+Project technologies may contain only supplied skill wording; never place a project name in technologies.
+Every education item must reference its education source ID.
+Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
+Select only relevant confirmed existing skill IDs in descending offer relevance (up to 16; no minimum) in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
+unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
+AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
+The source IDs, not string equality, bind paraphrased wording to verified facts.
+Only include skills, education, and certifications present in the master profile. Source IDs are mandatory because
+an independent Truth Lock will resolve them back to verified facts and reject unsupported content.
+Reference CVs are style examples only. Never copy their people, employers, facts, metrics, skills, education,
+certifications, projects, or responsibilities unless the same fact exists in the master profile."""
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.casefold().strip().encode()).hexdigest()[:12]
 
@@ -243,6 +259,8 @@ def build_compact_tailor_payload(
                         "id": s.id,
                         "name": s.name,
                         "wording": wording,
+                        "level": s.level,
+                        "evidence": skills_bank.evidence_labels(s),
                     })
         if not eligible_skills:
             for s in skills_bank.skills[:35]:
@@ -255,7 +273,7 @@ def build_compact_tailor_payload(
                     })
     analysis_reqs = []
     if hasattr(analysis, "requirements") and analysis.requirements:
-        analysis_reqs = [r.name if hasattr(r, "name") else str(r) for r in analysis.requirements][:10]
+        analysis_reqs = [r.name if hasattr(r, "name") else str(r) for r in analysis.requirements]
     elif hasattr(analysis, "missing_requirements"):
         analysis_reqs = list(analysis.missing_requirements)[:10]
 
@@ -268,6 +286,17 @@ def build_compact_tailor_payload(
             "strong_matches": analysis.strong_matches,
             "strong_skill_ids": analysis.strong_skill_ids,
             "key_requirements": analysis_reqs,
+            "requirements_with_evidence": [
+                {"name": r.name, "priority": getattr(r.priority, "value", r.priority), "status": getattr(r.status, "value", r.status),
+                 "source_quote": r.source_quote, "source_fact_ids": r.source_fact_ids,
+                 "required_level": r.required_level, "reason": r.reason}
+                for r in analysis.requirements
+            ],
+            "role_competencies": [
+                {"name": r.name, "status": getattr(r.status, "value", r.status), "source_fact_ids": r.source_fact_ids,
+                 "required_level": r.required_level}
+                for r in analysis.role_competencies
+            ],
         },
         "candidate_facts": grouped_facts,
         "eligible_skills": eligible_skills,

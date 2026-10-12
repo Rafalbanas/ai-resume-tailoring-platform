@@ -123,6 +123,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
     headings = {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "responsibility", "competency"}
+    context_text = ' '.join(' '.join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
         quotes = resolve_source_quotes(req.source_quote, job_text) if req.source_quote.strip() else []
@@ -135,7 +136,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if all(
-            any(u.category in excluded and quote in u.quote for u in units)
+            (any(u.category in excluded and quote in u.quote for u in units)
+             or ' '.join(quote.split()) in context_text)
             and not any(u.category in qualification_categories and quote in u.quote for u in units)
             for quote in quotes
         ):

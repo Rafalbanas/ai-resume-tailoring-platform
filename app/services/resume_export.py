@@ -58,10 +58,15 @@ def contacts(profile: CandidateProfile) -> list[Contact]:
     for label, value in (("LinkedIn", personal.linkedin), ("Website", personal.website), ("GitHub", personal.github)):
         if value.strip():
             target = web_link(value)
-            parsed = urlsplit(value.strip())
-            display = unquote(parsed.netloc.removeprefix("www.") + parsed.path).rstrip("/")
+            display = link_display(value)
             result.append(Contact(label, display, target))
     return result
+
+
+def link_display(value: str) -> str:
+    """Keep a recognizable host/path; tracking parameters belong only to href."""
+    parsed = urlsplit(value.strip())
+    return unquote(parsed.netloc.removeprefix('www.') + parsed.path).rstrip('/')
 
 
 def prepare_resume(resume: TailoredResume, profile: CandidateProfile) -> TailoredResume:

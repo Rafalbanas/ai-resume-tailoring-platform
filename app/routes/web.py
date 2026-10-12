@@ -310,7 +310,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     if not response.analysis.is_reliable:
         raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(response.resume, job)
+    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis).validate(response.resume, job)
     try:
         prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:

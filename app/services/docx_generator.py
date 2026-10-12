@@ -12,7 +12,7 @@ from app.models.resume import TailoredResume
 from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
 from app.services.professional_summary import deduplicate_summary
-from app.services.resume_export import contacts, prepare_resume
+from app.services.resume_export import contacts, link_display, prepare_resume
 
 
 def add_link(paragraph, text: str, target: str) -> None:
@@ -123,7 +123,7 @@ def generate_docx(
             if item.url:
                 link_paragraph = document.add_paragraph()
                 link_paragraph.paragraph_format.keep_with_next = True
-                add_link(link_paragraph, item.url, item.url)
+                add_link(link_paragraph, link_display(item.url), item.url)
             paragraphs = [document.add_paragraph(item.description)]
             if item.technologies:
                 paragraphs.append(document.add_paragraph(" · ".join(item.technologies)))

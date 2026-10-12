@@ -139,3 +139,14 @@ def test_model_cannot_score_section_titles_or_benefits(profile):
     assert not any(r.name in {'Experience:', 'Life insurance'} for r in result.requirements)
     assert next(r for r in result.requirements if r.name == 'Docker').priority == 'preferred'
     assert any(c['source_quote'] == 'Life insurance' for c in result.source_context)
+
+
+def test_multiline_benefit_quote_is_context_not_a_requirement(profile):
+    from app.models.job import JobRequirement
+
+    text = 'Requirements\nPython\nBenefits\nAccess to training and broad\nDevelopment opportunities'
+    candidate = empty_analysis()
+    candidate.requirements = [JobRequirement(name='Training opportunities', source_quote='Access to training and broad Development opportunities', priority='mandatory', status='missing', reason='Not confirmed')]
+    result = AnalysisValidator(profile).validate(candidate, text, semantic=True)
+    assert not any('training' in r.name.lower() for r in result.requirements)
+    assert any('Access to training' in c['source_quote'] for c in result.source_context)

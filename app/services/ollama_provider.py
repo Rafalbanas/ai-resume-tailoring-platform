@@ -13,6 +13,7 @@ from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import (
     JOB_ANALYSIS_SYSTEM_PROMPT,
+    RESUME_TAILOR_SYSTEM_PROMPT,
     AIProvider,
     AIProviderError,
     build_compact_analysis_payload,
@@ -257,22 +258,7 @@ class OllamaProvider(AIProvider):
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         return await self._chat(
             TailoredResume,
-            """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
-Set headline to the target role only. Python will use the verified current occupation; never add technologies,
-capabilities, requirements, or marketing wording to headline.
-Write 3–4 concise factual English summary sentences: current employment, relevant support/technical work, project integrations and professional communication when evidenced. Avoid marketing phrases and a project-dominated summary. Every summary must reference its supplied source IDs. Natural languages belong in Languages, never core_skills. Do not prepend Hands-on to skills. Every experience bullet must reference experience source IDs.
-Every project must use a supplied project name, reference project source IDs, and keep project identity in name.
-Project technologies may contain only supplied skill wording; never place a project name in technologies.
-Every education item must reference its education source ID.
-Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
-Select only relevant confirmed existing skill IDs (up to 16; no minimum) in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
-unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
-AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
-The source IDs, not string equality, bind paraphrased wording to verified facts.
-Only include skills, education, and certifications present in the master profile. Source IDs are mandatory because
-an independent Truth Lock will resolve them back to verified facts and reject unsupported content.
-Reference CVs are style examples only. Never copy their people, employers, facts, metrics, skills, education,
-certifications, projects, or responsibilities unless the same fact exists in the master profile.""",
+            RESUME_TAILOR_SYSTEM_PROMPT,
             payload,
             source_catalog=catalog,
             allowed_skills=allowed_skills,

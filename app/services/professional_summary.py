@@ -40,7 +40,7 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
     return " ".join(result)
 
 
-def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False) -> tuple[str, list[str]]:
+def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None) -> tuple[str, list[str]]:
     """Build up to four short sentences from attested clauses.
 
     Only punctuation/capitalization is composed. The one L1/L2 historical clause
@@ -50,16 +50,19 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False) -> 
     entries = [e for e in catalog.prompt_entries
                if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)]
     entries = [e for e in entries if not re.search(r"\byears?\b|\blat\b", e.text, re.I)]
-    tokens = normalized_tokens(role)
-    support = bool(tokens & {"support", "troubleshooting", "incident"})
+    from app.services.job_sections import relevance_text
+    tokens = normalized_tokens(relevance_text(role))
+    # A support duty mentioned in a different job must not force a support-first
+    # summary. Legacy support composition is retained for actual support roles.
+    support = bool(normalized_tokens(role.splitlines()[0] if role.splitlines() else role) & {"support", "troubleshooting", "incident"})
     if support:
         tokens |= {"support", "troubleshooting", "incident", "sql", "api", "automation", "english", "logs"}
     selected_ids: list[str] = []
     used = set()
     groups: list[list[str]] = [[], [], [], []]
 
-    def add(index, entry, text=None):
-        if not entry or entry.source_id in used:
+    def add(index, entry, text=None, *, reuse=False):
+        if not entry or (entry.source_id in used and not reuse):
             return
         clause = (text or entry.text).strip().rstrip(".!?")
         candidate = [list(g) for g in groups]
@@ -90,12 +93,12 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False) -> 
                 selected_ids.append(entry.source_id)
                 used.add(entry.source_id)
                 break
-    elif catalog.profile.experience:
+    elif catalog.profile.experience and support:
         current = catalog.profile.experience[0]
         fact = next((e for e in entries if e.kind == "experience" and e.owner_index == 0), None)
         if fact:
             add(0, fact, f"{current.title} at {current.company}" if current.end.casefold() in {"present", "current", "now", "obecnie"} else f"Experience as {current.title} at {current.company}")
-    else:
+    elif support:
         add(0, next(iter(entries), None))
     if support:
         historical = first(r"\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support", kinds={"experience"})
@@ -120,10 +123,24 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False) -> 
             if education:
                 source = catalog.profile.education[education.owner_index]
                 add(3, education, f"{source.qualification}, {source.institution} ({source.dates})")
-        ranked = sorted(entries, key=lambda e: len(normalized_tokens(e.text) & tokens), reverse=True)
+        ranked = sorted(entries, key=lambda e: ((priorities or {}).get(e.source_id, 0), len(normalized_tokens(e.text) & tokens)), reverse=True)
+        used_priorities = set()
         for entry in ranked:
-            if len(used) >= 4:
+            if len(used) >= 3:
                 break
+            priority = (priorities or {}).get(entry.source_id, 0)
+            if priority and priority in used_priorities:
+                # Several sentences citing the same leading requirement should
+                # not consume the summary at the expense of other evidence.
+                continue
             add(min(len(used), 3), entry)
+            if entry.source_id in used and priority:
+                used_priorities.add(priority)
+        if catalog.profile.experience:
+            current = catalog.profile.experience[0]
+            fact = next((e for e in entries if e.kind == 'experience' and e.owner_index == 0), None)
+            if fact:
+                identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
+                add(3, fact, identity, reuse=True)
     text = " ".join("; ".join(group) + "." for group in groups if group)
-    return deduplicate_summary(text, catalog), selected_ids
+    return deduplicate_summary(text, catalog), list(dict.fromkeys(selected_ids))
