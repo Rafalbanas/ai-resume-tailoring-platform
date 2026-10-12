@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.interpretation import JobInterpretation, ModelComponent, ModelRequirement
 from app.models.job import RequirementPriority, RequirementStatus
@@ -54,6 +54,16 @@ class CompactInterpretation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rows: list[CompactAssessment]
 
+    @model_validator(mode="before")
+    @classmethod
+    def expand_keyed_recovery(cls, value):
+        if isinstance(value, dict) and set(value) == {"assessments"}:
+            assessments = value["assessments"]
+            if not isinstance(assessments, dict) or any(not isinstance(row, dict) or "p" in row for row in assessments.values()):
+                raise ValueError("Keyed recovery requires assessment objects without repeated passage IDs")
+            return {"rows": [dict(row, p=pid) for pid, row in assessments.items()]}
+        return value
+
 
 COMPACT_PROMPT = """Interpret every supplied job passage using only the indexed candidate evidence.
 Evidence maps F IDs to [kind, owner ID, full fact, documented strength].
@@ -98,7 +108,8 @@ class AnalysisInventory:
 
     @classmethod
     def build(cls, job, profile, bank=None):
-        units, _ = extract_sections(job.job_description)
+        units, headings = extract_sections(job.job_description)
+        heading_keys = {h.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() for h in headings}
         passages = {}
         # Include unrecognized headings and all administrative/duty text, too.
         # A parser hint cannot silently remove a passage from model interpretation.
@@ -116,6 +127,7 @@ class AnalysisInventory:
                 "text": related[0].quote if related else text,
                 "hints": hints,
                 "section": section,
+                "context_only": position == 0 or cleaned.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() in heading_keys or bool(hints) and set(hints) <= {"competency", "organization", "benefits", "employment", "recruitment"},
             }
         entries = EvidenceMatcher(FactCatalog(profile), bank).entries
         evidence = {f"F{i + 1}": e for i, e in enumerate(entries)}
@@ -208,6 +220,36 @@ class AnalysisInventory:
         schema["properties"]["rows"]["items"] = variants[0] if len(variants) == 1 else {"anyOf": variants}
         del schema["$defs"]["CompactAssessment"]
         return schema
+
+    def keyed_schema(self, ids):
+        """Last recovery: the grammar requires each missing passage exactly once."""
+        from copy import deepcopy
+        schema = self.schema(ids)
+        definitions = schema["$defs"]
+        base = definitions.get("AssessmentRow") or definitions.get("QualificationRow") or definitions.get("CapabilityRow") or definitions["OtherRow"]
+        properties = {}
+        for pid in ids:
+            passage = self.passages[pid]
+            qualification = bool(set(passage["hints"]) & {"mandatory", "preferred", "nice_to_have"})
+            assessable = needs_assessment(passage)
+            kind = "KeyedQualification" if qualification else "KeyedCapability" if assessable else "KeyedContext"
+            if kind not in definitions:
+                row = deepcopy(base)
+                row["properties"].pop("p")
+                row["required"] = [key for key in row["required"] if key != "p"]
+                if assessable:
+                    row["properties"]["k"]["enum"] = ["requirement"] if qualification else ["requirement", "competency"]
+                    row["required"] = list(dict.fromkeys(row["required"] + ["n", "s", "f", "why", "priority"]))
+                    row["properties"]["n"]["minLength"] = 1
+                    row["properties"]["why"]["minLength"] = 1
+                else:
+                    row["properties"]["k"]["enum"] = ["context", "responsibility"]
+                definitions[kind] = row
+            # Reuse the grammar once per category, not once per source passage.
+            properties[pid] = {"$ref": f"#/$defs/{kind}"}
+        return {"type": "object", "$defs": definitions,
+                "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
+                "required": ["assessments"], "additionalProperties": False}
 
     def validate_rows(self, rows, ids):
         allowed = set(ids)

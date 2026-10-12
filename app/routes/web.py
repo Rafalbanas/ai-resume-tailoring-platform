@@ -15,6 +15,7 @@ from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
 from app.services.artifact_transaction import commit_artifacts, staged_artifacts
+from app.services.evidence_gaps import evidence_questions
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
 from app.services.profile_loader import save_master_profile
@@ -288,6 +289,8 @@ async def analysis_view(request: Request, draft_id: str):
             request,
             job=job,
             analysis=response.analysis,
+            token_usage=response.token_usage,
+            evidence_questions=evidence_questions(response.analysis),
             draft_id=draft_id,
             provider_used=getattr(response, "provider_used", "unknown"),
             model_used=getattr(response, "model_used", "unknown"),
@@ -295,6 +298,34 @@ async def analysis_view(request: Request, draft_id: str):
             fallback_reason=getattr(response, "fallback_reason", None),
         ),
     )
+
+
+@router.post("/analysis/{draft_id}/evidence")
+async def save_analysis_evidence(request: Request, draft_id: str):
+    guard(request)
+    form = await request.form()
+    validate_csrf(str(form.get("csrf_token", "")), request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
+    from app.services.evidence_gaps import answer_fact, evidence_questions
+    from app.services.profile_enrichment import apply_enrichment
+    try:
+        _, response = request.app.state.storage.load_draft(draft_id)
+        question = next((q for q in evidence_questions(response.analysis) if q["id"] == form.get("question_id")), None)
+        if question is None:
+            raise ValueError("This question is not a current evidence gap.")
+        fact = answer_fact(question, str(form.get("answer", "")), str(form.get("scope", "")),
+                           str(form.get("experience_context", "")), str(form.get("details", "")),
+                           consent=form.get("save_consent") == "on")
+        apply_enrichment(request.app.state.settings.data_dir, {"summary_facts": [fact]})
+        from app.services.profile_loader import load_master_profile
+        profile, status = load_master_profile(request.app.state.settings)
+        request.app.state.profile, request.app.state.profile_status = profile, status
+        # Providers hold this bank object: update it in place so later analyses
+        # use the saved facts without a restart or a separate scoring system.
+        request.app.state.skills_bank.profile = profile
+        request.app.state.skills_bank.catalog = FactCatalog(profile)
+    except (ValueError, FileNotFoundError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/analysis/{draft_id}?evidence_saved=1", status_code=303)
 
 
 @router.post("/generate/{draft_id}")
@@ -1062,7 +1093,7 @@ async def compare_view(
                 results = task.result["results"]
                 return request.app.state.templates.TemplateResponse(
                     "compare.html",
-                    context(request, job=job, results=results, task_id=task_id),
+                    context(request, job=job, results=results, task_id=task_id, token_usage=task.token_usage),
                 )
             if task.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
                 return request.app.state.templates.TemplateResponse(

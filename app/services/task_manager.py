@@ -50,6 +50,7 @@ class TaskRecord(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
     error_status_code: int | None = None
+    token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
 def compute_idempotency_key(kind: str, **kwargs) -> str:
@@ -242,6 +243,15 @@ class TaskManager:
                 self._queue.task_done()
 
     async def _execute_task(self, task: TaskRecord, app_state: Any) -> None:
+        from app.services.token_progress import track_tokens
+        def update(usage):
+            current = self.get_task(task.task_id) or task
+            current.token_usage = usage
+            self._save_task(current)
+        with track_tokens(update):
+            await self._execute_task_with_usage(task, app_state)
+
+    async def _execute_task_with_usage(self, task: TaskRecord, app_state: Any) -> None:
         if task.kind == TaskKind.TAILOR:
             await self._execute_tailor(task, app_state)
         elif task.kind == TaskKind.COMPARE:
@@ -288,6 +298,7 @@ class TaskManager:
 
         on_stage_cb("Saving application draft...")
 
+        response.token_usage = (self.get_task(task.task_id) or task).token_usage.copy()
         draft_id = app_state.storage.save_draft(job, response)
         exec_duration = time.perf_counter() - wall_start
         duration_ms = int(exec_duration * 1000)

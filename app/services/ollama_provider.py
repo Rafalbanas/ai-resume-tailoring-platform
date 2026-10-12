@@ -31,6 +31,7 @@ from app.services.ollama_analysis import (
 )
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
+from app.services.token_progress import new_call, report
 
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -160,6 +161,7 @@ class OllamaProvider(AIProvider):
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
@@ -182,18 +184,22 @@ class OllamaProvider(AIProvider):
                     envelope = response.json()
         except httpx.TimeoutException as exc:
             metrics["error_kind"] = "timeout"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("timeout", "Ollama timed out while generating the response. Try again.") from exc
         except httpx.RequestError as exc:
             metrics["error_kind"] = "unavailable"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         except httpx.HTTPStatusError as exc:
             kind = "context_budget" if any(w in exc.response.text.casefold() for w in ("context", "prompt too long")) else "http"
             metrics["error_kind"] = kind
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError(kind, "Ollama rejected the request (context budget or HTTP error).") from exc
         except ValueError as exc:
             metrics["error_kind"] = "envelope"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError("envelope", "Ollama returned an invalid HTTP JSON envelope.") from exc
 
         if not isinstance(envelope, dict) or not isinstance(envelope.get("message"), dict):
@@ -211,6 +217,10 @@ class OllamaProvider(AIProvider):
                        done_reason=envelope.get("done_reason"),
                        thinking_present=bool(envelope.get("message", {}).get("thinking")),
                        reasoning_tokens=envelope.get("thinking_eval_count"))
+        metrics["tokens_per_second"] = eval_tokens/(eval_ms/1000) if eval_ms > 0 and envelope.get("eval_count") is not None else None
+        report(progress_id, phase="done", input_tokens=envelope.get("prompt_eval_count"), output_tokens=envelope.get("eval_count"),
+               total_tokens=prompt_tokens+eval_tokens if envelope.get("prompt_eval_count") is not None and envelope.get("eval_count") is not None else None,
+               tokens_per_second=metrics["tokens_per_second"])
         logger.info(
             "Ollama call completed: model=%s, load=%.1fms, prompt_eval=%.1fms (%s tokens), eval=%.1fms (%s tokens), total=%.1fms",
             self.model,
@@ -271,11 +281,16 @@ class OllamaProvider(AIProvider):
                     recovery_prompt = ""
                     if recovery_calls:
                         recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
+                    keyed_recovery = recovery_calls >= 2
+                    if keyed_recovery:
+                        recovery_prompt += "\nFINAL RECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
                     result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
-                                              _schema=inventory.schema(pending))
+                                              _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
                     recovered = inventory.validate_rows(result.rows, pending)
                 except OllamaAnalysisError as exc:
                     if exc.kind != 'output_limit':
+                        if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
+                            self.call_metrics[-1]['error_kind'] = exc.kind
                         raise
                     recovered = inventory.validate_rows(exc.recovered, pending)
                     if recovery_calls >= 2:
@@ -290,8 +305,16 @@ class OllamaProvider(AIProvider):
                 covered -= invalid
                 rows.extend(recovered)
                 missing = [i for i in pending if i not in covered]
+                # Headings, organization/benefit text and portal tags already have
+                # source-parser dispositions. Tags are assessed independently by
+                # the existing role matcher; do not retry an LLM just for metadata.
+                from app.services.ollama_analysis import CompactAssessment
+                context_ids = [pid for pid in missing if inventory.passages[pid]["context_only"] and not needs_assessment(inventory.passages[pid])]
+                rows.extend(CompactAssessment(p=pid, k="context") for pid in context_ids)
+                missing = [pid for pid in missing if pid not in context_ids]
                 if self.call_metrics:
                     self.call_metrics[-1]['covered_passages'] = len(covered)
+                    self.call_metrics[-1]['source_context_resolved'] = len(context_ids)
                     self.call_metrics[-1]['unassessed_passages'] = len(missing)
                     if missing and self.call_metrics[-1].get('error_kind') is None:
                         self.call_metrics[-1]['error_kind'] = 'coverage'

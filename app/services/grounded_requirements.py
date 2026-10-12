@@ -298,7 +298,8 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     from app.models.job import RequirementComponent
     from app.services.semantic_requirements import explicit_list, validated_model_requirements
     for req in requirements:
-        parts = explicit_list(req.name)
+        from app.services.competency_scope import atomic_parts
+        parts = atomic_parts(req.name) or explicit_list(req.name)
         if parts and not req.components:
             req.components = []
             for part in parts:
@@ -394,7 +395,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         for status in RequirementStatus
     }
     result.role_alignment_summary = (
-        f"Role evidence: {result.role_competency_counts['strong']} confirmed competencies, "
+        f"Role context (excluded from qualification scoring): {result.role_competency_counts['strong']} confirmed competencies, "
         f"{result.role_competency_counts['partial']} partial matches, "
         f"{result.role_competency_counts['missing']} not confirmed in profile, "
         f"{result.role_competency_counts['absent']} confirmed gaps. "

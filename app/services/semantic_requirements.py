@@ -85,12 +85,21 @@ def language_check_name(name, level):
 
 
 def _facts(validator, item, *, practical_scope=False):
+    from app.services.competency_scope import scoped_match
+    scoped = scoped_match(validator.matcher, item.name)
+    from app.services.evidence_strength import CI
+    if scoped is None and CI.search(item.name):
+        scoped = validator.matcher.match(item.name)
+    if scoped is not None:
+        item.status = scoped.status
+        item.source_fact_ids = [e.source_id for e in scoped.entries]
+        item.reason = scoped.reason
     lookup = {e.source_id: e for e in validator.matcher.entries}
     entries = [lookup[i] for i in dict.fromkeys(item.source_fact_ids) if i in lookup and lookup[i].kind != "interest"]
     item.source_fact_ids = [e.source_id for e in entries]
     item.evidence = [e.text for e in entries]
     item.evidence_sources = validator.matcher.sources(item.source_fact_ids)
-    if item.status in {Status.STRONG, Status.PARTIAL} and not any(not NEGATIVE.search(e.text) for e in entries):
+    if scoped is None and item.status in {Status.STRONG, Status.PARTIAL} and not any(not NEGATIVE.search(e.text) for e in entries):
         item.status = Status.MISSING
         item.reason += " Cited evidence is missing or invalid; this does not establish a lack of competence."
     scoped_gap = (
@@ -114,7 +123,7 @@ def _facts(validator, item, *, practical_scope=False):
         item.status == Status.STRONG
         and entries
         and practical
-        and all(evidence_strength(e) == "declaration" for e in entries)
+        and all(evidence_strength(e) in {"declaration", "theoretical_knowledge"} for e in entries)
     ):
         item.status = Status.PARTIAL
         item.reason += " Declared knowledge is documented; practical use and the requested scope/level are not established by a technology name alone."
@@ -174,6 +183,12 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             (u.section for u in units if req.source_quote in u.quote), "Unsectioned source"
         )
         req.required_level = quoted_language_level(req.name, " ".join(quotes)) or req.required_level
+        from app.models.job import RequirementComponent
+        from app.services.competency_scope import atomic_parts
+        parts = atomic_parts(req.source_quote) or atomic_parts(req.name)
+        if parts:
+            req.operator = "all"
+            req.components = [RequirementComponent(name=part) for part in parts]
         entries = _facts(validator, req)
         if not req.reason.strip():
             req.interpretation_uncertain = True
@@ -238,8 +253,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
                 component,
                 practical_scope=bool(
                     re.search(
-                        r"\bexperience\b|\bpractical\b|hands.on|\bproficien\w*|\b(?:install|configur|develop|implement|deploy|troubleshoot|script)\w*|working|production",
-                        req.name + " " + " ".join(quotes),
+                        r"(?m)^(?:practical|hands.on|professional|experience|proficien\w*|(?:install|configur|develop|implement|deploy|troubleshoot|script)\w*|working|production)\b",
+                        req.name + "\n" + " ".join(quotes),
                         re.I,
                     )
                 ),
