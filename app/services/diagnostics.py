@@ -55,7 +55,7 @@ class DiagnosticLogStore:
     ) -> dict:
         allowed = {"provider", "model", "stage", "prompt_tokens", "completion_tokens", "reasoning_tokens", "total_ms",
                    "client_ms", "done_reason", "num_predict", "num_ctx", "thinking_present", "error_kind",
-                   "assessed_requirements", "recovery_calls", "covered_passages", "unassessed_passages"}
+                   "assessed_requirements", "recovery_calls", "covered_passages", "unassessed_passages", "source_context_resolved"}
         # Explicit allowlist: never persist raw content, payloads or CV facts here.
         safe_calls = [{k: v for k, v in call.items() if k in allowed and isinstance(v, (str, int, float, bool, type(None)))}
                       for call in (call_metrics or [])]

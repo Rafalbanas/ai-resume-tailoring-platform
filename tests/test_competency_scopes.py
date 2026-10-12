@@ -213,3 +213,27 @@ def test_final_recovery_contract_requires_each_missing_passage():
     assert not schema['properties']['assessments']['additionalProperties']
     parsed = CompactInterpretation.model_validate({'assessments': {pid: {'k': 'requirement', 'n': 'Knowledge', 's': 'missing', 'f': [], 'why': 'No evidence', 'priority': 'mandatory'} for pid in ids}})
     assert [r.p for r in inventory.validate_rows(parsed.rows, ids)] == ids
+
+
+@pytest.mark.asyncio
+async def test_complete_qualifications_do_not_retry_for_source_headers():
+    import json
+
+    import httpx
+
+    from app.core.config import Settings
+    from app.models.job import JobRequest
+    from app.services.ollama_provider import OllamaProvider
+    requests = []
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        passages = json.loads(body['messages'][1]['content'])['passages']
+        rows = [{'p': p['id'], 'k': 'requirement', 'n': p['text'], 's': 'missing', 'f': [], 'why': 'No evidence', 'priority': 'mandatory'} for p in passages if p['requires_assessment']]
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done': True, 'done_reason': 'stop'})
+    provider = OllamaProvider(Settings(_env_file=None), transport=httpx.MockTransport(handler))
+    result = await provider.analyze_job(JobRequest(company='Synthetic', role='DevOps', job_description='Requirements\nUnderstanding of networking concepts\nFamiliarity with version control systems'), profile_with())
+    assert result.is_reliable and len(result.requirements) == 2
+    assert len(requests) == 1
+    assert provider.call_metrics[-1]['recovery_calls'] == 0
+    assert provider.call_metrics[-1]['source_context_resolved'] == 2

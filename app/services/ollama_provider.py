@@ -295,8 +295,16 @@ class OllamaProvider(AIProvider):
                 covered -= invalid
                 rows.extend(recovered)
                 missing = [i for i in pending if i not in covered]
+                # Headings, organization/benefit text and portal tags already have
+                # source-parser dispositions. Tags are assessed independently by
+                # the existing role matcher; do not retry an LLM just for metadata.
+                from app.services.ollama_analysis import CompactAssessment
+                context_ids = [pid for pid in missing if inventory.passages[pid]["context_only"] and not needs_assessment(inventory.passages[pid])]
+                rows.extend(CompactAssessment(p=pid, k="context") for pid in context_ids)
+                missing = [pid for pid in missing if pid not in context_ids]
                 if self.call_metrics:
                     self.call_metrics[-1]['covered_passages'] = len(covered)
+                    self.call_metrics[-1]['source_context_resolved'] = len(context_ids)
                     self.call_metrics[-1]['unassessed_passages'] = len(missing)
                     if missing and self.call_metrics[-1].get('error_kind') is None:
                         self.call_metrics[-1]['error_kind'] = 'coverage'
