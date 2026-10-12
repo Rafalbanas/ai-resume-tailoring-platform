@@ -36,6 +36,8 @@ def web_link(value: str) -> str:
         raise ValueError("Invalid link host or port.") from exc
     if "." not in host and host != "localhost":
         raise ValueError("Invalid link host.")
+    if value.isascii():
+        return value  # Preserve an already valid target byte for byte.
     authority = host + (f":{port}" if port else "")
     return urlunsplit((parsed.scheme, authority, quote(parsed.path, safe="%/:@-._~!$&'()*+,;="),
                        quote(parsed.query, safe="%=&/:?@-._~!$'()*+,;"), quote(parsed.fragment, safe="%-._~")))
@@ -72,27 +74,50 @@ def link_display(value: str) -> str:
 def prepare_resume(resume: TailoredResume, profile: CandidateProfile) -> TailoredResume:
     contacts(profile)
     prepared = deepcopy(resume)
+    from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues
+    prepared.professional_summary = deduplicate_text(prepared.professional_summary)
     clean = []
     keys = set()
+    families = {}
     for skill in prepared.core_skills:
-        value = re.sub(r"^hands[- ]on\s+", "", skill.strip(), flags=re.I)
+        value = skill.strip()
         if not value or is_language_skill(value, profile):
             continue
         key = re.sub(r"\W+", " ", value.casefold()).strip()
+        bare = re.sub(r'^(?:hands[- ]on|basic|junior|advanced|expert)\s+', '', value, flags=re.I)
+        family = re.sub(r'\W+', ' ', bare.casefold()).strip()
+        qualified = bare != value
+        if family in families:
+            index, previous_qualified = families[family]
+            if previous_qualified and not qualified:
+                continue
+            if qualified and not previous_qualified:
+                clean[index] = value
+                families[family] = index, True
+                keys.add(key)
+                continue
         if key not in keys:
+            families[family] = len(clean), qualified
             clean.append(value)
             keys.add(key)
     prepared.core_skills = clean
     for project in prepared.projects:
+        project.description = deduplicate_text(project.description)
         if project.url:
             project.url = web_link(project.url)
         project.technologies = list(dict.fromkeys(
-            re.sub(r"^hands[- ]on\s+", "", value.strip(), flags=re.I)
+            value.strip()
             for value in project.technologies if value.strip() and not is_language_skill(value, profile)))
     prepared.projects = [p for p in prepared.projects if p.name.strip() and (p.description.strip() or p.technologies)]
     prepared.experience = [e for e in prepared.experience if e.company.strip() and e.title.strip() and e.bullets]
     prepared.education = [e for e in prepared.education if e.institution.strip() and e.qualification.strip()]
     prepared.certifications = [c for c in prepared.certifications if c.name.strip()]
+    for experience in prepared.experience:
+        experience.bullets = deduplicate_bullets(experience.bullets)
+    fatal = [issue for issue in quality_issues(prepared, profile)
+             if issue.startswith(('Empty', 'Unfinished', 'Unsupported proficiency'))]
+    if fatal:
+        raise ValueError(' '.join(fatal))
     return prepared
 
 

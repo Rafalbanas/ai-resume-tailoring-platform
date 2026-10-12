@@ -76,7 +76,9 @@ def test_priority_does_not_bleed_across_sections(profile):
 
 def test_ats_preserves_long_text_and_reading_order(tmp_path, profile, resume_payload):
     resume = TailoredResume.model_validate(resume_payload)
-    resume.experience[0].bullets[0].text = 'Zażółć gęślą jaźń. ' * 600
+    # Distinct numbered facts exercise pagination; exact copies should now be
+    # deduplicated instead of artificially making a 600-sentence document.
+    resume.experience[0].bullets[0].text = ' '.join(f'Zażółć gęślą jaźń — zadanie {i}.' for i in range(600))
     generator = PDFGenerator(Path('templates'), Path('static'), tmp_path)
     fitted, warnings = generator.fit_resume(resume, profile, template_name='ats_classic')
     assert fitted == resume and not warnings

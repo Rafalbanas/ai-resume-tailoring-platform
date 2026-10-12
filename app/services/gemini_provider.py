@@ -123,6 +123,7 @@ class GeminiProvider(AIProvider):
     ):
         self.api_key = (settings.gemini_api_key or "").strip()
         self.model = (settings.gemini_model or "gemini-3.1-flash-lite").strip()
+        self.summary_review_key = settings.csrf_secret
         self.base_url = (settings.gemini_base_url or "https://generativelanguage.googleapis.com").rstrip("/")
         self.connect_timeout = getattr(settings, "gemini_connect_timeout_seconds", 10.0)
         self.read_timeout = getattr(
@@ -350,7 +351,7 @@ class GeminiProvider(AIProvider):
             allowed_skills = [skill for values in profile.skills.values() for skill in values]
             allowed_skill_ids = []
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
-        return await self._chat(
+        resume = await self._chat(
             TailoredResume,
             RESUME_TAILOR_SYSTEM_PROMPT,
             payload,
@@ -358,6 +359,9 @@ class GeminiProvider(AIProvider):
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
+
+        from app.services.summary_review import review_summary
+        return await review_summary(self, resume, profile)
 
     async def tailor(
         self,
