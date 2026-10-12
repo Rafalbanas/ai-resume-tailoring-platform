@@ -279,6 +279,8 @@ class OllamaProvider(AIProvider):
                     recovered = inventory.validate_rows(result.rows, pending)
                 except OllamaAnalysisError as exc:
                     if exc.kind != 'output_limit':
+                        if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
+                            self.call_metrics[-1]['error_kind'] = exc.kind
                         raise
                     recovered = inventory.validate_rows(exc.recovered, pending)
                     if recovery_calls >= 2:

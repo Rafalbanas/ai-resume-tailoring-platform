@@ -236,7 +236,7 @@ class AnalysisInventory:
                 row["properties"]["n"]["minLength"] = 1
                 row["properties"]["why"]["minLength"] = 1
             else:
-                row["properties"]["k"]["enum"] = ["context", "responsibility", "requirement", "competency"]
+                row["properties"]["k"]["enum"] = ["context", "responsibility"]
             properties[pid] = row
         return {"type": "object", "$defs": definitions,
                 "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
