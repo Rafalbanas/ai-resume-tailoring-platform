@@ -49,6 +49,7 @@ class OllamaProvider(AIProvider):
         semaphore: asyncio.Semaphore | None = None,
     ):
         self.call_metrics = []
+        self.summary_review_key = settings.csrf_secret
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
         self.connect_timeout = getattr(settings, "ollama_connect_timeout_seconds", 10.0)
@@ -112,7 +113,7 @@ class OllamaProvider(AIProvider):
             }
             properties = schema["properties"]
             definitions = schema["$defs"]
-            properties["summary_source_fact_ids"]["items"]["enum"] = ids_by_type["summary"]
+            properties["summary_source_fact_ids"]["items"]["enum"] = [e["source_id"] for e in source_catalog if e["type"] in {"summary", "experience", "project", "education", "skill"}]
             properties["summary_source_fact_ids"]["minItems"] = 1
             properties["core_skills"]["items"]["enum"] = allowed_skills or []
             properties["selected_skill_ids"]["items"]["enum"] = allowed_skill_ids or []
@@ -256,7 +257,7 @@ class OllamaProvider(AIProvider):
             allowed_skills = [skill for values in profile.skills.values() for skill in values]
             allowed_skill_ids = []
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
-        return await self._chat(
+        resume = await self._chat(
             TailoredResume,
             RESUME_TAILOR_SYSTEM_PROMPT,
             payload,
@@ -264,6 +265,9 @@ class OllamaProvider(AIProvider):
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
+
+        from app.services.summary_review import review_summary
+        return await review_summary(self, resume, profile)
 
     async def tailor(
         self,

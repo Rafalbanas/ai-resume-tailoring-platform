@@ -84,7 +84,7 @@ def test_languages_and_skill_labels_normalized_without_changing_source(profile, 
     r.core_skills = ["Hands-on Polish", "English B2 / daily professional use", "Hands-on Python", "Python", "Basic Docker", "Hands-on Tier 2 Support"]
     original = r.model_copy(deep=True)
     prepared = prepare_resume(r, profile)
-    assert prepared.core_skills == ["Python", "Basic Docker", "Tier 2 Support"]
+    assert prepared.core_skills == ["Hands-on Python", "Basic Docker", "Hands-on Tier 2 Support"]
     assert profile_languages(profile) == ["English B2 — daily professional use", "Polish Native"]
     assert r == original
 

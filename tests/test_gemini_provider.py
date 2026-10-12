@@ -116,7 +116,8 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
 
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        data = analysis_payload() if len(requests) == 1 else resume_payload()
+        data = (analysis_payload() if len(requests) == 1 else resume_payload() if len(requests) == 2
+                else {'supported': False, 'issues': ['Unheld engineer role and unsupported architecture experience.']})
         return httpx.Response(200, json=gemini_response_envelope(data))
 
     provider = gemini_provider(httpx.MockTransport(handler))
@@ -126,7 +127,7 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
     assert result.model_used == "gemini-3.1-flash-lite"
     assert result.analysis.strong_matches == ["Python", "Linux"]
     assert result.resume.core_skills == ["Python", "Linux"]
-    assert len(requests) == 2
+    assert len(requests) == 3  # Includes the semantic review of a non-verbatim summary.
 
     # Check auth header security: API key is in header, not URL
     for req in requests:

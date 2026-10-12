@@ -27,11 +27,12 @@ class ValidationResult:
 class FactValidator:
     """Turns model output into profile-backed data; prompts are never the trust boundary."""
 
-    def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None, analysis: JobAnalysis | None = None):
+    def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None, analysis: JobAnalysis | None = None, *, review_key: str = ""):
         self.profile = profile
         self.catalog = FactCatalog(profile)
         self.skills_bank = skills_bank
         self.analysis = analysis
+        self.review_key = review_key
         self.fact_priorities: dict[str, float] = {}
         if analysis:
             for position, requirement in enumerate([*analysis.requirements, *analysis.role_competencies]):
@@ -144,15 +145,24 @@ class FactValidator:
         model_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience", "project"}
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
-        if (draft.professional_summary == summary or sentence_count > 5
-                or not self.catalog.supports_paraphrase(draft.professional_summary, model_ids)):
+        from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues, unfinished
+        from app.services.summary_review import sign_summary, valid_summary_attestation
+        reviewed = valid_summary_attestation(draft, self.profile, self.review_key)
+        if reviewed:
+            model_ids = [e.source_id for e in summary_entries]
+        if (unfinished(draft.professional_summary) or (sentence_count > 5 and not reviewed)
+                or not (reviewed or self.catalog.supports_paraphrase(draft.professional_summary, model_ids))):
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
             draft.professional_summary = summary
             draft.summary_source_fact_ids = summary_ids
+            draft.summary_attestation = ''
         else:
             draft.summary_source_fact_ids = model_ids
         draft.professional_summary = deduplicate_summary(draft.professional_summary, self.catalog)
+        draft.professional_summary = deduplicate_text(draft.professional_summary)
+        if reviewed:
+            draft.summary_attestation = sign_summary(draft, self.profile, self.review_key)
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
             bullets = []
@@ -413,6 +423,11 @@ class FactValidator:
             clean_certs.append(ResumeCertification(**cert_lookup[cert.name.casefold()].model_dump()))
         draft.certifications = clean_certs
         warnings.extend(self._coverage_warnings(draft, job))
+        for project in draft.projects:
+            project.description = deduplicate_text(project.description)
+        for experience in draft.experience:
+            experience.bullets = deduplicate_bullets(experience.bullets)
+        warnings.extend(quality_issues(draft, self.profile))
         return ValidationResult(resume=draft, warnings=warnings)
 
     @staticmethod
@@ -435,7 +450,8 @@ class FactValidator:
                     selected.append(self._complete_sentence(entry.text))
             if len(selected) == 2:
                 break
-        return ' '.join(selected) or source.description or ' '.join(source.facts[:2])
+        from app.services.content_quality import deduplicate_text
+        return deduplicate_text(' '.join(selected) or source.description or ' '.join(source.facts[:2]))
 
     def _coverage_warnings(self, resume: TailoredResume, job: JobRequest) -> list[str]:
         """Compare confirmed employer requirements against actual exported content.

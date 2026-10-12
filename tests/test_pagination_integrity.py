@@ -20,7 +20,7 @@ def document_with_projects(resume_payload, count=3):
         {
             "name": f"Project {i}",
             "description": "Implemented a documented workflow for operational data analysis and API integration. "
-            + ("Additional verified workflow detail. " * 6),
+            + ' '.join(f'Additional verified workflow detail {j}.' for j in range(6)),
             "technologies": ["Python", "JSON", "SQL"],
             "source_fact_ids": ["fixture"],
             "url": "https://example.com/projects/" + str(i),

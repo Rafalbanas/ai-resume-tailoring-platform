@@ -310,7 +310,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     if not response.analysis.is_reliable:
         raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis).validate(response.resume, job)
+    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret).validate(response.resume, job)
     try:
         prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:
@@ -518,7 +518,7 @@ def _regenerate_artifacts(
     template_name: str = "modern_sidebar",
     photo_enabled: bool = False,
 ) -> list[str]:
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resume, job, preserve_skills=True)
+    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide, template_name=template_name,
@@ -574,7 +574,7 @@ async def save_resume_edit(request: Request, slug: str):
                 photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
             _refresh_photo_artifacts(request, slug, photo_enabled=photo_enabled, template_name=template_name)
             return RedirectResponse(f"/preview/{slug}", status_code=303)
-        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(edited, job, preserve_skills=True)
+        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(edited, job, preserve_skills=True)
         changed = (
             checked.resume.professional_summary != edited.professional_summary
             or [[b.text for b in e.bullets] for e in checked.resume.experience] != [[b.text for b in e.bullets] for e in edited.experience]

@@ -96,6 +96,8 @@ class Storage:
             "fallback_used": bool(fallback_used),
             "fallback_reason": fallback_reason,
             "pre_fit_available": pre_fit_resume is not None,
+            "summary_attestation": resume.summary_attestation,
+            "generated_summary_attestation": resume.summary_attestation,
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
@@ -135,6 +137,8 @@ class Storage:
                 job_url=metadata.get("job_url"),
                 job_description=(folder / "job.txt").read_text(encoding="utf-8"),
             )
+        resume.summary_attestation = metadata.get('summary_attestation', '')
+        generated.summary_attestation = metadata.get('generated_summary_attestation', '')
         return job, resume, generated, metadata
 
     def save_current_resume(
@@ -156,6 +160,7 @@ class Storage:
         metadata_path = folder / "metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["warnings"] = warnings
+        metadata['summary_attestation'] = resume.summary_attestation
         if truth_lock_warnings is not None:
             metadata["truth_lock_warnings"] = truth_lock_warnings
         if layout_warnings is not None:

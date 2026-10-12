@@ -16,7 +16,7 @@ from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
 from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
-from app.services.professional_summary import build_summary, deduplicate_summary
+from app.services.professional_summary import deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
 from app.services.resume_export import contacts, link_display, prepare_resume, validate_layout, validate_pdf_output
 
@@ -320,24 +320,9 @@ class PDFGenerator:
             guide[key] = True
             if self._fits_one_page(fitted, profile, guide):
                 return fitted, self._layout_warnings(resume, fitted, guide)
-        # Content adapts only at the explicit fit boundary. Employment, dates,
-        # education and project identities stay intact; PDF and DOCX receive the
-        # same fitted object and pre_fit_resume remains available for restoration.
-        fitted.professional_summary, fitted.summary_source_fact_ids = build_summary(FactCatalog(profile), job_text or resume.headline, compact=True)
-        if self._fits_one_page(fitted, profile, guide):
-            return fitted, self._layout_warnings(resume, fitted, guide)
-        # Skill order already expresses relevance from the validated model/bank.
-        # Only a physically overflowing sidebar permits lowering its count.
-        metrics = self._layout_metrics(fitted, profile, guide)
-        if not metrics["sidebar_fits"]:
-            while len(fitted.core_skills) > 10:
-                fitted.core_skills.pop()
-                if len(fitted.selected_skill_ids) == len(fitted.core_skills) + 1:
-                    fitted.selected_skill_ids.pop()
-                if self._fits_one_page(fitted, profile, guide):
-                    return fitted, self._layout_warnings(resume, fitted, guide)
-                if self._layout_metrics(fitted, profile, guide)["sidebar_fits"]:
-                    break
+        # Pagination is presentation, not a second content generator. Preserve
+        # the validated natural summary, evidence IDs and level-labelled skills.
+        # Overflow sections move into normal flow in _render_document.
         return fitted, self._layout_warnings(resume, fitted, guide) + ["Full employment, education and projects retained across multiple pages; continuation balanced"]
 
     def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:

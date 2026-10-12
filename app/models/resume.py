@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
 class ResumeBullet(BaseModel):
@@ -42,6 +42,15 @@ class TailoredResume(BaseModel):
     headline: str = Field(max_length=140)
     professional_summary: str = Field(max_length=700)
     summary_source_fact_ids: list[str] = Field(default_factory=list)
+    _summary_attestation: str = PrivateAttr(default="")
+
+    @property
+    def summary_attestation(self) -> str:
+        return self._summary_attestation
+
+    @summary_attestation.setter
+    def summary_attestation(self, value: str) -> None:
+        self._summary_attestation = value
     core_skills: list[str] = Field(max_length=18)
     selected_skill_ids: list[str] = Field(default_factory=list, max_length=16)
     experience: list[ResumeExperience]
@@ -59,6 +68,15 @@ class WorkflowResponse(BaseModel):
     model_used: str = "unknown"
     fallback_used: bool = False
     fallback_reason: str | None = None
+    summary_attestation: str = Field(default="", max_length=128)
+
+    @model_validator(mode='after')
+    def attach_summary_review(self):
+        if self.summary_attestation:
+            self.resume.summary_attestation = self.summary_attestation
+        else:
+            self.summary_attestation = self.resume.summary_attestation
+        return self
 
 
 from app.models.job import JobAnalysis  # noqa: E402
