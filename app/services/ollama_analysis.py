@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.interpretation import JobInterpretation, ModelComponent, ModelRequirement
 from app.models.job import RequirementPriority, RequirementStatus
@@ -53,6 +53,16 @@ class CompactAssessment(BaseModel):
 class CompactInterpretation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rows: list[CompactAssessment]
+
+    @model_validator(mode="before")
+    @classmethod
+    def expand_keyed_recovery(cls, value):
+        if isinstance(value, dict) and set(value) == {"assessments"}:
+            assessments = value["assessments"]
+            if not isinstance(assessments, dict) or any(not isinstance(row, dict) or "p" in row for row in assessments.values()):
+                raise ValueError("Keyed recovery requires assessment objects without repeated passage IDs")
+            return {"rows": [dict(row, p=pid) for pid, row in assessments.items()]}
+        return value
 
 
 COMPACT_PROMPT = """Interpret every supplied job passage using only the indexed candidate evidence.
@@ -208,6 +218,29 @@ class AnalysisInventory:
         schema["properties"]["rows"]["items"] = variants[0] if len(variants) == 1 else {"anyOf": variants}
         del schema["$defs"]["CompactAssessment"]
         return schema
+
+    def keyed_schema(self, ids):
+        """Last recovery: the grammar requires each missing passage exactly once."""
+        from copy import deepcopy
+        schema = self.schema(ids)
+        definitions = schema["$defs"]
+        base = definitions.get("AssessmentRow") or definitions.get("QualificationRow") or definitions.get("CapabilityRow") or definitions["OtherRow"]
+        properties = {}
+        for pid in ids:
+            row = deepcopy(base)
+            row["properties"].pop("p")
+            row["required"] = [key for key in row["required"] if key != "p"]
+            if needs_assessment(self.passages[pid]):
+                row["properties"]["k"]["enum"] = ["requirement", "competency"]
+                row["required"] = list(dict.fromkeys(row["required"] + ["n", "s", "f", "why", "priority"]))
+                row["properties"]["n"]["minLength"] = 1
+                row["properties"]["why"]["minLength"] = 1
+            else:
+                row["properties"]["k"]["enum"] = ["context", "responsibility", "requirement", "competency"]
+            properties[pid] = row
+        return {"type": "object", "$defs": definitions,
+                "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
+                "required": ["assessments"], "additionalProperties": False}
 
     def validate_rows(self, rows, ids):
         allowed = set(ids)

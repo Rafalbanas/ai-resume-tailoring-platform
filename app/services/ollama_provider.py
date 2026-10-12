@@ -271,8 +271,11 @@ class OllamaProvider(AIProvider):
                     recovery_prompt = ""
                     if recovery_calls:
                         recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
+                    keyed_recovery = recovery_calls >= 2
+                    if keyed_recovery:
+                        recovery_prompt += "\nFINAL RECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
                     result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
-                                              _schema=inventory.schema(pending))
+                                              _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
                     recovered = inventory.validate_rows(result.rows, pending)
                 except OllamaAnalysisError as exc:
                     if exc.kind != 'output_limit':

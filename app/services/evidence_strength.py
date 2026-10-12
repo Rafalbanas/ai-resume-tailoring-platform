@@ -11,7 +11,7 @@ ARTIFACT = re.compile(
     re.I,
 )
 EXECUTION = re.compile(
-    r"\b(?:runs?|executes?|passed|passing|successful(?:ly)?|verified|validated)\b.{0,100}\b(?:tests?|lint|builds?|pipeline|workflow|deploy\w*)\b|\b(?:tests?|builds?|pipeline|workflow)\b.{0,80}\b(?:passed|passing|successful(?:ly)?|verified|runs?)\b",
+    r"\b(?:runs?|executes?|passed|passing|successful(?:ly)?)\b.{0,100}\b(?:tests?|lint|builds?|pipeline|workflow|deploy\w*)\b|\b(?:tests?|builds?|pipeline|workflow)\b.{0,80}\b(?:passed|passing|successful(?:ly)?|runs?)\b",
     re.I,
 )
 NEGATION = re.compile(
@@ -29,6 +29,8 @@ def evidence_strength(entry):
             return "implementation"
         if USE.search(text) and entry.kind != "skill":
             return "documented_use"
+    if re.search(r"theoretical (?:knowledge|understanding)|(?:completed|attended|studied).*(?:training|course)|awareness of", text, re.I):
+        return "theoretical_knowledge"
     if entry.kind == "skill" or ":technology:" in entry.source_id:
         return "declaration"
     return "documented_use"

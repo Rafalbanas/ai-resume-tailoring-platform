@@ -130,12 +130,22 @@
   </div>
 </section>
 {% endif %}
+{% if request.query_params.get('evidence_saved') %}<p class="alert">Evidence saved for future analyses. This saved report keeps its original assessment; run a new analysis to use the new facts.</p>{% endif %}
+{% if evidence_questions %}<section class="card"><h2>Complete missing profile evidence</h2><p>Answer only where you have actual knowledge or experience. Saved answers are available in future analyses and do not automatically enter your CV.</p>
+{% for question in evidence_questions %}<details><summary>{{ question.name }}</summary><p>{{ question.question }}</p><small>Job source: {{ question.source_quote }}</small>
+<form action="{{ app_root_path|default('') }}/analysis/{{ draft_id }}/evidence" method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="question_id" value="{{ question.id }}">
+<label>Answer<select name="answer" required><option value="confirm">I have knowledge or experience</option><option value="deny">I do not have this knowledge or experience</option></select></label>
+<label>Scope<select name="scope" required><option value="theoretical">Theoretical knowledge</option><option value="practical">Practical use</option><option value="professional">Professional practice</option></select></label>
+<label>Context<select name="experience_context" required><option value="education">Education or training</option><option value="project">Project</option><option value="employment">Employment</option><option value="personal">Personal learning or use</option></select></label>
+<label>What did you actually do or learn? Include limits.<textarea name="details" minlength="10" maxlength="500" required></textarea></label>
+<label><input type="checkbox" name="save_consent" required> I confirm this information and agree to save it in my profile.</label><button type="submit">Save confirmed answer</button></form></details>{% endfor %}</section>{% endif %}
 {% if analysis.profile_clarifications %}<details class="card"><summary>Profile details worth confirming ({{ analysis.profile_clarifications|length }})</summary><ul>{% for item in analysis.profile_clarifications %}<li>{{ item }}</li>{% endfor %}</ul></details>{% endif %}
 
 {% if analysis.role_competencies %}<section class="card"><h2>Role competencies — evidence and listed levels</h2>
 {% for item in analysis.role_competencies %}
 <p><strong>{{ item.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed in profile', 'absent':'Confirmed gap'}.get(item.status, item.status) }}.
-{% if item.required_level %}Listed level: {{ item.required_level }} — proficiency at this level is not verified.{% else %}Required level unspecified.{% endif %}
+{% if item.required_level %}Listed level: {{ item.required_level }} — see the scope and evidence assessment below.{% else %}Required level unspecified.{% endif %}
 <br><small>Source: {{ item.source_quotes|default([item.source_quote], true)|join('; ') }}. {{ item.classification_basis }}</small>
 <br><small>Evidence: {{ item.evidence|join('; ') }}</small><br><small>{{ item.reason }}</small></p>
 {% if item.evidence_sources %}<details><summary>Evidence sources</summary>{% for source in item.evidence_sources %}<p>{{ source.owner or source.type }}: {{ source.fact }}<br><small>{{ source.source_id }}</small></p>{% endfor %}</details>{% endif %}
