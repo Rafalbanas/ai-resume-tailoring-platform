@@ -170,6 +170,27 @@ class EvidenceMatcher:
             reasons.append(f'{lang}: documented {", ".join(dict.fromkeys(declared)) or "use only"}; required {required or required_level(name) or "language knowledge"}.')
         return self._result(entries, all(confirmations), ' '.join(reasons))
 
+    def cited_tenure(self, ids, minimum):
+        """Use LLM-selected duties; compute interval union without title heuristics."""
+        selected = [e for e in self.entries if e.source_id in ids and e.kind == 'experience' and not NEGATIVE.search(e.text)]
+        owners = {e.owner_index for e in selected}
+        intervals = []
+        for index, exp in enumerate(self.catalog.profile.experience):
+            if index not in owners:
+                continue
+            start, end = _month(exp.start, end=False, as_of=self.as_of), _month(exp.end, end=True, as_of=self.as_of)
+            if start and end and start < min(end, self.as_of):
+                intervals.append((start, min(end, self.as_of)))
+        merged = []
+        for start, end in sorted(intervals):
+            if merged and start <= merged[-1][1]:
+                merged[-1] = merged[-1][0], max(merged[-1][1], end)
+            else:
+                merged.append((start, end))
+        years = sum((end-start).days for start, end in merged) / 365.2425
+        return self._result(selected, years >= minimum,
+            f'LLM-selected dated employment supports {years:.2f} years against {minimum:g}; overlap counted once, gaps/undated work excluded, Present capped at evaluation date.', observed=round(years, 2))
+
     def _tenure(self, name):
         minimum = required_years(name)
         if minimum is None:
@@ -297,6 +318,9 @@ class EvidenceMatcher:
         entries = self._find(FAMILIES[key]) if key else []
         practical = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
         if key == 'sql':
+            named_products = re.findall(r'\bOracle\b|\bPostgreSQL\b|\bPL/SQL\b', name, re.I)
+            if named_products and not all(any(re.search(re.escape(product), e.text, re.I) for e in practical) for product in named_products):
+                return self._result(entries, False, 'Generic SQL/T-SQL practice does not confirm the named database products or PL/SQL dialect; review each product separately.')
             product_pattern = r'\b(?:t-sql|transact-sql)\b' if re.search(r'\b(?:t-sql|transact-sql)\b', name, re.I) else r'\b(?:sql server|ms sql|mssql)\b' if re.search(r'\b(?:sql server|ms sql|mssql)\b', name, re.I) else ''
             if product_pattern:
                 specific = [e for e in entries if re.search(product_pattern, e.text, re.I)]

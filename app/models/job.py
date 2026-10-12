@@ -34,6 +34,16 @@ class RequirementStatus(StrEnum):
     ABSENT = "absent"
 
 
+class RequirementComponent(BaseModel):
+    name: str
+    status: RequirementStatus = RequirementStatus.MISSING
+    required_level: str = ""
+    source_fact_ids: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    evidence_sources: list[dict[str, str]] = Field(default_factory=list)
+    reason: str = ""
+
+
 class JobRequirement(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -47,6 +57,8 @@ class JobRequirement(BaseModel):
     operator: Literal["single", "all", "any", "ambiguous"] = "single"
     alternatives: list[str] = Field(default_factory=list)
     accepted_alternatives: list[str] = Field(default_factory=list)
+    interpretation_origin: Literal["", "llm", "source_review"] = ""
+    components: list[RequirementComponent] = Field(default_factory=list)
     interpretation_uncertain: bool = False
     scoring_key: str = ""
     duplicate_of: str = ""
@@ -109,6 +121,9 @@ class JobAnalysis(BaseModel):
     reasoning_summary: str = Field(default="", max_length=2000)
     requirements: list[JobRequirement] = Field(default_factory=list)
     is_reliable: bool = True
+    analysis_method: Literal["legacy", "llm_validated", "source_review"] = "legacy"
+    job_source: dict[str, str] = Field(default_factory=dict)
+    source_context: list[dict[str, str]] = Field(default_factory=list)
     analysis_language: str = ""
     completeness_issues: list[str] = Field(default_factory=list)
     source_sections: list[str] = Field(default_factory=list)

@@ -47,6 +47,8 @@ def generate_docx(
     styles = document.styles
     styles["Normal"].font.name = "Arial"
     styles["Normal"].font.size = Pt(10.5)
+    styles["Normal"].paragraph_format.space_after = Pt(3)
+    styles["Normal"].paragraph_format.line_spacing = 1.15
     styles["Title"].font.size = Pt(24)
     styles["Heading 1"].font.size = Pt(12)
     styles["Heading 2"].font.size = Pt(10.5)
@@ -119,10 +121,15 @@ def generate_docx(
         for item in resume.projects:
             document.add_heading(item.name, level=2)
             if item.url:
-                add_link(document.add_paragraph(), item.url, item.url)
-            document.add_paragraph(item.description)
+                link_paragraph = document.add_paragraph()
+                link_paragraph.paragraph_format.keep_with_next = True
+                add_link(link_paragraph, item.url, item.url)
+            paragraphs = [document.add_paragraph(item.description)]
             if item.technologies:
-                document.add_paragraph(" · ".join(item.technologies))
+                paragraphs.append(document.add_paragraph(" · ".join(item.technologies)))
+            for index, paragraph in enumerate(paragraphs):
+                paragraph.paragraph_format.keep_together = True
+                paragraph.paragraph_format.keep_with_next = index < len(paragraphs) - 1
     if resume.certifications:
         document.add_heading("Certifications", level=1)
         for item in resume.certifications:
@@ -131,7 +138,10 @@ def generate_docx(
         document.add_heading("Interests", level=1)
         document.add_paragraph(" • ".join(resume.interests))
     section.footer_distance = Inches(0.25)
-    consent = section.footer.paragraphs[0]
+    if document.paragraphs:
+        document.paragraphs[-1].paragraph_format.keep_with_next = True
+    consent = document.add_paragraph()
+    consent.paragraph_format.keep_together = True
     consent.text = ("I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).")
     for run in consent.runs:
         run.font.size = Pt(9)

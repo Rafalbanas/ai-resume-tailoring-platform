@@ -40,7 +40,7 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
     return " ".join(result)
 
 
-def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
+def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False) -> tuple[str, list[str]]:
     """Build up to four short sentences from attested clauses.
 
     Only punctuation/capitalization is composed. The one L1/L2 historical clause
@@ -81,7 +81,7 @@ def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
         add(0, identity)
         # Merge only repeated verbatim, attested identity clauses. Keep the
         # additional detail and both original evidence IDs.
-        for entry in entries:
+        for entry in ([] if compact else entries):
             if entry.kind != "experience" or entry.owner_index != 0 or entry.source_id in used:
                 continue
             merged = deduplicate_summary(identity.text + " " + entry.text, catalog)
@@ -99,17 +99,19 @@ def build_summary(catalog: FactCatalog, role: str) -> tuple[str, list[str]]:
         add(0, next(iter(entries), None))
     if support:
         historical = first(r"\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support", kinds={"experience"})
-        if historical:
+        if historical and not compact:
             add(0, historical, "previous roles included L1 and L2 support")
         add(1, first(r"(?:application.*network|network.*application).*troubleshoot|troubleshoot.*(?:application.*network|network.*application)"))
         if not groups[1]:
             add(1, first(r"troubleshoot|incident", kinds={"summary", "experience"}))
-        add(1, first(r"(?:analy[sz].*logs|logs.*root causes)", kinds={"summary", "experience"}))
+        if not compact:
+            add(1, first(r"(?:analy[sz].*logs|logs.*root causes)", kinds={"summary", "experience"}))
         # English has its own last sentence; avoid incident clauses taking all room.
         add(3, first(r"English.*(?:B2|professional|daily)|(?:documentation|communication).*English", kinds={"summary", "experience"}))
         add(2, first(r"(?:SQL|T-SQL).*(?:queries|troubleshooting|verification)", kinds={"experience"}))
         add(2, first(r"(?:REST.*(?:HTTPX|JSON)|HTTPX.*(?:REST|JSON))", kinds={"project"}))
-        add(2, first(r"(?:automates|automated).*Python", kinds={"summary", "experience"}))
+        if not compact:
+            add(2, first(r"(?:automates|automated).*Python", kinds={"summary", "experience"}))
     else:
         if tokens & {"degree", "education", "science", "bachelor", "master"}:
             education = next((e for e in catalog.prompt_entries if e.kind == "education"

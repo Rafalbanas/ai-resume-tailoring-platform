@@ -5,7 +5,13 @@
   <div>
     <p class="eyebrow">REVIEW BEFORE SENDING</p>
     <h1>{{ metadata.company }} · {{ metadata.role }}</h1>
-    <p>{{ metadata.match_level }} match · {{ metadata.recommendation.replace('_',' ') }}</p>
+    <div class="review-statuses" aria-label="Independent review statuses">
+      <p><strong>Qualification match:</strong> {{ metadata.match_level }} · {{ metadata.recommendation.replace('_',' ') }}</p>
+      <p><strong>Source analysis:</strong> {% if metadata.analysis_uncertain|default(false) %}Source interpretation requires review{% elif metadata.analysis_reliable is defined %}{{ 'Source-backed analysis' if metadata.analysis_reliable else 'Source review required' }}{% else %}Quality not recorded in this older report{% endif %}</p>
+      <p><strong>Candidate data:</strong> {{ metadata.candidate_data_status|default('Review contact and experience details') }}</p>
+      <p><strong>Document:</strong> {{ 'Layout and exports checked' if metadata.document_status|default('') == 'layout_and_exports_checked' else 'Export available; inspect the paginated preview' }}</p>
+      {% if metadata.match_level == 'LIMITED' %}<p class="muted">Qualification requirements are limited or unspecified. This status does not prevent downloading a valid CV.</p>{% endif %}
+    </div>
     <div class="provider-meta">
       <span class="badge provider-badge">Engine: {{ metadata.provider_used|default('ollama') }} ({{ metadata.model_used|default('qwen3.5:9b') }})</span>
       {% if metadata.fallback_used %}<span class="badge fallback-badge" title="{{ metadata.fallback_reason }}">Fallback: yes</span>{% else %}<span class="badge">Fallback: no</span>{% endif %}

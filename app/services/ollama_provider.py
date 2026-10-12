@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
 from app.models.candidate import CandidateProfile
+from app.models.interpretation import JobInterpretation
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import (
@@ -194,12 +195,16 @@ class OllamaProvider(AIProvider):
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
         payload = build_compact_analysis_payload(job, profile, self.skills_bank)
-        analysis = await self._chat(
-            JobAnalysis,
+        interpretation = await self._chat(
+            JobInterpretation,
             JOB_ANALYSIS_SYSTEM_PROMPT,
             payload,
         )
-        validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}")
+        analysis = interpretation.to_analysis(job)
+        validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
+        import hashlib
+        validated.company, validated.role = job.company, job.role
+        validated.job_source = {'url': str(job.job_url or ''), 'sha256': hashlib.sha256(job.job_description.encode()).hexdigest()}
         validated._model_output = analysis.model_dump(mode="json")
         return validated
 

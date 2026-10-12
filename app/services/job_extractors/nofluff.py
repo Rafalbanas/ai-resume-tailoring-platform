@@ -57,7 +57,7 @@ class NoFluffExtractor(BaseExtractor):
         sections = []
         for output_heading, selectors, heading_aliases in SECTION_SPECS:
             node = self._find_section(soup, selectors, heading_aliases)
-            text = self._section_text(node, heading_aliases, stop_at_noise=output_heading == "OFFER DESCRIPTION")
+            text = self._section_text(node, heading_aliases, stop_at_noise=False)
             if text:
                 sections.append(f"{output_heading}\n{text}")
         return ExtractionCandidate(
@@ -75,7 +75,7 @@ class NoFluffExtractor(BaseExtractor):
         musts = self._tag_values(requirements.get("musts"))
         musts.extend(self._language_values(requirements.get("languages")))
         nices = self._tag_values(requirements.get("nices"))
-        requirements_text = self._html_text(requirements.get("description"), stop_markers=("joining this project",))
+        requirements_text = self._html_text(requirements.get("description"))
         tasks = specs.get("dailyTasks") if isinstance(specs.get("dailyTasks"), list) else []
         responsibilities = "\n".join(str(value).strip() for value in tasks if str(value).strip())
         offer_headings = ("offer description", "brief job description", "opis oferty")
@@ -83,7 +83,7 @@ class NoFluffExtractor(BaseExtractor):
         offer = self._section_text(
             offer_node,
             offer_headings,
-            stop_at_noise=True,
+            stop_at_noise=False,
         )
         section_values = (
             ("PORTAL TECHNOLOGY TAGS", "\n".join(musts)),

@@ -316,7 +316,10 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     layout_guide = {}
-    fitted_resume, layout_warnings = result.resume, []
+    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+        result.resume, request.app.state.profile, layout_guide, template_name=template_name,
+        job_text=f"{job.role}\n{job.job_description}",
+    )
     warnings = result.warnings
     photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
@@ -352,6 +355,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         photo_enabled=photo_enabled,
         template_name=template_name,
     )
+    request.app.state.storage.mark_export_checked(slug)
     logger.info(
         "Resume generated",
         extra={
@@ -516,7 +520,10 @@ def _regenerate_artifacts(
 ) -> list[str]:
     result = FactValidator(request.app.state.profile, request.app.state.skills_bank).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
-    fitted_resume, layout_warnings = result.resume, []
+    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+        result.resume, request.app.state.profile, layout_guide, template_name=template_name,
+        job_text=f"{job.role}\n{job.job_description}",
+    )
     warnings = result.warnings + layout_warnings
     metadata = request.app.state.storage.load_application(slug)[3]
     modern_photo_preference = photo_enabled if template_name == "modern_sidebar" else metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))

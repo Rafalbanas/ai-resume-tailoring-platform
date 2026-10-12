@@ -258,10 +258,10 @@ class AnalysisValidator:
 
         return False, "", []
 
-    def validate(self, candidate: JobAnalysis, job_text: str = "") -> JobAnalysis:
+    def validate(self, candidate: JobAnalysis, job_text: str = "", *, semantic: bool | None = None) -> JobAnalysis:
         if job_text.strip():
             from app.services.grounded_requirements import validate_grounded
-            return validate_grounded(self, candidate, job_text)
+            return validate_grounded(self, candidate, job_text, semantic=semantic if semantic is not None else candidate.analysis_method == "llm_validated")
         result = deepcopy(candidate)
         strong: list[str] = []
         partial: list[str] = []

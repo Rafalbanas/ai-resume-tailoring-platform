@@ -113,6 +113,7 @@
         {% for quote in req.source_quotes|default([req.source_quote], true) %}<small><em>“{{ quote }}”</em></small>{% endfor %}
       </div>
       {% endif %}
+      {% if req.components %}<ul class="requirement-components">{% for component in req.components %}<li><strong>{{ component.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed', 'absent':'Confirmed gap'}.get(component.status, component.status) }}<p>{{ component.reason }}</p>{% for source in component.evidence_sources %}<small>{{ source.owner or source.type }}: {{ source.fact }}</small>{% endfor %}</li>{% endfor %}</ul>{% endif %}
       {% if req.evidence %}
       <div class="req-evidence">
         <small><strong>Profile evidence:</strong> {{ req.evidence|join('; ') }}</small>
@@ -140,6 +141,7 @@
 {% if item.evidence_sources %}<details><summary>Evidence sources</summary>{% for source in item.evidence_sources %}<p>{{ source.owner or source.type }}: {{ source.fact }}<br><small>{{ source.source_id }}</small></p>{% endfor %}</details>{% endif %}
 {% endfor %}</section>{% endif %}
 {% if analysis.responsibilities %}<section class="card"><h2>Responsibilities — excluded from requirement scoring</h2><ul>{% for item in analysis.responsibilities %}<li>{{ item.source_quote }}</li>{% endfor %}</ul></section>{% endif %}
+{% if analysis.source_context %}<details><summary>Source context — excluded from qualification scoring</summary>{% for item in analysis.source_context %}<p><strong>{{ item.category }} · {{ item.source_section }}</strong>: {{ item.source_quote }}</p>{% endfor %}</details>{% endif %}
 {% if analysis.organization_context %}<details><summary>Organization context — excluded from requirement scoring</summary>{% for item in analysis.organization_context %}<p>{{ item.source_quote }}</p>{% endfor %}</details>{% endif %}
 <p class="muted">This evaluates profile evidence, not hiring probability or a universal ATS score. No confirmation does not mean a lack of skill.</p>
 {% if provider_used == "mock" %}<div class="alert" role="alert">Mock demonstration: review requirements and recommendations personally.</div>{% endif %}

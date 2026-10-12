@@ -85,25 +85,19 @@ class JustJoinExtractor(BaseExtractor):
             return ""
         ignored = {value.casefold().strip(" :") for value in ignored_headings}
         lines = []
-        skipping_benefits = False
+        # Preserve all sections within the offer container. Section headings are
+        # input to semantic analysis; compensation/recruitment must not cause
+        # later qualification passages to disappear before the LLM sees them.
         for block in node.find_all(("h1", "h2", "h3", "h4", "h5", "h6", "p", "li")):
             if block.find(("h1", "h2", "h3", "h4", "h5", "h6", "p", "li")):
                 continue
             line = re.sub(r"\s+", " ", block.get_text(" ", strip=True)).strip()
             folded = line.casefold().strip(" :")
             heading = re.sub(r"^[^\w]+", "", folded).strip(" :")
-            if heading == "benefits" and heading in stop_headings:
-                skipping_benefits = True
-                continue
-            if heading in stop_headings:
-                break
-            if skipping_benefits:
-                if re.fullmatch(r"(?:.*qualifications|.*requirements|nice.to.have|your profile|responsibilities)", heading):
-                    skipping_benefits = False
-                else:
-                    continue
             if not line or heading in ignored or heading in UI_LINES:
                 continue
+            if ignored_headings == DESCRIPTION_HEADINGS and block.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                line = "## " + line
             if not lines or line != lines[-1]:
                 lines.append(line)
             if ignored_headings == TECH_STACK_HEADINGS and block.name in {"h3", "h4", "h5"}:

@@ -65,7 +65,7 @@ def test_all_page_text_stays_inside_paper_and_reserved_footer(profile, resume_pa
     generator = PDFGenerator(Path('templates'), Path('static'))
     resume = long_resume(resume_payload)
     for theme in ('modern_sidebar', 'ats_classic'):
-        doc = HTML(string=generator.render_html(resume, profile, template_name=theme)).render()
+        doc = generator._render_document(generator.render_html(resume, profile, template_name=theme))
         assert len(doc.pages) > 1
         for page in doc.pages:
             for box in page._page_box.descendants():
@@ -86,7 +86,7 @@ def test_all_page_text_stays_inside_paper_and_reserved_footer(profile, resume_pa
         reader = PdfReader(BytesIO(doc.write_pdf()))
         for page in reader.pages:
             text = page.extract_text()
-            assert 'GDPR' in text
+            assert ('GDPR' in text) == (page == reader.pages[-1])
             assert len(text.replace('I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).', '').strip()) > 50
         all_text = ' '.join(page.extract_text() for page in reader.pages)
         assert all_text.count('Fact 0:') == 7
@@ -120,7 +120,8 @@ def test_preview_pages_match_pdf_and_do_not_mutate_saved_resume(profile, resume_
         generate_docx(resume, profile, output, template_name=theme)
         doc = Document(output)
         assert 'Invented Kubernetes achievement' in '\n'.join(p.text for p in doc.paragraphs)
-        assert 'GDPR' in doc.sections[0].footer.paragraphs[0].text
+        assert 'GDPR' in doc.paragraphs[-1].text
+        assert not doc.sections[0].footer.paragraphs[0].text
     assert resume.model_dump_json() == before
 
 

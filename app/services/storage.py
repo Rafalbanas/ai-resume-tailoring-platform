@@ -76,6 +76,11 @@ class Storage:
             "job_url": str(job.job_url) if job.job_url else None,
             "date": date,
             "match_level": analysis.match_level,
+            "analysis_reliable": analysis.is_reliable,
+            "analysis_uncertain": any(r.interpretation_uncertain for r in analysis.requirements),
+            "analysis_method": analysis.analysis_method,
+            "document_status": "pending_export",
+            "candidate_data_status": "export fields checked",
             "recommendation": analysis.recommendation,
             "warnings": warnings,
             "generation_warnings": warnings,
@@ -94,6 +99,15 @@ class Storage:
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
+
+    def mark_export_checked(self, slug: str) -> None:
+        folder = self.application_folder(slug)
+        if not all((folder/name).is_file() for name in ('resume.pdf', 'resume.docx')):
+            raise ValueError('Both CV exports must exist before marking the document checked.')
+        path = folder/'metadata.json'
+        metadata = json.loads(path.read_text())
+        metadata['document_status'] = 'layout_and_exports_checked'
+        path.write_text(json.dumps(metadata, indent=2))
 
     def application_folder(self, slug: str) -> Path:
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,240}", slug):

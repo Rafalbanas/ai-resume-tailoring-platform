@@ -79,7 +79,7 @@ def test_justjoin_resumes_after_benefits_preserves_qualifications():
     result = JustJoinExtractor().extract(html)
     assert 'Qualifications' in result.job_description
     assert 'Two years' in result.job_description and 'Nice to have' in result.job_description
-    assert 'Medical insurance' not in result.job_description
+    assert 'Medical insurance' in result.job_description
 
 
 def test_company_text_after_preferences_is_not_a_qualification(profile):

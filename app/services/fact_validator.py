@@ -95,7 +95,7 @@ class FactValidator:
         model_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience", "project"}
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
-        if (not preserve_skills or draft.professional_summary == summary or sentence_count > 4
+        if (draft.professional_summary == summary or sentence_count > 4
                 or not self.catalog.supports_paraphrase(draft.professional_summary, model_ids)):
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
@@ -189,9 +189,11 @@ class FactValidator:
             project.name = source.name
             project.url = source.url if source.url.startswith(("https://", "http://")) else ""
             canonical_description = self._project_description(source, job)
-            if project.description != canonical_description:
+            attested_descriptions = {source.description, *source.facts}
+            if project.description not in attested_descriptions and project.description != canonical_description:
                 warnings.append(f"Project wording replaced with verified description: {project.name}")
-            project.description = canonical_description
+            if project.description not in attested_descriptions:
+                project.description = canonical_description
             project.source_fact_ids = [entry.source_id for entry in self.catalog.prompt_entries
                 if entry.kind == "project" and entry.owner_index == index and ":technology:" not in entry.source_id]
             verified_technologies = [
@@ -367,7 +369,10 @@ class FactValidator:
         description = source.description or " ".join(source.facts)
         # Keep the technology project separate from the employment summary, and
         # show relevant real tool usage instead of only the project's LLM brand.
-        if re.search(FAMILIES["ai_tools"], job.job_description, re.I):
+        from app.services.job_sections import extract_sections
+        units, _ = extract_sections(job.job_description)
+        relevant_text = " ".join(u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have", "responsibility"})
+        if re.search(FAMILIES["ai_tools"], relevant_text, re.I):
             fact = next((f for f in source.facts if re.search(FAMILIES["ai_tools"], f, re.I)), None)
             if fact and fact not in description:
                 description = description.rstrip(".") + ". " + fact

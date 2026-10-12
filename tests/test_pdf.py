@@ -38,8 +38,10 @@ def test_long_cv_preserves_content_and_allows_multiple_pages(tmp_path, profile, 
     output = tmp_path / "fitted.pdf"
     generator.generate(fitted, profile, output)
 
-    assert warnings == ["Full CV content retained across multiple pages"]
-    assert fitted == TailoredResume.model_validate(payload)
+    assert any("Full employment, education and projects retained" in w for w in warnings)
+    original = TailoredResume.model_validate(payload)
+    assert fitted.experience == original.experience
+    assert fitted.education == original.education and fitted.projects == original.projects
     assert len(PdfReader(output).pages) > 1
     assert all(len(page.extract_text()) > 150 for page in PdfReader(output).pages)
 

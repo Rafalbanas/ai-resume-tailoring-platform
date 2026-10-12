@@ -16,9 +16,9 @@ from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
 from app.services.fact_catalog import FactCatalog
 from app.services.languages import profile_languages
-from app.services.professional_summary import deduplicate_summary
+from app.services.professional_summary import build_summary, deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
-from app.services.resume_export import contacts, prepare_resume, validate_layout
+from app.services.resume_export import contacts, prepare_resume, validate_layout, validate_pdf_output
 
 
 class PDFGenerator:
@@ -106,6 +106,7 @@ class PDFGenerator:
         document = self._render_document(markup)
         validate_layout(document)
         pdf = document.write_pdf(pdf_tags=True)
+        validate_pdf_output(pdf, profile)
         reader = PdfReader(BytesIO(pdf))
         pages = []
         with closing(pypdfium2.PdfDocument(pdf)) as raster:
@@ -166,7 +167,9 @@ class PDFGenerator:
             resume, profile, layout_guide, template_name=template_name, photo_enabled=photo_enabled
         ))
         validate_layout(document)
-        document.write_pdf(output, pdf_tags=True)
+        pdf = document.write_pdf(pdf_tags=True)
+        validate_pdf_output(pdf, profile)
+        output.write_bytes(pdf)
 
     def _render_document(self, markup: str):
         """Floats cannot fragment safely: move overflow sections into normal flow.
@@ -179,7 +182,7 @@ class PDFGenerator:
         soup = BeautifulSoup(markup, "html.parser")
         sidebar = soup.select_one("aside.resume-sidebar")
         if sidebar is None:
-            return document
+            return self._finish_document(markup, document)
         rendered = []
         for page in document.pages:
             for box in page._page_box.descendants():
@@ -227,7 +230,72 @@ class PDFGenerator:
             for node in section.select("h2,h3,p,li"):
                 if key(node.get_text(" ", strip=True)) not in actual_all:
                     raise ValueError("CV content was omitted during pagination; export stopped.")
-        return document
+        return self._finish_document(str(soup), document)
+
+    @staticmethod
+    def page_content_metrics(document):
+        """Measure content, excluding running furniture and consent margins."""
+        result = []
+        for page in document.pages:
+            text = []
+            for box in page._page_box.descendants():
+                element = getattr(box, "element", None)
+                if element is not None and type(box).__name__ == "BlockBox" and "main-sections" in element.get("class", "").split():
+                    text = [b for b in box.descendants() if type(b).__name__ == "TextBox" and b.text.strip()]
+                    break
+            result.append({"characters": sum(len(b.text) for b in text),
+                           "height": max((b.position_y + b.height for b in text), default=0) - min((b.position_y for b in text), default=0),
+                           "available_height": page._page_box.height})
+        return result
+
+    def _finish_document(self, markup, document):
+        soup = BeautifulSoup(markup, "html.parser")
+        metrics = self.page_content_metrics(document)
+        # A small trailing fragment is repaired by moving whole sections, never
+        # dropping a final project or shrinking text. Content is unchanged.
+        if len(document.pages) > 1 and metrics[-1]["height"] < metrics[-1]["available_height"] * .20:
+            sections = soup.select("main .main-sections > section")
+            for section in reversed(sections):
+                section["style"] = "break-before:page"
+                candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+                tail = self.page_content_metrics(candidate)[-1]
+                if len(candidate.pages) <= len(document.pages) and self.page_content_metrics(candidate)[0]["height"] >= self.page_content_metrics(candidate)[0]["available_height"] * .20 and tail["height"] >= tail["available_height"] * .20:
+                    document = candidate
+                    break
+                del section["style"]
+            else:
+                # A long paragraph cannot move as a complete section. Protect
+                # enough continuation lines instead; font and content stay intact.
+                widow_style = soup.new_tag("style")
+                widow_style.string = ".resume-main p,.resume-main li{widows:16;orphans:4}"
+                soup.head.append(widow_style)
+                candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+                tail = self.page_content_metrics(candidate)[-1]
+                if len(candidate.pages) <= len(document.pages) and tail["height"] >= tail["available_height"] * .20:
+                    document = candidate
+                else:
+                    # Many short entries can be redistributed without moving a
+                    # whole experience section onto an otherwise empty page.
+                    entries = soup.select("main .main-sections .entry")
+                    for entry in reversed(entries[-12:]):
+                        entry["style"] = "break-before:page"
+                        candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+                        tail = self.page_content_metrics(candidate)[-1]
+                        first = self.page_content_metrics(candidate)[0]
+                        if len(candidate.pages) <= len(document.pages) and tail["height"] >= tail["available_height"]*.20 and first["height"] >= first["available_height"]*.20:
+                            document = candidate
+                            break
+                        del entry["style"]
+                    else:
+                        raise ValueError("A nearly empty continuation page remains; review content before export.")
+        # Reserve the margin on all pages but print consent once on the final one.
+        style = soup.new_tag("style")
+        style.string = f"@page modern {{ @bottom-center {{content:none}} }} @page ats {{ @bottom-center {{content:none}} }} @page modern:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }} @page ats:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }}"
+        soup.head.append(style)
+        final = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+        if len(final.pages) != len(document.pages):
+            raise ValueError("Consent changed pagination unexpectedly; export stopped.")
+        return final
 
     def fit_resume(
         self,
@@ -236,6 +304,7 @@ class PDFGenerator:
         layout_guide: dict | None = None,
         *,
         template_name: str = "modern_sidebar",
+        job_text: str = "",
     ) -> tuple[TailoredResume, list[str]]:
         fitted = deepcopy(resume)
         guide = layout_guide if layout_guide is not None else {}
@@ -250,9 +319,25 @@ class PDFGenerator:
             guide[key] = True
             if self._fits_one_page(fitted, profile, guide):
                 return fitted, self._layout_warnings(resume, fitted, guide)
-        guide.pop("compact_spacing", None)
-        guide.pop("compact_bullets", None)
-        return fitted, ["Full CV content retained across multiple pages"]
+        # Content adapts only at the explicit fit boundary. Employment, dates,
+        # education and project identities stay intact; PDF and DOCX receive the
+        # same fitted object and pre_fit_resume remains available for restoration.
+        fitted.professional_summary, fitted.summary_source_fact_ids = build_summary(FactCatalog(profile), job_text or resume.headline, compact=True)
+        if self._fits_one_page(fitted, profile, guide):
+            return fitted, self._layout_warnings(resume, fitted, guide)
+        # Skill order already expresses relevance from the validated model/bank.
+        # Only a physically overflowing sidebar permits lowering its count.
+        metrics = self._layout_metrics(fitted, profile, guide)
+        if not metrics["sidebar_fits"]:
+            while len(fitted.core_skills) > 10:
+                fitted.core_skills.pop()
+                if len(fitted.selected_skill_ids) == len(fitted.core_skills) + 1:
+                    fitted.selected_skill_ids.pop()
+                if self._fits_one_page(fitted, profile, guide):
+                    return fitted, self._layout_warnings(resume, fitted, guide)
+                if self._layout_metrics(fitted, profile, guide)["sidebar_fits"]:
+                    break
+        return fitted, self._layout_warnings(resume, fitted, guide) + ["Full employment, education and projects retained across multiple pages; continuation balanced"]
 
     def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:
         metrics = self._layout_metrics(resume, profile, guide)
@@ -266,10 +351,16 @@ class PDFGenerator:
         page = document.pages[0]._page_box
         sections = [b for b in page.descendants() if getattr(b, "element", None) is not None
                     and "main-sections" in b.element.get("class", "").split() and type(b).__name__ == "BlockBox"]
+        sidebar_boxes = [b for b in page.descendants() if getattr(b, "element", None) is not None
+                         and "resume-sidebar" in b.element.get("class", "").split() and type(b).__name__ == "BlockBox"]
+        sidebar_bottom = max((b.position_y + b.height for b in sidebar_boxes), default=0)
+        moved_skills = any(getattr(b, "element", None) is not None and "overflow-section" in b.element.get("class", "").split()
+                           and any(getattr(c, "text", "").strip() == "SKILLS" for c in b.descendants()) for b in page.descendants())
+        page_bottom = page.content_box_y() + page.height
         main_bottom = max((b.position_y + b.height for b in sections), default=0)
         ratio = main_bottom / max(1, page.height)
         return {"pages": len(document.pages), "main_fits": len(document.pages) == 1,
-                "sidebar_fits": len(document.pages) == 1, "utilization": ratio, "used_vertical_ratio": ratio}
+                "sidebar_fits": not moved_skills and sidebar_bottom <= page_bottom + 1, "utilization": ratio, "used_vertical_ratio": ratio}
 
     def _expand_to_available_space(
         self,

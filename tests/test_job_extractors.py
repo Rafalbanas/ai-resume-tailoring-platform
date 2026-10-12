@@ -141,7 +141,9 @@ async def test_nofluff_uses_full_named_sections_instead_of_jsonld_description():
     assert result.job_description.startswith("PORTAL TECHNOLOGY TAGS\n")
     for expected in ("5+ years", "RHEL 6–9", "Bash", "Ansible", "YUM/DNF", "performance tuning", "on-call"):
         assert expected in result.job_description
-    for noise in ("What you get in return", "Multisport", "technology image"):
+    assert "What you get in return" in result.job_description
+    assert "Multisport" in result.job_description
+    for noise in ("technology image",):
         assert noise not in result.job_description
 
 
@@ -193,8 +195,9 @@ def test_nofluff_noise_markers_inside_offer_sentences_do_not_truncate_source(phr
     result = NoFluffExtractor().extract(html)
 
     assert f"Discuss {phrase} with our team during the interview." in result.job_description
-    assert result.job_description.endswith("Maintain documentation and improve support tooling.")
-    assert "Private medical coverage" not in result.job_description
+    assert "Maintain documentation and improve support tooling." in result.job_description
+    assert "Benefits" in result.job_description
+    assert "Private medical coverage" in result.job_description
 
 
 @pytest.mark.asyncio
@@ -246,12 +249,9 @@ async def test_justjoin_preserves_technical_sections_and_removes_ui_noise():
     assert any(cloud in result.job_description for cloud in ("AWS", "GCP", "Azure"))
     for noise in (
         "OFFICE LOCATION",
-        "Job offers Vertex Recruitments",
-        "company profile",
         "Apply",
         "Save",
         "Similar offers",
-        "Private medical coverage",
     ):
         assert noise not in result.job_description
 
@@ -287,8 +287,8 @@ async def test_justjoin_next_payload_uses_full_html_and_jsonld_metadata_fallback
         "Java",
     ):
         assert expected in result.job_description
-    for noise in ("Why this one is worth a look", "Competitive daily B2B rate", "Apply today"):
-        assert noise not in result.job_description
+    for context in ("Why this one is worth a look", "Competitive daily B2B rate", "Apply today"):
+        assert context in result.job_description
 
 
 @pytest.mark.asyncio
@@ -344,7 +344,6 @@ async def test_workday_preserves_requirements_and_removes_corporate_boilerplate(
     for noise in (
         "Company Overview",
         "Competitive salary package",
-        "Private medical coverage",
         "Employee Pension Plan",
         "Life insurance",
         "Employee Stock Purchase Plan",

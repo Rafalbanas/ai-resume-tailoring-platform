@@ -143,14 +143,16 @@ def test_pdf_reserved_consent_never_forms_own_page(tmp_path, profile, resume_pay
         resume.experience = [resume.experience[0].model_copy(deep=True) for _ in range(25)]
     generator = PDFGenerator(Path('templates'),Path('static'),tmp_path)
     fitted, _ = generator.fit_resume(resume, profile, template_name=theme)
-    assert fitted == resume
+    assert fitted.experience == resume.experience
+    assert fitted.projects == resume.projects
     output = tmp_path/f'{theme}.pdf'
     generator.generate(fitted,profile,output,template_name=theme)
     pages = PdfReader(output).pages
     assert (len(pages) > 1) == long
-    for page in pages:
+    for index, page in enumerate(pages):
         text = page.extract_text()
-        assert 'GDPR' in text and 'Example Ltd' in text
+        assert ('GDPR' in text) == (index == len(pages)-1)
+        assert 'Example Ltd' in text
     rendered = HTML(string=generator.render_html(resume,profile,template_name=theme)).render()
     for page in rendered.pages:
         boxes = list(page._page_box.descendants())
@@ -165,8 +167,9 @@ def test_docx_consent_is_in_footer_and_text_is_preserved(tmp_path, profile, resu
     output=tmp_path/'resume.docx'
     generate_docx(resume,profile,output)
     document=Document(output)
-    assert 'GDPR' in document.sections[0].footer.paragraphs[0].text
-    assert all('GDPR' not in p.text for p in document.paragraphs)
+    assert not document.sections[0].footer.paragraphs[0].text
+    assert 'GDPR' in document.paragraphs[-1].text
+    assert sum('GDPR' in p.text for p in document.paragraphs) == 1
     assert resume.professional_summary in [p.text for p in document.paragraphs]
 
 

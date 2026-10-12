@@ -5,6 +5,7 @@ from typing import Any, Callable
 from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
+from app.services.fact_catalog import FactCatalog
 
 
 class AIProviderError(RuntimeError):
@@ -41,7 +42,12 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 10. Use qualitative HIGH, MEDIUM, or LOW match and APPLY, REASONABLE_STRETCH, or SKIP recommendation based solely on the actual job requirements.
 11. All generated reasoning, explanations and status messages MUST be in English. Preserve verbatim source quotes and proper names. Separate mandatory requirements, preferred requirements, responsibilities and organization context. Treat examples (such as) as examples, not cumulative mandatory certifications. If the analysis is incomplete, use UNRELIABLE / RETRY; never make a firm SKIP recommendation.
 12. A responsibility to use a product does not establish mandatory prior experience. Preserve headings and literal quotes. TECH STACK lists role competencies with unspecified required levels, not mandatory qualifications. Assess every qualification-bearing source passage; do not stop at a small subset.
-13. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps)."""
+13. Keep reasoning_summary concise (max 3-5 sentences, summary of match strengths and genuine gaps).
+14. You are the semantic interpreter. Section/category hints are advisory, not restrictions. Read the entire original job_description including benefits, employment terms and recruitment context; these contexts are not qualifications. Preserve uncertainty instead of forcing a category. Never infer employer priority from portal technology tags.
+15. Return structured requirements with verbatim source_quote, priority, status, source_fact_ids from source_catalog, classification_basis, and reason explaining the complete scope and required proficiency. For each AND/OR condition return components with individual name/status/source_fact_ids/reason, and operator all/any. Explicitly separate required capability from optional/preferred languages or tools. Technology examples do not require every example.
+16. Use all supplied employment, project, verified repository, education and language evidence. Project experience is valid evidence of use, but is not automatically commercial tenure or advanced ownership. Missing evidence is missing, not absent; absent requires explicit negative evidence. Do not infer a specific database product from generic SQL or TypeScript from JavaScript.
+17. Each requirement must cover one qualification-bearing source passage. Copy source_quote exactly from the job (including original punctuation), not from the candidate profile. If citing more than one job passage, put each literal passage into source_quotes; do not invent a combined quotation. Never promote a duty under You will / Responsibilities to a mandatory qualification. Compound titles like Data Processing & SQL require separately assessed components; JSON knowledge does not confirm XML/CSV/Google Sheets. Fluent English requires more than documented B2, so preserve that difference.
+18. Preserve source_context for benefits/employment/recruitment/company passages, responsibilities separately, and role_competencies for portal tags. These do not add mandatory qualification blockers. Use ambiguous operator and interpretation_uncertain when the source is unclear. Unknown headings do not justify discarding actual qualifications."""
 
 
 def _digest(value: str) -> str:
@@ -85,6 +91,11 @@ def build_compact_analysis_payload(
     skills_bank: Any = None,
 ) -> dict[str, Any]:
     cleaned_desc = job.job_description
+    from app.services.evidence_matching import EvidenceMatcher
+    from app.services.job_sections import extract_sections
+    catalog = FactCatalog(profile)
+    source_catalog = EvidenceMatcher(catalog, skills_bank).entries
+    units, _ = extract_sections(cleaned_desc)
     experience_summary = [
         {
             "title": exp.title,
@@ -133,6 +144,8 @@ def build_compact_analysis_payload(
                 "name": s.name,
                 "category": getattr(s, "category", ""),
                 "level": getattr(s, "level", ""),
+                "verified": getattr(s, "verified", False),
+                "eligible_for_cv": skills_bank.eligible(s) if hasattr(skills_bank, "eligible") else False,
             })
     return {
         "stage": "analyze_job",
@@ -140,6 +153,9 @@ def build_compact_analysis_payload(
             "company": job.company,
             "role": job.role,
             "job_description": cleaned_desc,
+            "job_url": str(job.job_url or ""),
+            "source_sha256": hashlib.sha256(cleaned_desc.encode()).hexdigest(),
+            "section_hints": [{"quote": u.quote, "heading": u.section, "scope_hint": u.name, "category_hint": u.category} for u in units],
         },
         "candidate": {
             "title": profile.experience[0].title if profile.experience else "",
@@ -149,6 +165,8 @@ def build_compact_analysis_payload(
             "projects": projects_summary,
         },
         "skills_bank": compact_skills,
+        "source_catalog": [{"source_id": e.source_id, "type": e.kind, "owner": e.owner_name, "fact": e.text} for e in source_catalog],
+        "languages": profile.skills.get("languages", []),
     }
 
 

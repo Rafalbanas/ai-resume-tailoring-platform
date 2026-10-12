@@ -109,6 +109,7 @@ def validate_layout(document) -> None:
             yield from boxes(child, column)
 
     for page in document.pages:
+        text_boxes = []
         for box, column in boxes(page._page_box):
             if type(box).__name__ != "TextBox" or not getattr(box, "text", "").strip():
                 continue
@@ -116,5 +117,41 @@ def validate_layout(document) -> None:
                     or box.position_x + box.width > page.width + 1
                     or box.position_y + box.height > page.height + 1):
                 raise ValueError("CV text exceeds the page boundary; adjust layout before exporting.")
+            text_boxes.append(box)
             if column and (box.position_x < column[0] - 1 or box.position_x + box.width > column[1] + 1):
                 raise ValueError("CV text exceeds its column boundary; adjust layout before exporting.")
+
+        # Compare glyph boxes, not parent section boxes which intentionally
+        # enclose their children. Adjacent inline runs share a baseline safely.
+        for index, left in enumerate(text_boxes):
+            for right in text_boxes[index+1:]:
+                overlap_x = min(left.position_x + left.width, right.position_x + right.width) - max(left.position_x, right.position_x)
+                overlap_y = min(left.position_y + left.height, right.position_y + right.height) - max(left.position_y, right.position_y)
+                if overlap_x > 1.2 and overlap_y > 1.2:
+                    raise ValueError("CV text overlaps another text element; export stopped.")
+
+
+def validate_pdf_output(data: bytes, profile: CandidateProfile) -> None:
+    from io import BytesIO
+
+    from pypdf import PdfReader
+    reader = PdfReader(BytesIO(data))
+    if not reader.pages:
+        raise ValueError("PDF has no pages.")
+    text = " ".join(p.extract_text() or '' for p in reader.pages)
+    def key(value):
+        return re.sub(r"\W+", "", value).casefold()
+    targets = {str(a.get_object().get('/A', {}).get('/URI', '')) for p in reader.pages for a in p.get('/Annots', [])}
+    for contact in contacts(profile):
+        if key(contact.display) not in key(text) or (contact.target and contact.target not in targets):
+            raise ValueError("A contact value or hyperlink is missing from the PDF.")
+    if text.count('I consent to the processing') != 1:
+        raise ValueError("Recruitment consent must be present exactly once.")
+    for page in reader.pages:
+        for reference in page.get('/Annots', []):
+            annotation = reference.get_object()
+            if annotation.get('/Subtype') != '/Link':
+                continue
+            left, bottom, right, top = map(float, annotation['/Rect'])
+            if left < -1 or bottom < -1 or right > float(page.mediabox.width)+1 or top > float(page.mediabox.height)+1:
+                raise ValueError("PDF link extends outside the page.")
