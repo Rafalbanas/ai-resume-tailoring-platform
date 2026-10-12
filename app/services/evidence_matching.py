@@ -107,7 +107,8 @@ class EvidenceMatcher:
 
     def sources(self, ids: list[str]) -> list[dict[str, str]]:
         lookup = {e.source_id: e for e in self.entries}
-        return [dict(source_id=i, type=lookup[i].kind, owner=lookup[i].owner_name, fact=lookup[i].text)
+        from app.services.evidence_strength import evidence_strength
+        return [dict(source_id=i, type=lookup[i].kind, owner=lookup[i].owner_name, fact=lookup[i].text, strength=evidence_strength(lookup[i]))
                 for i in dict.fromkeys(ids) if i in lookup]
 
     def _find(self, pattern: str, *, practical=False) -> list[FactEntry]:
@@ -314,6 +315,11 @@ class EvidenceMatcher:
             scoped = matcher(name)
             if scoped is not None:
                 return scoped
+        from app.services.evidence_strength import ARTIFACT, CI, ci_ceiling
+        if CI.search(name):
+            entries = [e for e in self.entries if (CI.search(e.text) or ARTIFACT.search(e.text)) and not NEGATIVE.search(e.text)]
+            status, reason = ci_ceiling(name, entries)
+            return EvidenceMatch(Status(status), entries, reason)
         key = family(name)
         entries = self._find(FAMILIES[key]) if key else []
         practical = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
@@ -387,5 +393,9 @@ class EvidenceMatcher:
             term = re.sub(r'^(?:experience (?:with|in)|knowledge of)\s+', '', name, flags=re.I).strip(' .')
             simple = self._find(r'(?<!\w)' + re.escape(term) + r'(?!\w)')
             if simple:
-                return self._result(simple, True, 'Technology knowledge is documented; a name alone does not verify advanced scope.')
+                from app.services.evidence_strength import evidence_strength
+                needs_practice = bool(re.match(r'experience\s+(?:with|in)\b', name, re.I))
+                practical = any(evidence_strength(e) != 'declaration' for e in simple)
+                return self._result(simple, not needs_practice or practical,
+                    'Technology knowledge is documented; a name alone does not verify practical experience or advanced scope.')
         return None

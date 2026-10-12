@@ -232,4 +232,5 @@ async def test_invalid_response_is_captured_before_schema_parsing(profile):
         with pytest.raises(AIProviderError):
             await provider.analyze_job(job,profile)
     assert len(records) == 1 and records[0]['raw_response'] == '{"invalid":'
-    assert records[0]['payload']['job']['job_description'] == job.job_description
+    passages = records[0]['payload']['passages']
+    assert [p['text'] for p in passages][1:] == job.job_description.splitlines()

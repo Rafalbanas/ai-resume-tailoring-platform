@@ -62,6 +62,7 @@ class TailoredResume(BaseModel):
 
 
 class WorkflowResponse(BaseModel):
+    call_metrics: list[dict] = Field(default_factory=list)
     analysis: "JobAnalysis"
     resume: TailoredResume
     provider_used: str = "unknown"

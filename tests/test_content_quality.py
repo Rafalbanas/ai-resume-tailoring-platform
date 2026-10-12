@@ -189,11 +189,16 @@ async def test_ollama_full_workflow_preserves_reviewed_natural_summary(profile):
 
     from app.core.config import Settings
     from app.services.ollama_provider import OllamaProvider
-    from tests.test_ollama_provider import analysis_payload, resume_payload
+    from tests.test_ollama_provider import resume_payload
     text = 'I automate infrastructure and support workflows with Python. I work as a Support Engineer at Example Ltd.'
     payload = resume_payload()
     payload['professional_summary'] = text
-    replies = [analysis_payload(), payload, {'supported': True, 'issues': []}]
+    analysis = {'rows': [
+        {'p': 'P1', 'k': 'context'}, {'p': 'P2', 'k': 'context'},
+        {'p': 'P3', 'k': 'requirement', 'n': 'Python automation', 'priority': 'mandatory',
+         's': 'strong', 'f': ['F1'], 'why': 'The summary fact explicitly documents Python automation.'},
+    ]}
+    replies = [analysis, payload, {'supported': True, 'issues': []}]
     requests = []
     async def handler(request):
         requests.append(json.loads(request.content))

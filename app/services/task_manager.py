@@ -263,6 +263,15 @@ class TaskManager:
             response = await app_state.provider.tailor(
                 job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
             )
+        except AIProviderError as exc:
+            if hasattr(app_state, "diagnostics"):
+                last_call = (getattr(exc, "call_metrics", []) or [{}])[-1]
+                app_state.diagnostics.record(
+                    company=job.company, role=job.role, requested_provider=llm_provider,
+                    provider_used=last_call.get("provider", llm_provider), model_used=last_call.get("model", "unknown"), fallback_occurred=False,
+                    status="error", duration_ms=int((time.perf_counter()-wall_start)*1000),
+                    error_message=str(exc), call_metrics=getattr(exc, "call_metrics", []))
+            raise
         except TypeError:
             try:
                 response = await app_state.provider.tailor(
@@ -296,6 +305,8 @@ class TaskManager:
                 duration_ms=duration_ms,
                 match_level=response.analysis.match_level,
                 recommendation=response.analysis.recommendation,
+                call_metrics=response.call_metrics,
+                assessed_requirements=len(response.analysis.requirements),
             )
 
         task = self.get_task(task.task_id) or task
