@@ -147,7 +147,8 @@ def quality_issues(resume, profile):
                 continue
             name = (match[1] or match[2]).strip()
             for value in [*resume.core_skills, resume.professional_summary, resume.headline]:
-                if re.search(r'\b(?:expert|advanced|senior)\s+(?:(?:knowledge|experience|expertise)\s+(?:of|in|with)\s+)?' + re.escape(name) + r'\b|\b' + re.escape(name) + r'\s+(?:expert|expertise|advanced)\b', value, re.I):
+                matches = re.finditer(r'\b(?:expert|advanced|senior)\s+(?:(?:knowledge|experience|expertise)\s+(?:of|in|with)\s+)?' + re.escape(name) + r'\b|\b' + re.escape(name) + r'\s+(?:expert|expertise|advanced)\b', value, re.I)
+                if any(not re.search(r'\b(?:not|no|never|without)\b[\w\s-]{0,20}$', value[max(0, m.start()-30):m.start()], re.I) for m in matches):
                     issues.append(f'Unsupported proficiency increase for {name}.')
     from app.services.languages import profile_languages
     ranks = {'A1': 1, 'A2': 2, 'B1': 3, 'B2': 4, 'C1': 5, 'C2': 6, 'NATIVE': 7}

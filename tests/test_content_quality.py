@@ -250,3 +250,12 @@ def test_contact_change_does_not_invalidate_professional_claim_review(profile, r
     assert valid_summary_attestation(draft, profile, 'test-secret')
     profile.experience[0].title = 'A different occupation'
     assert not valid_summary_attestation(draft, profile, 'test-secret')
+
+
+def test_negated_expertise_is_not_mistaken_for_a_level_increase(profile, resume_payload):
+    profile.skills['technical'] = ['Basic Docker']
+    draft = TailoredResume.model_validate(resume_payload)
+    draft.professional_summary = 'Uses basic Docker, not advanced Docker.'
+    assert not any(i.startswith('Unsupported proficiency') for i in quality_issues(draft, profile))
+    draft.professional_summary = 'Has basic Docker knowledge. Advanced Docker expertise.'
+    assert any(i.startswith('Unsupported proficiency') for i in quality_issues(draft, profile))
