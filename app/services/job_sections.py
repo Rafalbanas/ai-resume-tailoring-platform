@@ -19,13 +19,13 @@ class SourceUnit:
     uncertain: bool = False
 
 
-PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
+PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
 MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:company overview|department overview|about (?:us|the company|the team)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what we offer|dla ciebie|co oferujemy\??|what you get in return)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what we offer|dla ciebie|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }
@@ -99,7 +99,7 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
     units, section, category, recognized = [], '', None, ['MUST HAVE'] if legacy_tags else []
     for raw in text.splitlines():
         structural_heading = bool(re.match(r'^#{1,6}\s+', raw.strip()))
-        line = re.sub(r'^#{1,6}\s+', '', raw.strip())
+        line = re.sub(r'^#{1,6}\s+', '', raw.strip().replace('\u200b', '').replace('\ufeff', ''))
         line = re.sub(r'^(?:->|[•*−–>-])\s*', '', line).strip()
         if not line:
             continue
@@ -114,6 +114,11 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             category = 'organization'
         elif STACK.fullmatch(line):
             category = 'competency'
+        elif re.fullmatch(r'(?:soft skills|experience)\s*:', line, re.I):
+            # Section labels are provenance, never assessable qualifications.
+            # A new neutral section ends the previous priority; its contents
+            # stay available for model interpretation without assuming a priority.
+            category = 'unknown'
         elif context_category := next((kind for kind, pattern in CONTEXT_HEADINGS.items() if pattern.fullmatch(line)), None):
             category = context_category
         elif END.fullmatch(line):

@@ -101,3 +101,41 @@ def test_uncovered_requirement_before_a_recognized_section(profile):
     result=evaluate('Must have experience with Kubernetes.\nRequirements\nPython',profile)
     assert not result.is_reliable
     assert result.recommendation=='RETRY'
+def test_optional_sections_and_benefit_intro_do_not_become_requirements():
+    from app.services.job_sections import extract_sections
+
+    text = """Must have:
+Linux administration
+Could have:
+PostgreSQL experience
+\u200bSoft skills:
+Communication skills
+Experience:
+1+ years in a related role
+In return for your expertise, we’ll support you with development.
+Also, to reward your hard work you’ll get:
+Life insurance
+Parking space
+Development opportunities"""
+    units, sections = extract_sections(text)
+    assert next(u for u in units if u.name == 'PostgreSQL experience').category == 'preferred'
+    assert next(u for u in units if u.name == '1+ years in a related role').category == 'unknown'
+    assert not any(u.name.endswith(':') for u in units)
+    assert all(u.category == 'benefits' for u in units if u.name in {'Life insurance', 'Parking space', 'Development opportunities'})
+    assert 'Soft skills' in sections
+
+
+
+def test_model_cannot_score_section_titles_or_benefits(profile):
+    from app.models.job import JobRequirement
+
+    text = 'Requirements\nPython\nCould have:\nDocker\nExperience:\n1+ years in a related role\nAlso, to reward your hard work you’ll get:\nLife insurance'
+    candidate = empty_analysis()
+    candidate.requirements = [
+        JobRequirement(name=name, source_quote=name, priority='mandatory', status='missing', reason='No evidence')
+        for name in ['Python', 'Docker', 'Experience:', 'Life insurance']
+    ]
+    result = AnalysisValidator(profile).validate(candidate, text, semantic=True)
+    assert not any(r.name in {'Experience:', 'Life insurance'} for r in result.requirements)
+    assert next(r for r in result.requirements if r.name == 'Docker').priority == 'preferred'
+    assert any(c['source_quote'] == 'Life insurance' for c in result.source_context)

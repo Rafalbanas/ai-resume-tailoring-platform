@@ -260,3 +260,39 @@ async def test_ollama_logs_telemetry_without_cv_content(profile, caplog):
     assert profile.personal.name not in telemetry_logs[0]
     assert "Built reliable" not in telemetry_logs[0]
 
+@pytest.mark.asyncio
+async def test_truncated_analysis_retries_once_without_changing_model_or_source():
+    requests = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            return httpx.Response(200, json={
+                'message': {'content': '{"requirements": ['},
+                'done_reason': 'length', 'prompt_eval_count': 18000,
+            })
+        return httpx.Response(200, json={'message': {'content': json.dumps(analysis_payload())}, 'done_reason': 'stop'})
+
+    from app.models.interpretation import JobInterpretation
+    await provider(httpx.MockTransport(handler))._chat(JobInterpretation, 'Analyze', {'source': 'unchanged'})
+    assert len(requests) == 2
+    assert requests[0]['options']['num_predict'] == 8192
+    assert requests[1]['options']['num_predict'] == 32768 - 18000 - 512
+    assert requests[0]['messages'] == requests[1]['messages']
+    assert requests[0]['model'] == requests[1]['model']
+
+
+@pytest.mark.asyncio
+async def test_repeated_truncation_fails_clearly_and_does_not_loop():
+    requests = []
+
+    async def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={'message': {'content': '{}'}, 'done_reason': 'length', 'prompt_eval_count': 18000})
+
+    from app.models.interpretation import JobInterpretation
+    with pytest.raises(AIProviderError, match='output token limit'):
+        await provider(httpx.MockTransport(handler))._chat(JobInterpretation, 'Analyze', {})
+    assert len(requests) == 2
+

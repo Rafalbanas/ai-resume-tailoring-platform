@@ -115,6 +115,12 @@ def _facts(validator, item):
 
 
 def validated_model_requirements(validator, candidate, job_text, units, fallback):
+    from app.services.job_sections import extract_sections
+
+    def heading_key(value):
+        return value.replace('\u200b', '').replace('\ufeff', '').strip(' #:\t\r\n').casefold()
+
+    headings = {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "responsibility", "competency"}
     for original in candidate.requirements:
@@ -122,6 +128,10 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         quotes = resolve_source_quotes(req.source_quote, job_text) if req.source_quote.strip() else []
         if not quotes:
             issues.append("A model requirement had no verifiable original source quote.")
+            continue
+        if all(heading_key(quote) in headings for quote in quotes):
+            # A recognized section title has no qualification content itself.
+            # Keep its body available for the model instead of scoring the title.
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if all(

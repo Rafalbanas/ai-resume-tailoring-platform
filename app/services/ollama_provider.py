@@ -79,6 +79,7 @@ class OllamaProvider(AIProvider):
         source_catalog: list[dict[str, str]] | None = None,
         allowed_skills: list[str] | None = None,
         allowed_skill_ids: list[str] | None = None,
+        _completion_budget: int | None = None,
     ) -> ModelT:
         schema = response_model.model_json_schema()
         if response_model is JobAnalysis and self.skills_bank:
@@ -140,7 +141,7 @@ class OllamaProvider(AIProvider):
             "keep_alive": self.keep_alive,
             "options": {
                 "temperature": 0,
-                "num_predict": self.num_predict,
+                "num_predict": _completion_budget or self.num_predict,
                 "num_ctx": self.num_ctx,
             },
             "messages": [
@@ -189,6 +190,20 @@ class OllamaProvider(AIProvider):
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
             record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", schema, content, self.call_metrics[-1])
+            if envelope.get("done_reason") == "length":
+                # Retry only an explicitly truncated response, keeping all source
+                # material and the same model. Respect the remaining context.
+                retry_budget = min(self.num_predict * 2, self.num_ctx - prompt_tokens - 512)
+                if _completion_budget is None and retry_budget > self.num_predict:
+                    logger.warning("Ollama output was truncated; retrying once with completion budget %d", retry_budget)
+                    return await self._chat(
+                        response_model, system_prompt, payload,
+                        source_catalog=source_catalog, allowed_skills=allowed_skills,
+                        allowed_skill_ids=allowed_skill_ids, _completion_budget=retry_budget,
+                    )
+                raise AIProviderError(
+                    "Ollama response was cut off at the output token limit; analysis is incomplete."
+                )
             return response_model.model_validate_json(content)
         except (KeyError, TypeError, ValidationError) as exc:
             raise AIProviderError("Ollama returned invalid structured JSON. Try again.") from exc
