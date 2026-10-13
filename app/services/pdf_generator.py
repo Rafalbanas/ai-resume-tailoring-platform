@@ -306,6 +306,8 @@ class PDFGenerator:
         *,
         template_name: str = "modern_sidebar",
         job_text: str = "",
+        one_page: bool = False,
+        fact_validator=None,
     ) -> tuple[TailoredResume, list[str]]:
         fitted = deepcopy(resume)
         guide = layout_guide if layout_guide is not None else {}
@@ -313,7 +315,20 @@ class PDFGenerator:
             guide.pop(key, None)
         if template_name == "ats_classic":
             return fitted, []
-        # Only spacing may adapt. Page count is never a reason to delete facts.
+        if one_page:
+            if fact_validator is None:
+                raise ValueError("One-page generation requires source validation.")
+            from app.services.one_page_resume import select_one_page
+            def fits(candidate):
+                try:
+                    return self._fits_one_page(candidate, profile, guide)
+                except ValueError as exc:
+                    if "nearly empty continuation page" not in str(exc):
+                        raise
+                    return False
+            fitted, selections = select_one_page(fitted, fact_validator, job_text, fits)
+            return fitted, selections + self._layout_warnings(resume, fitted, guide)
+        # Existing/manual CVs retain their chosen content.
         if self._fits_one_page(fitted, profile, guide):
             return fitted, []
         for key in ("compact_spacing", "compact_bullets"):

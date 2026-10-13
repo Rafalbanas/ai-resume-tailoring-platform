@@ -288,3 +288,6 @@ This project is licensed under the **Apache License, Version 2.0**.
 - Copyright and project notices: [NOTICE](NOTICE)
 
 Under the terms of the Apache License 2.0, you are free to use, modify, distribute, and sublicense this software, including for commercial purposes, subject to the conditions set forth in the license.
+
+
+Modern Sidebar generation now selects a one-page PDF from verified source content. It removes redundant bullets, uses concise cited summary/project facts, and omits lower-priority optional details if necessary. Employment history, education, competence levels, learning status and mandatory evidence remain protected. The full validated pre-fit version and selection warnings are retained for review. If protected content cannot fit, generation returns a clear 422 message recommending ATS Classic or manual shortening. Manual edits and ATS Classic keep their chosen content; DOCX pagination depends on its separate editable layout.
