@@ -1,4 +1,5 @@
 """Exercise the real shell control flow with isolated Docker/HTTP stand-ins."""
+import fcntl
 import os
 import subprocess
 from pathlib import Path
@@ -21,7 +22,7 @@ def deployment(tmp_path):
 set -eu
 printf '%s\\n' "$*" >> "$TEST_LOG"
 case "$1" in
-  login) cat >/dev/null ;;
+  login) printf "credentials-directory:%s\\n" "$DOCKER_CONFIG" >> "$TEST_LOG"; cat >/dev/null ;;
   pull) ;;
   exec) [[ ${TEST_CASE:-} != active ]] ;;
   image) printf '%s\\n' "${TEST_IMAGE_REVISION:-$TEST_REVISION}" ;;
@@ -32,6 +33,9 @@ case "$1" in
       *) echo sha256:previous ;;
     esac ;;
   compose)
+    for arg in "$@"; do
+      if [[ $arg == *override.*.yml ]]; then cat "$arg" >> "$TEST_LOG"; fi
+    done
     if [[ ! -f $TEST_PHASE ]]; then
       touch "$TEST_PHASE"
       [[ ${TEST_CASE:-} != compose_failure ]]
@@ -77,6 +81,8 @@ def test_deploy_success_pins_digest_and_persists_state(deployment):
     assert 'login ghcr.io' in log.read_text()
     assert 'ephemeral-test-token' not in result.stdout + result.stderr + log.read_text()
     assert not list((path/'state').glob('override.*'))
+    credentials = next(line.split(':', 1)[1] for line in log.read_text().splitlines() if line.startswith('credentials-directory:'))
+    assert not Path(credentials).exists()
 
 
 @pytest.mark.parametrize('case', ['compose_failure', 'health_failure'])
@@ -86,6 +92,7 @@ def test_failed_release_restores_previous_image(deployment, case):
     assert result.returncode != 0
     assert 'Previous image restored.' in result.stderr
     assert log.read_text().count('compose ') == 2
+    assert 'image: sha256:previous' in log.read_text()
     assert not (path/'state/current.yml').exists()
 
 
@@ -108,3 +115,27 @@ def test_ssh_entrypoint_rejects_arbitrary_commands(command):
     result = subprocess.run(['bash', str(ROOT/'deploy/cd/ssh-command.sh')],
         env=dict(os.environ, SSH_ORIGINAL_COMMAND=command), capture_output=True, text=True)
     assert result.returncode == 2
+
+
+def test_server_lock_blocks_concurrent_release(deployment):
+    run, log, path = deployment
+    (path/'state').mkdir()
+    with (path/'state/deploy.lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run()
+    assert result.returncode != 0
+    assert 'Another deployment is running' in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.parametrize('command,expected', [('status', 'status'),
+    ('deploy ' + REVISION + ' ' + DIGEST, REVISION + ' ' + DIGEST)])
+def test_ssh_entrypoint_forwards_only_validated_arguments(tmp_path, command, expected):
+    sudo = tmp_path/'sudo'
+    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*"\n')
+    sudo.chmod(0o755)
+    result = subprocess.run(['bash', str(ROOT/'deploy/cd/ssh-command.sh')],
+        env=dict(os.environ, PATH=str(tmp_path)+':'+os.environ['PATH'], SSH_ORIGINAL_COMMAND=command),
+        capture_output=True, text=True)
+    assert result.returncode == 0
+    assert result.stdout.strip() == '-n /usr/local/sbin/cvtailor-deploy ' + expected
