@@ -2,12 +2,13 @@
 
 A private, mobile-first web application that analyzes specific job postings, evaluates candidate match against a verified master profile, enforces strict fact validation (Truth Lock), and generates ATS-friendly PDF and editable DOCX resumes.
 
-CVTailor is designed as a production-grade, single-owner automation system demonstrating Python backend development, secure web extraction, structured LLM integration with resilient fallback, and deterministic document generation.
+CVTailor is designed as a production-grade, single-owner automation system demonstrating Python backend development, secure web extraction, structured LLM integration with resilient fallback, cryptographic attestation, and deterministic document generation.
 
 > [!IMPORTANT]
 > **Essential Operating Principles & Disclaimers:**
 > - **Single-posting analysis only**: CVTailor fetches and analyzes only explicitly provided job postings (one URL or pasted text at a time). It does **not** crawl or scrape job portals en masse.
-> - **Documented evidence assessment, not hiring probability**: Match scores (HIGH / MEDIUM / LOW / UNRELIABLE) and recommendations (APPLY / REASONABLE STRETCH / SKIP / RETRY) evaluate alignment between job requirements and documented facts in the candidate profile. They do **not** represent probability of employment or an official ATS ranking.
+> - **Documented evidence assessment, not hiring probability**: Match scores (`HIGH` / `MEDIUM` / `LOW` / `UNRELIABLE`) and recommendations (`APPLY` / `REASONABLE STRETCH` / `SKIP` / `RETRY` / `REVIEW`) evaluate alignment between job requirements and documented facts in the candidate profile. They do **not** represent probability of employment or an official ATS ranking.
+> - **Separation of qualification match from role alignment**: Qualification scoring assesses documented competencies against required skills, while role recommendations incorporate seniority fit, domain context, and requirement completeness.
 > - **Fact validation bounds claims, not guarantees zero errors**: The Python-side Truth Lock validator eliminates ungrounded statements and unverified skills by mapping claims back to verified profile facts. However, human review of the analysis, profile facts, and rendered exports is always required before submitting an application.
 > - **Third-party data transmission with Gemini**: While local Ollama inference keeps data strictly on your machine, configuring or falling back to Google Gemini transmits job and candidate analysis data to Google's Generative Language API.
 > - **Security posture**: The platform is built for private, single-owner self-hosting. It implements Argon2id authentication, SQLite server-revocable sessions, CSRF tokens, SSRF guards, and rate limiting. It does **not** claim data encryption at rest, immunity to prompt injection, universal ATS compatibility, or public multi-tenant SaaS readiness.
@@ -17,39 +18,61 @@ CVTailor is designed as a production-grade, single-owner automation system demon
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Browser[Mobile / Desktop Browser] --> FastAPI[FastAPI Web Server]
-    FastAPI -->|single supplied URL| Extractor[SSRF-Safe Job Extractor]
-    Extractor --> HTTPX[httpx + JSON-LD / HTML Adapters]
-    Extractor -. JavaScript fallback .-> PW[Safe Playwright Renderer]
-    FastAPI -->|router & budget| Router[ResilientAIProvider]
-    Router -->|direct local API| Ollama[Ollama Provider]
-    Router -->|direct Google API| Gemini[Gemini Provider]
-    Router -. optional webhook .-> N8N[n8n Webhook Provider]
-    Router -. offline dev .-> Mock[Mock Provider]
-    Ollama -->|structured JSON| Pydantic[Pydantic Validation]
-    Gemini -->|structured JSON| Pydantic
-    N8N -. structured JSON .-> Pydantic
-    Mock -. structured JSON .-> Pydantic
-    Pydantic --> TruthLock[Fact Validator / Truth Lock]
-    TruthLock --> Jinja[Jinja2 Engine]
-    RefCV[Reference CVs Index] -. style only .-> Router
-    RefCV -. layout guide .-> Jinja
-    Jinja --> PDF[WeasyPrint PDF Engine]
-    TruthLock --> DOCX[python-docx Generator]
-    TruthLock --> Storage[Transactional Storage / History]
+flowchart TD
+    subgraph Ingestion["1. Ingestion & Extraction"]
+        Browser[Mobile / Desktop Browser] -->|URL or Raw Text| FastAPI[FastAPI Web Server]
+        FastAPI -->|Single Supplied URL| Extractor[SSRF-Safe Job Extractor]
+        Extractor --> PortalParsers[Portal Adapters: JustJoin, NoFluff, Pracuj, Workday]
+        Extractor --> JSONLD[Schema.org JSON-LD Parser]
+        Extractor -. Headless Fallback .-> PW[Safe Playwright Renderer]
+    end
+
+    subgraph LLMPipeline["2. LLM Pipeline & Fallback"]
+        FastAPI -->|Router & Operation Budget| Router[ResilientAIProvider]
+        Router -->|Local REST| Ollama[Ollama Provider: qwen3.5:9b]
+        Router -->|Direct Google API| Gemini[Gemini Provider: gemini-3.1-flash-lite]
+        Router -. Optional Webhook .-> N8N[n8n Webhook Provider]
+        Router -. Offline Dev .-> Mock[Mock Provider]
+
+        Ollama & Gemini & N8N & Mock -->|Provider-Neutral Contract| Interp[JobInterpretation]
+        Interp --> AnalysisVal[AnalysisValidator: Grounded & Semantic Requirements]
+        AnalysisVal --> JobAnalysis[JobAnalysis: Qualifications vs Role Fit]
+
+        JobAnalysis --> TailorStage[Tailored Resume Generation]
+        TailorStage --> SummaryReview[Summary Review: Optional HMAC-Signed Attestation]
+    end
+
+    subgraph TruthLockBoundary["3. Truth Lock & Content Quality"]
+        SummaryReview --> ContentQuality[Content Quality: Conservative Dedup & Merge]
+        ContentQuality --> FactVal[FactValidator / Truth Lock Boundary]
+        MasterProfile[(Master Profile: data/master_profile.json)] --> FactVal
+        SkillsBank[(Verified Skills Bank: data/skills.json)] --> FactVal
+        RefCVs[(Reference CV Library)] -. Style Guidance Only .-> TailorStage
+    end
+
+    subgraph DocumentEngines["4. Presentation & Storage"]
+        FactVal --> ExportPrep[Resume Export Preparation: Link & Contact Normalization]
+        ExportPrep --> LayoutFit[WeasyPrint Dynamic Layout Fitting Engine]
+        LayoutFit --> PDFModern[PDF: Modern Sidebar Theme]
+        LayoutFit --> PDFClassic[PDF: ATS Classic Theme]
+        ExportPrep --> DOCXGen[python-docx: Single-Column DOCX with Hyperlinks]
+        FactVal --> Storage[Transactional Storage: data/generated/ with Atomic Staging & Rollback]
+    end
 ```
 
-### Core Components
+### Pipeline Breakdown
 
-1. **FastAPI Web Application**: Mobile-optimized UI powered by Jinja2 templates, vanilla modern CSS/JS, and asynchronous route handlers.
-2. **SSRF-Safe Job Extractor**: Fetches a single user-supplied URL. Validates and pins IP addresses, prevents DNS rebinding, blocks internal/loopback/private IP ranges (RFC 1918, RFC 3927), limits redirects, and uses portal-specific parsers (JustJoin.it, NoFluffJobs.com, Pracuj.pl, MyWorkdayJobs), Schema.org JSON-LD extraction, and an optional Playwright headless browser fallback.
-3. **Resilient AI Provider (`ResilientAIProvider`)**: Manages model calls for two structured stages (`JobAnalysis` and `TailoredResume`). Supports direct local Ollama, direct Google Gemini API, external n8n webhooks, and an offline mock provider, governed by an operation budget.
-4. **Truth Lock (`FactValidator`)**: Strict Python boundary that maps model output back to the candidate's verified profile catalog (`data/master_profile.json`) and skills bank (`data/skills.json`). Replaces unevidenced paraphrases with verbatim profile facts and excludes unverified skills.
-5. **Document Generators**:
-   - **PDF Engine**: Uses Jinja2 and WeasyPrint to render pixel-accurate, multi-page A4 documents in either the Modern Sidebar or ATS Classic layout.
-   - **DOCX Generator**: Uses `python-docx` to generate cleanly formatted, editable documents with active hyperlinks.
-6. **Transactional Storage**: Saves job descriptions, structured analyses, resume JSON, metadata, and export artifacts under `data/generated/`. Manages atomic file staging, versioned backups in `versions/`, and rollback on write errors.
+1. **SSRF-Safe Web Extraction**: Fetches a single user-supplied job URL. Validates and pins IP addresses, prevents DNS rebinding, blocks internal/loopback/private IP ranges (RFC 1918, RFC 3927), limits redirects, and parses portal-specific HTML structures (JustJoin.it, NoFluffJobs.com, Pracuj.pl, MyWorkdayJobs), JSON-LD Schema.org data, or falls back to headless Playwright rendering.
+2. **LLM-First Requirement Interpretation (`JobInterpretation`)**: A shared, provider-neutral Pydantic contract between Ollama and Gemini. Extracts requirements with literal source quotes, priorities (`mandatory`, `preferred`, `optional`, `context`), provenance source IDs, explicit `AND` / `OR` logical components, and uncertainty flags.
+3. **Requirement Grounding & Semantic Validation (`AnalysisValidator`)**: Separates qualifications from employment benefits and marketing context. Distinguishes negated statements (e.g. "no commercial experience with X" vs. expertise) and flags ambiguous postings as `REVIEW` or `UNRELIABLE / RETRY`.
+4. **Offer-Specific Resume Tailoring**: The active model ranks candidate evidence and selects relevant factual source statements and verified skills for the specific offer, without ever fabricating claims or promoting skill levels.
+5. **Natural Summary Review & Signed HMAC Attestation (`summary_review.py`)**: When an LLM generates a fluent summary paragraph, it is independently validated against candidate facts and identity. Approved summaries receive a server-side HMAC signature binding text, citations, and profile facts. Incomplete citations, manual edits, or unverifiable claims fall back to exact attested profile sentences.
+6. **Conservative Content Deduplication (`content_quality.py`)**: Merges overlapping project and experience statements (e.g. repetitive VPS or ML pipeline statements) by tracking concept sequences and actions while strictly preserving distinct tools, numbers, and scopes (local vs. production).
+7. **Truth Lock (`FactValidator`)**: Python boundary mapping model output back to the candidate's verified profile catalog (`data/master_profile.json`) and skills bank (`data/skills.json`). Replaces unevidenced paraphrases with verbatim profile facts, excludes unverified skills, and guarantees the candidate's actual occupation is preserved (rejecting unheld target titles).
+8. **Document Generation**:
+   - **PDF Engine**: Renders pixel-accurate A4 documents using Jinja2 and WeasyPrint in Modern Sidebar or ATS Classic layouts. Employs dynamic layout fitting to eliminate sparse continuations and orphaned sections, placing a single GDPR consent clause on the final page margin.
+   - **DOCX Generator**: Generates cleanly formatted Word documents via `python-docx` with verified native hyperlinks, standard headings, and a single consent footer.
+9. **Transactional Storage**: Saves job descriptions, structured analyses, resume JSON, metadata, and export artifacts under `data/generated/`. Manages atomic file staging, versioned backups in `versions/`, and rollback on write errors.
 
 For an extended breakdown of pipeline stages and architectural decisions, see [Architecture Documentation](docs/architecture.md).
 
@@ -57,14 +80,44 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 
 ## Key Features
 
-- **Grounded Requirement Analysis**: Breaks job postings into mandatory requirements, preferred qualifications, responsibilities, and organizational context. Evaluates alternatives (`OR`, `and/or`), example items (`such as`), and language proficiencies (e.g., verifying B2 without over-claiming C1). Incomplete extractions are flagged as `UNRELIABLE / RETRY`.
-- **Verified Skills Bank**: CV skills are selected strictly from `data/skills.json`. A skill must be marked `verified`, `enabled`, `allowed_in_cv`, have a non-learning level, and be supported by concrete employment or project evidence (or explicitly confirmed `manual_verified`).
-- **Two Resume Themes**:
-  - `modern_sidebar`: Navy blue sidebar containing contact details, core skills, languages, an optional headshot or initials, and GDPR footer. Main section presents professional summary, experience bullets, projects, education, and certifications.
-  - `ats_classic`: Single-column, minimalist, text-focused layout without photos or multi-column grids, maximizing automated ATS readability.
-- **DOCX Export & Structure**: Produces an editable document with standard Word headings and hyperlinks. Because Word does not replicate HTML/CSS flexbox/grid sidebar layouts reliably, DOCX uses a clean single-column structure regardless of the chosen theme (placing the photo at the top in Modern Sidebar mode).
-- **In-Browser Resume Editing**: Edit summary, skills, experience bullets, and project descriptions directly. Edits are re-validated by Truth Lock; unsupported claims return HTTP 422 and keep the form data intact without replacing the saved resume.
-- **Single-User Security**: Authentication backed by Argon2id password hashing in `data/auth.json` (file mode `0600`), fixed-window login rate limiting (5 attempts per 5 minutes per IP), server-revocable SQLite sessions (`data/sessions.sqlite3`), signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS), and double-submit CSRF validation.
+### 1. Grounded Requirement Analysis & Provenance
+- **LLM-First Interpretation**: Breaks job postings into mandatory requirements, preferred qualifications, responsibilities, and organizational context using the provider-neutral `JobInterpretation` schema.
+- **Strict Provenance & Quotes**: Each requirement retains its literal quote from the advertisement, priority basis, and explicit logical operators (`single`, `all`, `any`, `ambiguous`).
+- **Negation & Scope Handling**: Preserves negative assertions and theoretical constraints. A candidate's documented "no commercial experience in Kubernetes" is kept strictly distinct from operational competency.
+- **Section & Benefit Separation**: Recruitment benefits, salary ranges, and company marketing are separated from required candidate qualifications.
+- **Ambiguity & Reliability**: Unreliable postings, truncated descriptions, or conflicting multi-role postings are flagged for human `REVIEW` or marked `UNRELIABLE / RETRY`.
+
+### 2. Verified Skills Bank (`data/skills.json`)
+- **Evidence-Backed Skills**: CV skills are selected strictly from `data/skills.json`. A skill must be marked `verified`, `enabled`, `allowed_in_cv`, have a non-learning level, and be supported by concrete employment or project evidence (or explicitly confirmed `manual_verified`).
+- **Management UI**: Full in-browser skill management at `/skills` allows editing aliases, priority, category, and evidence links.
+- **Health Monitoring**: The `/health/skills` endpoint exposes skill bank validity, verified counts, and learning counts without disclosing personal information.
+
+### 3. Truth Lock & Content Quality Boundary
+- **Candidate Title Integrity**: The headline on generated resumes reflects the candidate's actual documented occupation (e.g., Technical Support Engineer / IT Specialist), rejecting unheld target titles like "Senior Cloud Architect".
+- **Anti-Elevation Guards**: Basic skills remain basic; documented English B2 is never elevated to C1 or native/fluent; local scripts are never presented as production CI/CD pipelines.
+- **Natural Summary with HMAC Attestation**: Fluent professional summaries are reviewed against supplied facts. Approved summaries carry a cryptographic server HMAC (`summary_attestation`). If the review is rejected, times out, or is modified, the summary automatically falls back to verified source sentences.
+- **Conservative Presentation Deduplication**: Cleans repetitive phrasing across projects and experience bullets while preserving distinct qualifiers, numbers, and tooling.
+
+### 4. Dual Resume Themes & Layout Integrity
+- **Modern Sidebar Theme**: Two-column layout featuring a navy blue sidebar with contact details, core skills, languages, an optional profile photo or initials, and a seamless GDPR clause without borders or steps. The main section displays professional summary, experience bullets, projects, education, and certifications.
+- **ATS Classic Theme**: Single-column, minimalist, text-focused layout without photos or multi-column grids, maximizing automated ATS readability and natural multi-page flow.
+- **Dynamic Layout Fitting**: WeasyPrint page boxes and text bounds are dynamically evaluated. Spacing and skill counts adapt to prevent sparse continuations (e.g. a single dangling bullet on page 2) while keeping all factual content intact.
+- **Single GDPR Consent**: The recruitment consent clause is placed cleanly at the bottom margin of the final page in both PDF and DOCX.
+
+### 5. Document Export & Hyperlink Integrity
+- **PDF Export**: Pixel-accurate WeasyPrint rendering with native hyperlink annotations (`mailto:`, `https://`) and Poppler-verified geometry.
+- **DOCX Export**: Clean, single-column editable Word document with active hyperlinks and standard headings for universal compatibility.
+- **URL & Contact Normalization**: RFC-compliant URL parsing and normalization preserve ASCII URLs byte-for-byte, encode Unicode paths cleanly, and format readable display text while keeping tracking parameters in link targets.
+
+### 6. In-Browser Resume Editing
+- **Interactive Form**: Edit professional summary, selected skills, experience bullets, and projects directly in the browser.
+- **Instant Truth Lock Re-validation**: Manual edits are checked against the candidate's verified profile catalog. Unsupported claims return HTTP 422 with actionable error messages and preserve form state without corrupting the saved resume.
+
+### 7. Security & Privacy
+- **SSRF Defense**: IP address validation, IP pinning, DNS rebinding mitigation, RFC 1918/3927 blocking, and strict redirect limits.
+- **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), fixed-window login rate limiting (5 attempts per 5 minutes per IP), and server-revocable SQLite sessions (`data/sessions.sqlite3`).
+- **CSRF & Cookie Protection**: Double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
+- **Diagnostics & History**: `/diagnostics` dashboard for health metrics, active model status, and build metadata; `/compare` view for side-by-side CV comparison; atomic file staging and version backups under `data/generated/`.
 
 ---
 
@@ -74,10 +127,10 @@ CVTailor decouples the application from the underlying LLM via `AIProvider`:
 
 | Provider | Identifier | Connection Type | Target Use |
 |---|---|---|---|
-| **Ollama** | `ollama` | Local REST (`POST /api/chat`) | Default private local inference |
-| **Google Gemini** | `gemini` | Direct Google API (`generativelanguage.googleapis.com`) | Cloud inference via Google AI Studio API key |
+| **Ollama** | `ollama` | Local REST (`POST /api/chat`) | Default private local inference (`qwen3.5:9b`) |
+| **Google Gemini** | `gemini` | Direct Google API (`generativelanguage.googleapis.com`) | Cloud inference via Google AI Studio API key (`gemini-3.1-flash-lite`) |
 | **Auto** | `auto` | Managed Router (`ResilientAIProvider`) | Primary provider with automatic fallback |
-| **Mock** | `mock` | Local Python generator | Offline development and automated testing |
+| **Mock** | `mock` | Local Python generator | Deterministic offline development and automated testing |
 | **n8n** | `n8n` | Webhook with `X-Webhook-Secret` | Delegated n8n workflow execution ([setup guide](docs/n8n-setup.md)) |
 
 ### Fallback Routing Rules
@@ -87,8 +140,70 @@ The active router evaluates provider preferences as follows:
 - **`ollama`**: Uses Ollama as primary, falling back to Gemini if fallback is enabled.
 - **`gemini`**: Uses Gemini as primary, falling back to Ollama if fallback is enabled.
 - **Fallback Toggle**: Controlled in the authenticated UI (`/settings/fallback`) and persisted in `data/ai_settings.json` (`{"automatic_fallback": true/false}`). When disabled, only the requested primary provider is called.
-- **Operation Budget (`LLM_OPERATION_BUDGET_SECONDS`)**: Protects the overall pipeline. If the primary provider fails and the remaining budget is less than 5 seconds, fallback is aborted to prevent hung tasks.
-- **Data Privacy Note**: Enabling Gemini (as primary or fallback) will transmit the job text and candidate master profile facts needed for analysis to Google's API endpoint.
+- **Operation Budget (`LLM_OPERATION_BUDGET_SECONDS`)**: Protects the overall pipeline (default 900.0s). If the primary provider fails and the remaining budget is less than 5 seconds, fallback is aborted to prevent hung tasks.
+- **Summary Review Timeout (`SUMMARY_REVIEW_TIMEOUT_SECONDS`)**: The optional HMAC summary review stage has a dedicated 30-second timeout; if it expires or fails, the system smoothly falls back to verified source sentences without failing the generation task.
+- **Data Privacy Note**: Enabling Gemini (as primary or fallback) transmits job text and candidate master profile facts needed for analysis to Google's API endpoint.
+
+---
+
+## Repository Structure
+
+```
+ai-resume-tailoring-platform/
+├── app/
+│   ├── cli.py                     # CLI management commands (e.g. reset-password)
+│   ├── main.py                    # FastAPI application initialization & middleware
+│   ├── core/                      # Core configuration, logging, and security guards
+│   │   ├── config.py              # Pydantic Settings & environment variables
+│   │   ├── logging.py             # Structured logging setup
+│   │   └── security.py            # Argon2id, SQLite sessions, CSRF, and rate limiting
+│   ├── models/                    # Pydantic domain models
+│   │   ├── candidate.py           # Candidate profile, experience, projects, education
+│   │   ├── interpretation.py      # LLM-first provider-neutral JobInterpretation schema
+│   │   ├── job.py                 # JobRequest, JobAnalysis, and requirement models
+│   │   ├── resume.py              # TailoredResume and CV bullet structures
+│   │   └── skills.py              # VerifiedSkill and SkillEvidence schemas
+│   ├── routes/
+│   │   └── web.py                 # FastAPI web endpoints (analysis, resume, skills, auth)
+│   └── services/                  # Business logic and external integrations
+│       ├── ai_provider.py         # AI provider base classes and contracts
+│       ├── analysis_validator.py  # Validation of LLM requirement interpretations
+│       ├── artifact_transaction.py# Atomic file staging, versioning, and rollback
+│       ├── auth_store.py          # Argon2id password file management
+│       ├── content_quality.py     # Conservative deduplication & quality verification
+│       ├── docx_generator.py      # python-docx ATS-friendly document generation
+│       ├── evidence_matching.py   # Candidate profile evidence matcher
+│       ├── fact_catalog.py        # Tokenizer and source fact catalog
+│       ├── fact_validator.py      # Truth Lock boundary and candidate fact enforcement
+│       ├── gemini_provider.py     # Google Gemini API provider
+│       ├── job_extractors/        # SSRF-safe fetcher & portal parsers (JustJoin, NoFluff, etc.)
+│       ├── job_sections.py        # Section classification (qualifications, duties, benefits)
+│       ├── languages.py           # Language proficiency verification
+│       ├── mock_provider.py       # Deterministic mock provider for tests & offline dev
+│       ├── n8n_provider.py        # n8n webhook provider
+│       ├── ollama_provider.py     # Local Ollama REST provider
+│       ├── pdf_generator.py       # WeasyPrint PDF renderer with layout fitting
+│       ├── professional_summary.py# Source-backed summary construction
+│       ├── profile_photo.py       # Profile headshot validation and cropping
+│       ├── reference_cvs.py       # Reference CV ingestion for style-only guidance
+│       ├── resilient_provider.py  # Provider routing, fallback, and operation budget
+│       ├── resume_editor.py       # In-browser CV editing and re-validation
+│       ├── resume_export.py       # Contact normalization, link verification, and layout checks
+│       ├── semantic_requirements.py# Semantic requirement extraction and grouping
+│       ├── session_store.py       # SQLite session storage
+│       ├── skills_bank.py         # Verified skills bank loading and filtering
+│       ├── storage.py             # Transactional application history storage
+│       ├── summary_review.py      # Natural summary review with signed HMAC attestation
+│       └── task_manager.py        # Background task queue and progress tracking
+├── data/                          # Data directory (profiles, skills, auth, generated CVs)
+├── docs/                          # Comprehensive technical and operational documentation
+├── scripts/
+│   ├── bootstrap_skills.py        # Script to bootstrap skills.json from master profile
+│   └── recording_demo.py          # Isolated runner for synthetic video demo recordings
+├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
+├── templates/                     # Jinja2 HTML templates for mobile-first web interface
+└── tests/                         # Comprehensive automated test suite (411 tests)
+```
 
 ---
 
@@ -168,7 +283,7 @@ All configurable environment variables correspond to `.env.example`:
 |---|---|---|
 | `APP_USERNAME` | — | Initial username for first-run credential bootstrap |
 | `APP_PASSWORD` | — | Initial password for first-run bootstrap (migrated to Argon2id hash in `data/auth.json`) |
-| `CSRF_SECRET` | — | Secret key used for signing double-submit CSRF tokens |
+| `CSRF_SECRET` | — | Secret key used for signing double-submit CSRF tokens and summary attestations |
 | `BASE_URL` | `https://cv.example.com` | Public base URL; enables `Secure` flag on cookies when using HTTPS |
 | `DATA_DIR` | `/app/data` (Docker) or `data` | Directory for master profile, skills bank, auth, and generated resumes |
 | `CV_TAILOR_PORT` | `8000` | Loopback port bound by Uvicorn under Docker host networking |
@@ -260,22 +375,31 @@ For creating video demonstrations or capturing screenshots without exposing pers
 
 ## Testing & Quality Assurance
 
-Run code formatting checks and test suites locally:
+CVTailor includes an extensive automated test suite covering unit contracts, integration pipelines, layout regressions, and security boundaries.
 
 ```bash
 # Check code style and formatting
 ruff check .
 
-# Run test suite
+# Run complete test suite (411 tests)
 pytest -q
 ```
+
+### Test Coverage Highlights
+
+- **Truth Lock & Fact Validation**: Guarantees zero unverified facts, strict source sentence resolution, candidate title preservation, and skill level preservation across all pipeline stages.
+- **LLM-First Interpretation Regressions**: Validates prompt contracts across frozen public job listings, handling of ambiguous AND/OR logic, and distinction of negated constraints.
+- **Layout & PDF Geometry Integrity**: Programmatic validation of WeasyPrint rendering, text box bounds, column constraints, glyph overlap detection, and single GDPR consent clause placement.
+- **DOCX Validation**: Verification of paragraph hierarchies, standard styles, native XML hyperlink relationships, and LibreOffice rendering compatibility.
+- **Browser Regressions**: Headless Chromium (Playwright) end-to-end tests for responsive previews across mobile (360px), tablet (768px), and desktop (1280px) viewports.
+- **SSRF & Security Tests**: Host validation, IP address pinning, DNS rebinding mitigation, multipart upload limits, ZIP bomb rejection, and Argon2id session security.
 
 ### Known Limitations
 
 - **Heuristic Job Section Parsing**: Job listings with irregular formatting, missing headers, or nested iframes may not parse cleanly via static extraction. In such cases, the system falls back to `manual_required` (prompting the user to paste the job description text).
 - **DOCX Layout Approximation**: DOCX export does not replicate the HTML/CSS two-column layout of the Modern Sidebar theme. It generates a single-column document with centered headers to preserve editability and ATS compatibility.
 - **Single-Owner Scope**: The software is designed for single-user self-hosting. Multi-user isolation, team roles, and public SaaS onboarding are not implemented.
-- **Review Requirement**: Truth Lock enforces source fact IDs and exact sentence replacement, but semantic nuances and job-specific relevance still require human review.
+- **Review Requirement**: Truth Lock enforces source fact IDs and exact sentence replacement, but semantic nuances and job-specific relevance still require human review before submitting an application.
 
 ---
 
