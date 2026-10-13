@@ -14,7 +14,7 @@ CI checks pull requests and pushes. Production deployment is a separate manually
 
 ## Continuous deployment from GitHub Actions
 
-`Deploy CVTailor` is initially **manual**, via Actions → Deploy CVTailor → Run workflow → `main`. It runs the full CI checks, checks that the running commit is an ancestor of the release, publishes an image to GHCR, then deploys its immutable digest over restricted SSH. Merge all feature PRs already deployed on the VPS before the first release: the ancestry check prevents accidental downgrades. No PRs are automatically merged.
+`Deploy CVTailor` is initially **manual**, via Actions → Deploy CVTailor → Run workflow → `main`. It runs the full CI checks, checks that the running commit is an ancestor of the release, publishes an image to GHCR, then deploys its immutable digest over restricted SSH. Merge all feature PRs already deployed on the VPS into `main` before the first release (a merged stacked PR may only be present on its parent branch): the ancestry check prevents accidental downgrades. No PRs are automatically merged.
 
 The workflow forwards its short-lived `GITHUB_TOKEN` over SSH stdin for the registry pull. Docker credentials are held in a temporary directory and removed on success or failure; no permanent registry token is required on the VPS. Application secrets and private data stay on the VPS.
 

@@ -9,10 +9,10 @@ concurrency:
 jobs:
   test:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
           cache: pip
@@ -22,7 +22,7 @@ jobs:
       - run: pytest -q
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     permissions:
       contents: read
@@ -32,7 +32,7 @@ jobs:
       VPS_PORT: ${{ secrets.VPS_PORT }}
       VPS_USER: ${{ secrets.VPS_USER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       - name: Configure restricted SSH identity

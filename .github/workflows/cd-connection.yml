@@ -6,7 +6,7 @@ on:
 permissions: {}
 jobs:
   connection:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Verify host identity and restricted SSH command
