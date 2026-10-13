@@ -68,6 +68,13 @@ class FactValidator:
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)
         warnings: list[str] = []
+        learning = self.skills_bank.learning_for_job(f"{job.role}\n{job.job_description}") if self.skills_bank else []
+        if preserve_skills:
+            requested = {item.skill_id for item in candidate.currently_learning}
+            learning = [item for item in learning if item.skill_id in requested]
+        if candidate.currently_learning and candidate.currently_learning != learning:
+            warnings.append("Currently learning: unsupported entries or wording replaced by user-confirmed learning declarations.")
+        draft.currently_learning = learning
 
         def skill_key(value: str) -> str:
             return " ".join(value.casefold().replace("(basic)", "").replace("/", " ").replace("-", " ").split())

@@ -94,6 +94,10 @@ def generate_docx(
     if resume.core_skills:
         document.add_heading("Core Skills", level=1)
         document.add_paragraph(" • ".join(resume.core_skills))
+    if resume.currently_learning:
+        document.add_heading("Currently learning", level=1)
+        for item in resume.currently_learning:
+            document.add_paragraph(f"{item.name} — {item.status}", style="List Bullet")
     if profile_languages(profile):
         document.add_heading("Languages", level=1)
         document.add_paragraph(" · ".join(profile_languages(profile)))

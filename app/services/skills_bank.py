@@ -56,6 +56,22 @@ class SkillsBank:
         if profile_mode == "production" and self.status.bank_kind != "production":
             raise SkillsConfigurationError("Production cannot use an example skills bank")
 
+    def learning_for_job(self, job_text: str):
+        """User-attested learning, separately from verified practical competence."""
+        from app.models.resume import ResumeLearningSkill
+
+        result = []
+        for skill in sorted(self.skills, key=lambda s: (-s.priority, s.name.casefold())):
+            declarations = [e for e in skill.evidence
+                            if e.source_type == "manual_verified" and e.description.strip()]
+            if not (skill.enabled and skill.level == "learning" and declarations
+                    and self.mentioned(skill, job_text)):
+                continue
+            course = any(e.source_id.startswith("manual:learning-course:") for e in declarations)
+            result.append(ResumeLearningSkill(skill_id=skill.id, name=skill.name,
+                status="Course in progress" if course else "Learning in progress"))
+        return result[:8]
+
     def _load(self) -> SkillsDocument:
         if not self.path.exists():
             raise SkillsConfigurationError(
