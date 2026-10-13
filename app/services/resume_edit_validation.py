@@ -27,6 +27,15 @@ def validate_manual_edit(validator, original, edited, job):
             return None
         return next((s for s in bank.skills if bank.wording(s) == value), None) or bank.find(value)
 
+    for item in edited.currently_learning:
+        if item not in checked.currently_learning:
+            path = f"Currently learning: {item.name}"
+            if item in original.currently_learning:
+                audit(path)
+            else:
+                reject(path, "Learning is not confirmed in Skills Bank, relevant to this offer, or uses unsupported wording.",
+                       "Confirm learning in Skills Bank and use its canonical name and learning status. Do not claim completion or practical proficiency.")
+
     old_skills = Counter(original.core_skills)
     for value, count in Counter(edited.core_skills).items():
         entry = skill(value)
