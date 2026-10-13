@@ -61,6 +61,10 @@ class FactValidator:
                             if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
                                 self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
+    def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest):
+        from app.services.resume_edit_validation import validate_manual_edit
+        return validate_manual_edit(self, original, edited, job)
+
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)
         warnings: list[str] = []
@@ -109,7 +113,7 @@ class FactValidator:
                         clean_skills.append(canonical)
                 else:
                     warnings.append(f"Unsupported AI fact removed: {skill}")
-            if not clean_skills:
+            if not clean_skills and not preserve_skills:
                 job_text = job.job_description.casefold()
                 relevant = [
                     canonical

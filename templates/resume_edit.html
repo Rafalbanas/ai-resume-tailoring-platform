@@ -6,6 +6,8 @@
   <a class="secondary button" href="{{ app_root_path|default('') }}/preview/{{ slug }}">Cancel</a>
 </div>
 {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+{% if edit_issues %}<section class="alert"><h2>Fields requiring correction</h2><ul>{% for issue in edit_issues %}<li><strong>{{ issue.field }}</strong>: {{ issue.reason }} <p>{{ issue.suggestion }}</p></li>{% endfor %}</ul></section>{% endif %}
+{% if existing_warnings %}<section class="card"><h2>Existing document — source review</h2><p>These issues concern saved content. Removing an optional item does not approve these claims or rewrite the other sections.</p><ul>{% for warning in existing_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></section>{% endif %}
 <form class="job-form resume-edit-form" action="{{ app_root_path|default('') }}/edit/{{ slug }}" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Verified headline <small>Built from the confirmed occupation and verified skills</small><input name="headline" maxlength="140" readonly value="{{ resume.headline }}"></label>

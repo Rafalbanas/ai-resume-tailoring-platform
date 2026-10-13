@@ -531,12 +531,13 @@ async def remove_preview_photo(request: Request, slug: str):
 async def edit_resume(request: Request, slug: str):
     guard(request)
     try:
-        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+        job, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     return request.app.state.templates.TemplateResponse(
         "resume_edit.html",
-        context(request, slug=slug, metadata=metadata, resume=resume),
+        context(request, slug=slug, metadata=metadata, resume=resume,
+                existing_warnings=FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, resume, job).warnings),
     )
 
 
@@ -548,13 +549,16 @@ def _regenerate_artifacts(
     *,
     template_name: str = "modern_sidebar",
     photo_enabled: bool = False,
+    validated_edit=None,
 ) -> list[str]:
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
+    result = validated_edit or FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide, template_name=template_name,
         job_text=f"{job.role}\n{job.job_description}",
     )
+    if validated_edit is not None and fitted_resume != result.resume:
+        raise ValueError("Resume layout: the selected layout would change saved content. Choose ATS Classic to preserve every edited section.")
     warnings = result.warnings + layout_warnings
     metadata = request.app.state.storage.load_application(slug)[3]
     modern_photo_preference = photo_enabled if template_name == "modern_sidebar" else metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
@@ -597,7 +601,7 @@ async def save_resume_edit(request: Request, slug: str):
         edited = apply_resume_edits(resume, form)
         template_name = str(form.get("template_name", "modern_sidebar"))
         if template_name not in {"modern_sidebar", "ats_classic"}:
-            raise HTTPException(status_code=422, detail="Unsupported resume layout")
+            raise ValueError("Resume layout: unsupported selection. Choose Modern Sidebar or ATS Classic.")
         photo_enabled = form.get("photo_enabled") == "on"
         if edited == resume:
             # Presentation changes preserve the exact saved content, including legacy CVs.
@@ -605,30 +609,26 @@ async def save_resume_edit(request: Request, slug: str):
                 photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
             _refresh_photo_artifacts(request, slug, photo_enabled=photo_enabled, template_name=template_name)
             return RedirectResponse(f"/preview/{slug}", status_code=303)
-        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(edited, job, preserve_skills=True)
-        changed = (
-            checked.resume.professional_summary != edited.professional_summary
-            or [[b.text for b in e.bullets] for e in checked.resume.experience] != [[b.text for b in e.bullets] for e in edited.experience]
-            or [(p.description, p.technologies) for p in checked.resume.projects] != [(p.description, p.technologies) for p in edited.projects]
-            or any(request.app.state.skills_bank.find(value) is None or not request.app.state.skills_bank.eligible(request.app.state.skills_bank.find(value)) for value in edited.core_skills)
-        )
-        if changed:
+        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, edited, job)
+        if checked.issues:
             return request.app.state.templates.TemplateResponse(
                 "resume_edit.html", context(request, slug=slug, metadata=metadata, resume=edited,
-                error="Changes were not saved: unsupported wording would be replaced by source facts. Review the profile evidence first."),
+                edit_issues=checked.issues, existing_warnings=checked.warnings,
+                error="The fields below were not saved. Other saved content has not been overwritten."),
                 status_code=422,
             )
         _regenerate_artifacts(
             request,
             slug,
             job,
-            edited,
+            checked.resume,
             template_name=template_name,
             photo_enabled=photo_enabled,
+            validated_edit=checked,
         )
     except (OSError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    except (ValidationError, ValueError):
+    except (ValidationError, ValueError) as exc:
         return request.app.state.templates.TemplateResponse(
             "resume_edit.html",
             context(
@@ -636,7 +636,8 @@ async def save_resume_edit(request: Request, slug: str):
                 slug=slug,
                 metadata=metadata,
                 resume=edited if "edited" in locals() else resume,
-                error="The edited CV is invalid or the layout would remove text. Use ATS Classic and source-backed wording.",
+                error="Changes were not saved. Review the field or layout issue below.",
+                edit_issues=([{ "field": ".".join(map(str, e["loc"])), "reason": e["msg"], "suggestion": "Correct this field and save again." } for e in exc.errors()] if isinstance(exc, ValidationError) else [{"field": "PDF/DOCX export or save", "reason": str(exc), "suggestion": "Choose ATS Classic for pagination/layout errors; otherwise correct the reported export issue and retry. Saved files remain unchanged."}]),
             ),
             status_code=422,
         )
