@@ -30,6 +30,12 @@ def apply_resume_edits(resume: TailoredResume, form: Mapping[str, object]) -> Ta
             draft.selected_skill_ids = []  # The scoped validator resolves visible values, not positional IDs.
 
 
+    if "currently_learning" in form:
+        # This control only removes saved declarations; additions require bank validation.
+        retained = str(form.get("currently_learning") or "").splitlines()
+        draft.currently_learning = [item for item in resume.currently_learning
+                                    if f"{item.name} — {item.status}" in retained]
+
     for exp_index, experience in enumerate(draft.experience):
         clean_bullets = []
         for bullet_index, bullet in enumerate(experience.bullets):
