@@ -341,16 +341,21 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     if not response.analysis.is_reliable:
         raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret).validate(response.resume, job)
+    validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
+    result = validator.validate(response.resume, job)
     try:
         prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     layout_guide = {}
-    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
-        result.resume, request.app.state.profile, layout_guide, template_name=template_name,
-        job_text=f"{job.role}\n{job.job_description}",
-    )
+    try:
+        fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+            result.resume, request.app.state.profile, layout_guide, template_name=template_name,
+            job_text=f"{job.role}\n{job.job_description}",
+            one_page=template_name == "modern_sidebar", fact_validator=validator,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings = result.warnings
     photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
