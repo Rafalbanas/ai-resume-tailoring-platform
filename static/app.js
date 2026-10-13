@@ -437,7 +437,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) throw new Error("request failed");
       const result = await response.json();
       if (result.extraction_method === "manual_required" || !result.job_description) {
-        setStatus("Could not extract this job automatically. Paste the job description manually.", "error");
+        setStatus("Automatic fetching was unavailable or blocked. Paste the offer; for Pracuj.pl use Clean pasted Pracuj.pl page.", "error");
         return false;
       }
       if ([companyInput.value, roleInput.value, descriptionInput.value].some((value, index) => value !== beforeFetch[index])) {
@@ -450,7 +450,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Job details fetched. Review and edit them before analysis.", "success");
       return fieldsAreComplete();
     } catch (_) {
-      setStatus("Could not extract this job automatically. Paste the job description manually.", "error");
+      setStatus("Automatic fetching was unavailable or blocked. Paste the offer; for Pracuj.pl use Clean pasted Pracuj.pl page.", "error");
       return false;
     } finally {
       fetching = false;
@@ -458,6 +458,43 @@ document.addEventListener("DOMContentLoaded", () => {
       fetchButton.textContent = "Fetch job";
     }
   }
+
+  const cleanButton = document.getElementById("clean-job-text");
+  cleanButton?.addEventListener("click", async () => {
+    if (fetching) return;
+    const original = [companyInput.value, roleInput.value, descriptionInput.value];
+    fetching = true;
+    cleanButton.disabled = true;
+    fetchButton.disabled = true;
+    setStatus("Cleaning the copied offer…");
+    try {
+      const response = await fetch(cvAppUrl("/api/clean-job-text"), {
+        method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": form.querySelector('[name="csrf_token"]').value},
+        body: JSON.stringify({text: original[2], url: urlInput.value.trim()}),
+      });
+      if (!response.ok) throw new Error("request failed");
+      const result = await response.json();
+      if (result.extraction_method === "manual_required" || !result.job_description) {
+        setStatus("No complete Pracuj.pl offer sections found. Your text was kept; paste the full offer or edit it manually.", "error");
+        return;
+      }
+      if ([companyInput.value, roleInput.value, descriptionInput.value].some((v, i) => v !== original[i])) {
+        setStatus("You edited the offer while cleaning. Your changes were kept.", "error");
+        return;
+      }
+      companyInput.value = original[0] || result.company || "";
+      roleInput.value = original[1] || result.role || "";
+      descriptionInput.value = result.job_description;
+      setStatus("Offer cleaned. Review requirements, preferences and employment conditions before analysis.", "success");
+    } catch (_) {
+      setStatus("Could not clean this offer. Your pasted text was kept.", "error");
+    } finally {
+      fetching = false;
+      cleanButton.disabled = false;
+      fetchButton.disabled = false;
+    }
+  });
 
   fetchButton.addEventListener("click", fetchJob);
   form.addEventListener("submit", async (event) => {

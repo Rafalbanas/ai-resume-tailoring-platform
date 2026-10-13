@@ -52,9 +52,16 @@ class JobExtractorService:
                 extracted.role = extracted.role or structured.role
                 return extracted, "html"
         if structured.usable:
+            if isinstance(adapter, PracujExtractor):
+                cleaned = adapter.extract_text(structured.job_description)
+                if cleaned.usable:
+                    cleaned.company, cleaned.role = structured.company, structured.role
+                    return cleaned, "jsonld"
+                # A plain JobPosting description without section labels is still
+                # useful; it is supplied by the publisher, not the full page UI.
             return structured, "jsonld"
         extracted = adapter.extract(html) if adapter else self.generic.extract(html)
-        if not extracted.usable and adapter:
+        if not extracted.usable and adapter and adapter.allow_generic_fallback:
             extracted = self.generic.extract(html)
         return extracted, "html"
 
