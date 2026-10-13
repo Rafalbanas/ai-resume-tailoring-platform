@@ -291,3 +291,6 @@ Under the terms of the Apache License 2.0, you are free to use, modify, distribu
 
 
 Modern Sidebar generation now selects a one-page PDF from verified source content. It removes redundant bullets, uses concise cited summary/project facts, and omits lower-priority optional details if necessary. Employment history, education, competence levels, learning status and mandatory evidence remain protected. The full validated pre-fit version and selection warnings are retained for review. If protected content cannot fit, generation returns a clear 422 message recommending ATS Classic or manual shortening. Manual edits and ATS Classic keep their chosen content; DOCX pagination depends on its separate editable layout.
+
+
+Pracuj.pl import collects the offer description, duties, requirements, preferences, technology tags and employment conditions as separate sections. Benefits, navigation, recruitment widgets and saved-CV information are excluded. If Pracuj.pl blocks the VPS with HTTP 403, paste the copied page into Job description and choose **Clean pasted Pracuj.pl page** to extract employer/title and clean the content without another network request. Review the imported text before analysis; inconsistent locations remain in the source for clarification.

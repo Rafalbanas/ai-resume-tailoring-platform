@@ -32,6 +32,8 @@
   </div>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ job_description or '' }}</textarea></label>
+  <button id="clean-job-text" class="secondary" type="button">Clean pasted Pracuj.pl page</button>
+  <p class="field-hint">If automatic fetching is blocked, paste the copied Pracuj.pl page above, then clean it. Review the extracted sections before analysis.</p>
   <div class="form-foot"><span>Source-constrained analysis and CV drafts. <a href="{{ app_root_path|default('') }}/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
 </form>
 {% endblock %}

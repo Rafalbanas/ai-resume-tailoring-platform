@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from app.core.security import require_session, validate_csrf
 from app.models.candidate import Interest
-from app.models.job import JobExtraction, JobRequest, JobUrlRequest
+from app.models.job import JobExtraction, JobRequest, JobTextRequest, JobUrlRequest
 from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
@@ -94,6 +94,18 @@ async def extract_job_url(request: Request, payload: JobUrlRequest):
     else:
         logger.info("Job URL extracted", extra={"stage": "job_extract", "method": result.extraction_method})
     return result
+
+
+@router.post("/api/clean-job-text", response_model=JobExtraction)
+async def clean_job_text(request: Request, payload: JobTextRequest):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(request.headers.get("X-CSRF-Token", ""),
+                  request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
+                  request.app.state.settings.csrf_secret)
+    from app.services.job_extractors.pracuj import PracujExtractor
+    candidate = PracujExtractor().extract_text(payload.text)
+    return request.app.state.job_extractor._result(candidate, payload.url, "html" if candidate.usable else "manual_required")
 
 
 @router.get("/", response_class=HTMLResponse)
