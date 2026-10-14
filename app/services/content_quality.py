@@ -98,12 +98,49 @@ def unfinished(value):
                                  or value.count('(') != value.count(')')))
 
 
+def _sql_query_subsumed(short, long):
+    """Canonical aliases only for an explicitly shared SQL/T-SQL query activity."""
+    def canonical(text):
+        text = text.casefold()
+        if not re.match(r'^(?:used|uses)\s', text):
+            return None
+        if not re.search(r'\bquer(?:y|ies)\b', text) or not re.search(r'\bt[- ]sql\b', text):
+            return None
+        text = re.sub(r'\b(?:(?:microsoft|ms)\s+)?sql\s+server\b', 'sql', text)
+        text = re.sub(r'\bt[- ]sql\b', 'tsql', text)
+        if not re.search(r'\bsql\b', text):
+            return None
+        # Same query/object binding despite the alternative noun phrase order.
+        return re.sub(r'\bfor operational queries\b', 'queries for operational', text)
+    left, right = canonical(short), canonical(long)
+    return left is not None and right is not None and _subsumed(left, right)
+
+
+def _deduplicate_sql_sentences(text):
+    retained = []
+    for sentence in _SENTENCES.split(text):
+        for index, prior in enumerate(retained):
+            if _sql_query_subsumed(prior, sentence):
+                retained[index] = sentence
+                break
+            if _sql_query_subsumed(sentence, prior):
+                break
+        else:
+            retained.append(sentence)
+    return ' '.join(retained)
+
+
 def deduplicate_bullets(bullets):
     kept = []
     for original in bullets:
         bullet = original.model_copy(deep=True)
-        bullet.text = deduplicate_text(bullet.text)
+        bullet.text = _deduplicate_sql_sentences(deduplicate_text(bullet.text))
         for prior in kept:
+            if _sql_query_subsumed(prior.text, bullet.text) or _sql_query_subsumed(bullet.text, prior.text):
+                if _sql_query_subsumed(prior.text, bullet.text):
+                    prior.text = bullet.text
+                prior.source_fact_ids = list(dict.fromkeys([*prior.source_fact_ids, *bullet.source_fact_ids]))
+                break
             combined = deduplicate_text(prior.text + ' ' + bullet.text)
             if len(_SENTENCES.split(combined)) == 1:
                 prior.text = combined

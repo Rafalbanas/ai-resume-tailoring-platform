@@ -190,7 +190,9 @@ class FactValidator:
                     continue
                 exp_index = bullet_index
                 valid_ids = [entry.source_id for entry in entries]
-                if not self.catalog.supports_paraphrase(bullet.text, valid_ids) and bullet.text != self._experience_wording(" ".join(entry.text for entry in entries)):
+                if (not self.catalog.supports_paraphrase(bullet.text, valid_ids)
+                        and not any(bullet.text == self._experience_wording(entry.text) for entry in entries)
+                        and bullet.text != self._experience_wording(" ".join(entry.text for entry in entries))):
                     warnings.append(f"Unsupported AI bullet replaced in {self.profile.experience[exp_index].company}")
                     bullet.text = " ".join(entry.text for entry in entries)
                 bullet.text = self._experience_wording(bullet.text)
@@ -209,7 +211,7 @@ class FactValidator:
                     if self.fact_priorities.get(entry.source_id, 0) and entry.source_id not in cited:
                         bullets.append(ResumeBullet(text=self._experience_wording(entry.text), source_fact_ids=[entry.source_id]))
                 bullets.sort(key=lambda b: max((self.fact_priorities.get(i, 0) for i in b.source_fact_ids), default=0), reverse=True)
-            exp.bullets = bullets[:4]
+            exp.bullets = deduplicate_bullets(bullets)[:4]
             clean_experience.append(exp)
         if not clean_experience:
             for exp_index, source in enumerate(self.profile.experience):
@@ -232,7 +234,7 @@ class FactValidator:
             else:
                 existing = unique_experience[key]
                 known = {bullet.text for bullet in existing.bullets}
-                existing.bullets = (existing.bullets + [bullet for bullet in item.bullets if bullet.text not in known])[:4]
+                existing.bullets = deduplicate_bullets(existing.bullets + [bullet for bullet in item.bullets if bullet.text not in known])[:4]
         clean_experience = list(unique_experience.values())
         included = {(item.company, item.title, item.dates) for item in clean_experience}
         for index, source in enumerate(self.profile.experience):
