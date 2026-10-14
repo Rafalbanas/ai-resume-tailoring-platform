@@ -23,13 +23,13 @@ def _extend(values, additions):
 
 def prepare_enrichment(profile: CandidateProfile, document: SkillsDocument, plan: dict):
     updated, bank = profile.model_copy(deep=True), document.model_copy(deep=True)
-    allowed = {'summary_facts', 'skills', 'experience_facts', 'project_facts', 'bank_skills'}
+    allowed = {'summary_facts', 'skills', 'experience_facts', 'project_facts', 'education_facts', 'bank_skills'}
     if set(plan) - allowed:
         raise ValueError('Unknown enrichment fields')
     _extend(updated.summary_facts, plan.get('summary_facts', []))
     for category, values in plan.get('skills', {}).items():
         _extend(updated.skills.setdefault(category, []), values)
-    for collection, owner_field, name in ((updated.experience, 'company', 'experience_facts'), (updated.projects, 'name', 'project_facts')):
+    for collection, owner_field, name in ((updated.experience, 'company', 'experience_facts'), (updated.projects, 'name', 'project_facts'), (updated.education, 'institution', 'education_facts')):
         for item in plan.get(name, []):
             matches = [entry for entry in collection if getattr(entry, owner_field) == item['owner']]
             if len(matches) != 1:

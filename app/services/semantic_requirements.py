@@ -84,7 +84,7 @@ def language_check_name(name, level):
     return name + " " + level
 
 
-def _facts(validator, item, *, practical_scope=False):
+def _facts(validator, item, *, practical_scope=False, ml_context=""):
     from app.services.competency_scope import scoped_match
     scoped = scoped_match(validator.matcher, item.name)
     from app.services.evidence_strength import CI
@@ -123,10 +123,21 @@ def _facts(validator, item, *, practical_scope=False):
         item.status == Status.STRONG
         and entries
         and practical
-        and all(evidence_strength(e) in {"declaration", "theoretical_knowledge"} for e in entries)
+        and all(evidence_strength(e) in {"declaration", "theoretical_knowledge", "academic_knowledge"} for e in entries)
     ):
         item.status = Status.PARTIAL
         item.reason += " Declared knowledge is documented; practical use and the requested scope/level are not established by a technology name alone."
+
+    from app.services.academic_ml import COMMERCIAL, LIBRARIES, TRAINING, ml_ceiling
+    ml_scope = item.name + ' ' + getattr(item, 'source_quote', '') + ' ' + getattr(item, 'required_level', '')
+    if (LIBRARIES.search(item.name) or TRAINING.search(item.name)) and COMMERCIAL.search(ml_context):
+        ml_scope += " commercial experience"
+    if LIBRARIES.search(item.name) and TRAINING.search(ml_context):
+        ml_scope += " training models"
+    ml_limit = ml_ceiling(ml_scope, entries, validator.skills_bank, operator=getattr(item, 'operator', 'all'))
+    if ml_limit and item.status == Status.STRONG and ml_limit[0] != 'strong':
+        item.status = Status(ml_limit[0])
+        item.reason += ' ' + ml_limit[1]
 
     ceiling = ci_ceiling(item.name, entries)
     if ceiling and item.status == Status.STRONG and ceiling[0] != "strong":
@@ -251,6 +262,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             _facts(
                 validator,
                 component,
+                ml_context=req.name + " " + " ".join(quotes),
                 practical_scope=bool(
                     re.search(
                         r"(?m)^(?:practical|hands.on|professional|experience|proficien\w*|(?:install|configur|develop|implement|deploy|troubleshoot|script)\w*|working|production)\b",
@@ -283,14 +295,34 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.interpretation_uncertain = True
             req.status = Status.PARTIAL if entries else Status.MISSING
             req.reason += " Item-level assessment of this combined list is required."
+        from app.services.academic_ml import ml_ceiling
+        lookup = {entry.source_id: entry for entry in validator.matcher.entries}
+        ml_limit = ml_ceiling(req.name + ' ' + req.source_quote + ' ' + req.required_level,
+                              [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank, operator=req.operator)
+        if ml_limit and req.status == Status.STRONG and ml_limit[0] != 'strong':
+            req.status = Status(ml_limit[0])
+            req.reason += ' ' + ml_limit[1]
         minimum = required_years(req.source_quote) or required_years(req.name) or req.required_years
         if minimum is not None:
             # The model chooses which employment duties/roles are relevant;
             # dates and overlap are calculated exclusively from cited records.
-            tenure = validator.matcher.cited_tenure(req.source_fact_ids, minimum)
+            from app.services.academic_ml import ACTIVITY, LIBRARIES, TRAINING, academic_entry, ml_entries
+            scope = req.name + " " + req.source_quote
+            tenure_ids = req.source_fact_ids
+            if LIBRARIES.search(scope) or TRAINING.search(scope):
+                relevant = ml_entries(scope, [lookup[i] for i in tenure_ids if i in lookup])
+                tenure_ids = [entry.source_id for entry in relevant if entry.kind == 'experience'
+                              and not academic_entry(entry) and ACTIVITY.search(entry.text)
+                              and (not TRAINING.search(scope) or TRAINING.search(entry.text))]
+            tenure = validator.matcher.cited_tenure(tenure_ids, minimum)
             req.required_years, req.observed_years = minimum, tenure.observed_years
             req.status = tenure.status
             req.reason += " " + tenure.reason
+            duration_free = re.sub(r"\b\d+(?:\.\d+)?\s*\+?\s*(?:years?|lat(?:a)?|rok(?:u)?)\b", "", scope + " " + req.required_level, flags=re.I)
+            scope_limit = ml_ceiling(duration_free, [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank, operator=req.operator)
+            if scope_limit and req.status == Status.STRONG and scope_limit[0] != 'strong':
+                req.status = Status(scope_limit[0])
+                req.reason += ' ' + scope_limit[1]
         req.required_level = req.required_level or required_level(req.name) or required_level(req.source_quote)
         language_name = language_check_name(req.name, req.required_level)
         if not validator.matcher._language(req.name):
