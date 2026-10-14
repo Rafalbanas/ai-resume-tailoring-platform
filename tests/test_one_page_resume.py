@@ -32,7 +32,8 @@ def test_sql_dedup_keeps_specific_statement_and_citations(profile):
     original = deepcopy(resume)
     fitted, actions = select_one_page(resume, validator, 'SQL', lambda r: True)
     assert len(fitted.experience[0].bullets)==1
-    assert fitted.experience[0].bullets[0] == original.experience[0].bullets[1]
+    assert fitted.experience[0].bullets[0].text == original.experience[0].bullets[1].text
+    assert fitted.experience[0].bullets[0].source_fact_ids == ['old-sql', 'sql']
     assert fitted.core_skills == original.core_skills
     assert fitted.currently_learning == original.currently_learning
     assert resume == original
@@ -90,7 +91,7 @@ def test_mandatory_source_evidence_is_not_removed(profile):
     validator, resume = sample(profile)
     validator.analysis = SimpleNamespace(requirements=[SimpleNamespace(priority='mandatory', status='strong', source_fact_ids=['old-sql'])],role_competencies=[])
     result,_ = select_one_page(resume,validator,'SQL',lambda r: len(r.experience[0].bullets)==1)
-    assert result.experience[0].bullets[0].source_fact_ids==['old-sql']
+    assert result.experience[0].bullets[0].source_fact_ids==['old-sql', 'sql']
     assert result.experience[0].company==resume.experience[0].company
     assert result.experience[0].dates==resume.experience[0].dates
 

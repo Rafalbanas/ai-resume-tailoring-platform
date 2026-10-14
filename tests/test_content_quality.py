@@ -264,3 +264,101 @@ def test_negated_expertise_is_not_mistaken_for_a_level_increase(profile, resume_
     assert not any(i.startswith('Unsupported proficiency') for i in quality_issues(draft, profile))
     draft.professional_summary = 'Has basic Docker knowledge. Advanced Docker expertise.'
     assert any(i.startswith('Unsupported proficiency') for i in quality_issues(draft, profile))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_sql_query_aliases_keep_specific_text_and_all_citations(reverse):
+    from app.models.resume import ResumeBullet
+    from app.services.content_quality import deduplicate_bullets
+    generic = ResumeBullet(text='Used MS SQL Server and T-SQL for operational queries.', source_fact_ids=['generic'])
+    specific = ResumeBullet(text='Used SQL and T-SQL queries for operational troubleshooting and data verification.', source_fact_ids=['specific'])
+    bullets = [specific, generic] if reverse else [generic, specific]
+    result = deduplicate_bullets(bullets)
+    assert len(result) == 1 and result[0].text == specific.text
+    assert set(result[0].source_fact_ids) == {'generic', 'specific'}
+    assert deduplicate_bullets(result) == result
+    assert generic.source_fact_ids == ['generic'] and specific.source_fact_ids == ['specific']
+
+
+@pytest.mark.parametrize('other', [
+    'Administered MS SQL Server and T-SQL for operational queries.',
+    'Used basic SQL and T-SQL queries for operational troubleshooting and data verification.',
+    'Used SQL and T-SQL queries in production for operational troubleshooting and data verification.',
+    'Used SQL and T-SQL queries for troubleshooting 5 operational incidents.',
+    'Used PostgreSQL and T-SQL queries for operational troubleshooting and data verification.',
+    'Used SQL and T-SQL queries for operational reporting.',
+    'Used MS SQL Server backups and T-SQL queries for operational recovery.',
+])
+def test_sql_rule_keeps_distinct_actions_levels_platforms_and_purposes(other):
+    from app.models.resume import ResumeBullet
+    from app.services.content_quality import deduplicate_bullets
+    first = 'Used SQL and T-SQL queries for operational troubleshooting and data verification.'
+    result = deduplicate_bullets([ResumeBullet(text=first, source_fact_ids=['one']),
+                                 ResumeBullet(text=other, source_fact_ids=['two'])])
+    assert len(result) == 2
+
+
+@pytest.mark.parametrize('layout', ['modern_sidebar', 'ats_classic'])
+def test_sql_dedup_survives_protected_evidence_revalidation_storage_and_exports(profile, tmp_path, layout):
+    from pathlib import Path
+
+    from docx import Document
+    from pypdf import PdfReader
+
+    from app.models.job import JobAnalysis, JobRequirement
+    from app.models.resume import ResumeBullet, ResumeExperience
+    from app.services.docx_generator import generate_docx
+    from app.services.pdf_generator import PDFGenerator
+    from app.services.storage import Storage
+    generic = 'Used MS SQL Server and T-SQL for operational queries.'
+    specific = 'Used SQL and T-SQL queries for operational troubleshooting and data verification.'
+    profile.experience[0].facts = [generic, specific]
+    validator = FactValidator(profile)
+    refs = {entry.text: entry.source_id for entry in validator.catalog.prompt_entries if entry.kind == 'experience'}
+    summary = next(entry for entry in validator.catalog.prompt_entries if entry.kind == 'summary')
+    analysis = JobAnalysis(company='Example', role='Support', strong_matches=[], partial_matches=[], missing_requirements=[],
+        recommendation='REVIEW', match_level='LOW', requirements=[JobRequirement(name='SQL', priority='mandatory',
+            status='partial', source_fact_ids=[refs[generic], refs[specific]])])
+    validator = FactValidator(profile, analysis=analysis)
+    job = JobRequest(company='Example', role='Support', job_description='Requirements\nExperience using SQL and T-SQL queries.')
+    resume = TailoredResume(headline='Support', professional_summary=summary.text, summary_source_fact_ids=[summary.source_id],
+        core_skills=[], experience=[ResumeExperience(company=profile.experience[0].company, title=profile.experience[0].title,
+        dates='', bullets=[ResumeBullet(text=text, source_fact_ids=[refs[text]]) for text in [generic, specific]])])
+    cleaned = validator.validate(resume, job).resume
+    assert len(cleaned.experience[0].bullets) == 1
+    assert set(cleaned.experience[0].bullets[0].source_fact_ids) == {refs[generic], refs[specific]}
+    assert validator.validate(cleaned, job).resume.experience[0].bullets == cleaned.experience[0].bullets
+    storage = Storage(tmp_path)
+    slug, folder = storage.save_application(job, analysis, cleaned, [], template_name=layout)
+    reopened = storage.load_application(slug)[1]
+    pdf = PDFGenerator(Path('templates'), Path('static'), tmp_path)
+    fitted, _ = pdf.fit_resume(reopened, profile, template_name=layout, one_page=True, fact_validator=validator)
+    pdf.generate(fitted, profile, folder/'resume.pdf', template_name=layout)
+    generate_docx(fitted, profile, folder/'resume.docx', template_name=layout)
+    texts = [' '.join(page.extract_text() for page in PdfReader(folder/'resume.pdf').pages),
+             ' '.join(p.text for p in Document(folder/'resume.docx').paragraphs)]
+    # DOCX sidebar uses tables; include paragraphs there as well.
+    doc = Document(folder/'resume.docx')
+    texts[1] += ' ' + ' '.join(p.text for t in doc.tables for row in t.rows for cell in row.cells for p in cell.paragraphs)
+    for text in texts:
+        text = ' '.join(text.split())
+        assert generic not in text and text.count(specific) == 1
+
+
+def test_sql_repeat_inside_one_bullet_is_removed_without_changing_its_citations():
+    from app.models.resume import ResumeBullet
+    from app.services.content_quality import deduplicate_bullets
+    generic = 'Used MS SQL Server and T-SQL for operational queries.'
+    specific = 'Used SQL and T-SQL queries for operational troubleshooting and data verification.'
+    original = ResumeBullet(text=generic+' '+specific, source_fact_ids=['generic', 'specific'])
+    cleaned = deduplicate_bullets([original])
+    assert cleaned == [ResumeBullet(text=specific, source_fact_ids=['generic', 'specific'])]
+    assert original.text == generic+' '+specific
+
+
+def test_sql_rule_does_not_subsume_a_different_actor():
+    from app.models.resume import ResumeBullet
+    from app.services.content_quality import deduplicate_bullets
+    first = ResumeBullet(text='Used MS SQL Server and T-SQL for operational queries.', source_fact_ids=['one'])
+    second = ResumeBullet(text='Users used SQL and T-SQL queries for operational troubleshooting and data verification.', source_fact_ids=['two'])
+    assert deduplicate_bullets([first, second]) == [first, second]

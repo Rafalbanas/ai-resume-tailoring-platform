@@ -1,19 +1,8 @@
 """Select concise, cited content for new CVs; never rewrite manual edits."""
-import re
 from copy import deepcopy
 
+from app.services.content_quality import deduplicate_bullets
 from app.services.fact_catalog import normalized_tokens
-
-
-def _bullet_key(text):
-    value = text.casefold()
-    value = re.sub(r'\b(?:microsoft|ms)\s+sql\s+server\b', 'sql', value)
-    value = re.sub(r'\bt[- ]sql\b', 'tsql', value)
-    value = re.sub(r'\bqueries\b', 'query', value)
-    tokens = normalized_tokens(value)
-    if {'sql', 'tsql'} <= tokens:
-        return (tokens - {'used', 'operational', 'query'}) | set(re.findall(r'\b\d+\b', value))
-    return {value.strip()}
 
 
 def select_one_page(resume, validator, job_text, fits):
@@ -38,16 +27,9 @@ def select_one_page(resume, validator, job_text, fits):
                 len(normalized_tokens(text) & tokens), -len(text))
 
     for experience in draft.experience:
-        retained = []
-        for index, bullet in enumerate(experience.bullets):
-            key = _bullet_key(bullet.text)
-            redundant = any(index != j and key and key <= _bullet_key(other.text)
-                and (key != _bullet_key(other.text) or index > j)
-                for j, other in enumerate(experience.bullets))
-            if redundant and not protected_item(bullet.source_fact_ids):
-                actions.append(f'One-page selection: omitted repeated bullet in {experience.company}.')
-            else:
-                retained.append(bullet)
+        retained = deduplicate_bullets(experience.bullets)
+        if len(retained) < len(experience.bullets):
+            actions.append(f'One-page selection: consolidated repeated bullet in {experience.company}; source citations retained.')
         experience.bullets = retained
     if fits(draft):
         return draft, actions
