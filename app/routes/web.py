@@ -10,11 +10,12 @@ from pydantic import ValidationError
 
 from app.core.security import require_session, validate_csrf
 from app.models.candidate import Interest
-from app.models.job import JobExtraction, JobRequest, JobUrlRequest
+from app.models.job import JobExtraction, JobRequest, JobTextRequest, JobUrlRequest
 from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, VerifiedSkill
 from app.services.ai_provider import AIProviderError
 from app.services.artifact_transaction import commit_artifacts, staged_artifacts
+from app.services.evidence_gaps import evidence_questions
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
 from app.services.profile_loader import save_master_profile
@@ -93,6 +94,18 @@ async def extract_job_url(request: Request, payload: JobUrlRequest):
     else:
         logger.info("Job URL extracted", extra={"stage": "job_extract", "method": result.extraction_method})
     return result
+
+
+@router.post("/api/clean-job-text", response_model=JobExtraction)
+async def clean_job_text(request: Request, payload: JobTextRequest):
+    guard(request)
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    validate_csrf(request.headers.get("X-CSRF-Token", ""),
+                  request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
+                  request.app.state.settings.csrf_secret)
+    from app.services.job_extractors.pracuj import PracujExtractor
+    candidate = PracujExtractor().extract_text(payload.text)
+    return request.app.state.job_extractor._result(candidate, payload.url, "html" if candidate.usable else "manual_required")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -288,6 +301,8 @@ async def analysis_view(request: Request, draft_id: str):
             request,
             job=job,
             analysis=response.analysis,
+            token_usage=response.token_usage,
+            evidence_questions=evidence_questions(response.analysis),
             draft_id=draft_id,
             provider_used=getattr(response, "provider_used", "unknown"),
             model_used=getattr(response, "model_used", "unknown"),
@@ -295,6 +310,34 @@ async def analysis_view(request: Request, draft_id: str):
             fallback_reason=getattr(response, "fallback_reason", None),
         ),
     )
+
+
+@router.post("/analysis/{draft_id}/evidence")
+async def save_analysis_evidence(request: Request, draft_id: str):
+    guard(request)
+    form = await request.form()
+    validate_csrf(str(form.get("csrf_token", "")), request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
+    from app.services.evidence_gaps import answer_fact, evidence_questions
+    from app.services.profile_enrichment import apply_enrichment
+    try:
+        _, response = request.app.state.storage.load_draft(draft_id)
+        question = next((q for q in evidence_questions(response.analysis) if q["id"] == form.get("question_id")), None)
+        if question is None:
+            raise ValueError("This question is not a current evidence gap.")
+        fact = answer_fact(question, str(form.get("answer", "")), str(form.get("scope", "")),
+                           str(form.get("experience_context", "")), str(form.get("details", "")),
+                           consent=form.get("save_consent") == "on")
+        apply_enrichment(request.app.state.settings.data_dir, {"summary_facts": [fact]})
+        from app.services.profile_loader import load_master_profile
+        profile, status = load_master_profile(request.app.state.settings)
+        request.app.state.profile, request.app.state.profile_status = profile, status
+        # Providers hold this bank object: update it in place so later analyses
+        # use the saved facts without a restart or a separate scoring system.
+        request.app.state.skills_bank.profile = profile
+        request.app.state.skills_bank.catalog = FactCatalog(profile)
+    except (ValueError, FileNotFoundError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/analysis/{draft_id}?evidence_saved=1", status_code=303)
 
 
 @router.post("/generate/{draft_id}")
@@ -310,16 +353,21 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     if not response.analysis.is_reliable:
         raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret).validate(response.resume, job)
+    validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
+    result = validator.validate(response.resume, job)
     try:
         prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     layout_guide = {}
-    fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
-        result.resume, request.app.state.profile, layout_guide, template_name=template_name,
-        job_text=f"{job.role}\n{job.job_description}",
-    )
+    try:
+        fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+            result.resume, request.app.state.profile, layout_guide, template_name=template_name,
+            job_text=f"{job.role}\n{job.job_description}",
+            one_page=template_name == "modern_sidebar", fact_validator=validator,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings = result.warnings
     photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
@@ -500,12 +548,13 @@ async def remove_preview_photo(request: Request, slug: str):
 async def edit_resume(request: Request, slug: str):
     guard(request)
     try:
-        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+        job, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     return request.app.state.templates.TemplateResponse(
         "resume_edit.html",
-        context(request, slug=slug, metadata=metadata, resume=resume),
+        context(request, slug=slug, metadata=metadata, resume=resume,
+                existing_warnings=FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, resume, job).warnings),
     )
 
 
@@ -517,13 +566,16 @@ def _regenerate_artifacts(
     *,
     template_name: str = "modern_sidebar",
     photo_enabled: bool = False,
+    validated_edit=None,
 ) -> list[str]:
-    result = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
+    result = validated_edit or FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
         result.resume, request.app.state.profile, layout_guide, template_name=template_name,
         job_text=f"{job.role}\n{job.job_description}",
     )
+    if validated_edit is not None and fitted_resume != result.resume:
+        raise ValueError("Resume layout: the selected layout would change saved content. Choose ATS Classic to preserve every edited section.")
     warnings = result.warnings + layout_warnings
     metadata = request.app.state.storage.load_application(slug)[3]
     modern_photo_preference = photo_enabled if template_name == "modern_sidebar" else metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
@@ -566,7 +618,7 @@ async def save_resume_edit(request: Request, slug: str):
         edited = apply_resume_edits(resume, form)
         template_name = str(form.get("template_name", "modern_sidebar"))
         if template_name not in {"modern_sidebar", "ats_classic"}:
-            raise HTTPException(status_code=422, detail="Unsupported resume layout")
+            raise ValueError("Resume layout: unsupported selection. Choose Modern Sidebar or ATS Classic.")
         photo_enabled = form.get("photo_enabled") == "on"
         if edited == resume:
             # Presentation changes preserve the exact saved content, including legacy CVs.
@@ -574,30 +626,26 @@ async def save_resume_edit(request: Request, slug: str):
                 photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
             _refresh_photo_artifacts(request, slug, photo_enabled=photo_enabled, template_name=template_name)
             return RedirectResponse(f"/preview/{slug}", status_code=303)
-        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(edited, job, preserve_skills=True)
-        changed = (
-            checked.resume.professional_summary != edited.professional_summary
-            or [[b.text for b in e.bullets] for e in checked.resume.experience] != [[b.text for b in e.bullets] for e in edited.experience]
-            or [(p.description, p.technologies) for p in checked.resume.projects] != [(p.description, p.technologies) for p in edited.projects]
-            or any(request.app.state.skills_bank.find(value) is None or not request.app.state.skills_bank.eligible(request.app.state.skills_bank.find(value)) for value in edited.core_skills)
-        )
-        if changed:
+        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, edited, job)
+        if checked.issues:
             return request.app.state.templates.TemplateResponse(
                 "resume_edit.html", context(request, slug=slug, metadata=metadata, resume=edited,
-                error="Changes were not saved: unsupported wording would be replaced by source facts. Review the profile evidence first."),
+                edit_issues=checked.issues, existing_warnings=checked.warnings,
+                error="The fields below were not saved. Other saved content has not been overwritten."),
                 status_code=422,
             )
         _regenerate_artifacts(
             request,
             slug,
             job,
-            edited,
+            checked.resume,
             template_name=template_name,
             photo_enabled=photo_enabled,
+            validated_edit=checked,
         )
     except (OSError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    except (ValidationError, ValueError):
+    except (ValidationError, ValueError) as exc:
         return request.app.state.templates.TemplateResponse(
             "resume_edit.html",
             context(
@@ -605,7 +653,8 @@ async def save_resume_edit(request: Request, slug: str):
                 slug=slug,
                 metadata=metadata,
                 resume=edited if "edited" in locals() else resume,
-                error="The edited CV is invalid or the layout would remove text. Use ATS Classic and source-backed wording.",
+                error="Changes were not saved. Review the field or layout issue below.",
+                edit_issues=([{ "field": ".".join(map(str, e["loc"])), "reason": e["msg"], "suggestion": "Correct this field and save again." } for e in exc.errors()] if isinstance(exc, ValidationError) else [{"field": "PDF/DOCX export or save", "reason": str(exc), "suggestion": "Choose ATS Classic for pagination/layout errors; otherwise correct the reported export issue and retry. Saved files remain unchanged."}]),
             ),
             status_code=422,
         )
@@ -1062,7 +1111,7 @@ async def compare_view(
                 results = task.result["results"]
                 return request.app.state.templates.TemplateResponse(
                     "compare.html",
-                    context(request, job=job, results=results, task_id=task_id),
+                    context(request, job=job, results=results, task_id=task_id, token_usage=task.token_usage),
                 )
             if task.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
                 return request.app.state.templates.TemplateResponse(

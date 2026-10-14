@@ -60,6 +60,10 @@
     </div>
   </div>
 
+  <section id="token-usage" aria-label="Token usage" style="margin: 1rem 0;" hidden>
+    <strong id="token-count"></strong><span id="token-speed" style="margin-left: 1rem;"></span>
+    <p id="token-detail" class="muted"></p><small id="token-note"></small>
+  </section>
   <div class="task-card-footer">
     <div class="task-info-note">
       <small id="task-footer-note">
@@ -112,6 +116,16 @@
   const retryForm = document.getElementById("retry-form");
   const retryBtn = document.getElementById("retry-btn");
 
+  function updateTokens(usage) {
+    if (!usage || !usage.calls) return;
+    document.getElementById("token-usage").hidden = false;
+    const pending = usage.active;
+    document.getElementById("token-count").textContent = usage.completed_calls ? `${usage.total_tokens.toLocaleString()} reported tokens` : "Token statistics available when the model call completes";
+    document.getElementById("token-speed").textContent = usage.tokens_per_second == null ? "" : `${usage.tokens_per_second.toFixed(1)} tokens/s (last completed call)`;
+    document.getElementById("token-detail").textContent = usage.completed_calls ? `${usage.completed_calls}/${usage.calls} calls finished · input ${usage.input_tokens ?? "unavailable"} · output ${usage.output_tokens ?? "unavailable"}` : `${usage.model || "Model"} is generating…`;
+    document.getElementById("token-note").textContent = pending ? "Actual usage updates when each call finishes. No live estimates." : usage.complete_usage ? "Actual usage reported by providers, including retries." : "Some calls have no reported usage; this is a partial total.";
+  }
+  updateTokens({{ task.token_usage|tojson }});
   let timerInterval = null;
   let isDone = (initialStatus === "completed" || initialStatus === "failed");
 
@@ -158,6 +172,7 @@
       });
       if (res.ok) {
         const data = await res.json();
+        updateTokens(data.token_usage);
         if (data.started_at) {
           window._taskStartedAt = data.started_at;
         }
@@ -227,7 +242,7 @@
     }
 
     if (!isDone) {
-      setTimeout(pollStatus, 2500);
+      setTimeout(pollStatus, 1000);
     }
   }
 

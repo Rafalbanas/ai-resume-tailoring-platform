@@ -1,0 +1,34 @@
+name: Check VPS deployment connection
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/vps-cd]
+permissions: {}
+jobs:
+  connection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Verify host identity and restricted SSH command
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          live=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" status)
+          [[ "$live" =~ ^[a-f0-9]{40}$ ]]
+          echo "Restricted SSH works; running revision: $live"
+          if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" whoami; then
+            echo 'Unexpected unrestricted shell access' >&2
+            exit 1
+          fi
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

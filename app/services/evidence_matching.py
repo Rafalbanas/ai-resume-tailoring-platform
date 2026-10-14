@@ -23,10 +23,10 @@ FAMILIES = {
     'documentation': r'\b(?:technical documentation|runbooks?|knowledge base|support documentation)\b',
     'communication': r'\b(?:communication|non-technical audiences)\b',
 }
-NEGATIVE = re.compile(r'\b(?:no (?:prior )?(?:experience|knowledge)|never (?:used|worked with)|have not used|not proficient)\b', re.I)
+NEGATIVE = re.compile(r'\b(?:no (?:prior )?(?:practical |professional |hands.on )?(?:experience|knowledge)|never (?:used|worked with)|have not used|not proficient)\b', re.I)
 SQL_ADVANCED = re.compile(r'\b(?:dba|database administration|cluster\w*|replication|performance tuning|query optimi[sz]ation)\b', re.I)
 API_DEBUG = re.compile(r'\b(?:debug\w*|troublesho(?:ot\w*|t)|oauth|authentication flows?|auth)\b', re.I)
-LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|solid|advanced|expert|fluency|fluent|basic|working knowledge|hands.on)\b\+?', re.I)
+LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|solid|advanced|expert|fluency|fluent|awareness|familiarity|basic knowledge|understanding|practical knowledge|hands.on experience|professional experience|proficiency|basic|working knowledge|hands.on)\b\+?', re.I)
 YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat)\b', re.I)
 
 
@@ -99,7 +99,7 @@ class EvidenceMatcher:
         # is evidence, not a license to infer all activities associated with a tool.
         if bank:
             for skill in bank.skills:
-                if bank.eligible(skill):
+                if skill.enabled and skill.verified and skill.level != "learning" and skill.evidence:
                     for ev in skill.evidence:
                         if ev.source_type == 'manual_verified' and bank.evidence_supports(skill, ev):
                             self.entries.append(FactEntry(ev.source_id, 'verified_skill', f'{skill.name}: {ev.description}', owner_name=skill.name))
@@ -107,7 +107,8 @@ class EvidenceMatcher:
 
     def sources(self, ids: list[str]) -> list[dict[str, str]]:
         lookup = {e.source_id: e for e in self.entries}
-        return [dict(source_id=i, type=lookup[i].kind, owner=lookup[i].owner_name, fact=lookup[i].text)
+        from app.services.evidence_strength import evidence_strength
+        return [dict(source_id=i, type=lookup[i].kind, owner=lookup[i].owner_name, fact=lookup[i].text, strength=evidence_strength(lookup[i]))
                 for i in dict.fromkeys(ids) if i in lookup]
 
     def _find(self, pattern: str, *, practical=False) -> list[FactEntry]:
@@ -286,6 +287,10 @@ class EvidenceMatcher:
         return self._qualified(name, evidenced or related, complete, reason)
 
     def match(self, name: str, *, alternatives: list[str] | None = None, operator='single') -> EvidenceMatch | None:
+        from app.services.competency_scope import atomic_parts, scoped_match
+        parts = atomic_parts(name) if not alternatives else []
+        if parts:
+            return self.match(name, alternatives=parts, operator="all")
         if alternatives:
             branches = [self.match(branch) for branch in alternatives]
             if all(branch is not None for branch in branches):
@@ -296,11 +301,20 @@ class EvidenceMatcher:
                 if any(b.status == Status.ABSENT for b in branches):
                     return EvidenceMatch(Status.ABSENT, [e for b in branches for e in b.entries], 'An AND condition has an explicitly documented gap; every condition is required.')
                 return self._result([e for b in branches for e in b.entries], complete, 'AND requires every condition: ' + '; '.join(f'{n}: {b.status.value}' for n, b in zip(alternatives, branches, strict=True)))
+        scoped = scoped_match(self, name)
+        if scoped is not None:
+            return scoped
         for e in self.entries:
             if NEGATIVE.search(e.text):
-                subject = re.split(NEGATIVE, e.text, maxsplit=1)[-1].strip(' .:')
+                subject = re.split(NEGATIVE, e.text, maxsplit=1)[-1].strip(' .:').split('.')[0]
                 subject = re.sub(r'^(?:with|of|in)\s+', '', subject, flags=re.I)
                 if subject and re.search(r'(?<!\w)' + re.escape(subject) + r'(?!\w)', name, re.I):
+                    practice_denial = bool(re.search(r'no (?:practical|professional|hands.on) experience', e.text, re.I))
+                    if practice_denial and not re.search(r'experience|practical|hands.on|proficien|working', name, re.I):
+                        continue
+                    positives = self._find(r'(?<!\w)' + re.escape(subject) + r'(?!\w)')
+                    if positives:
+                        return EvidenceMatch(Status.PARTIAL, [e, *positives], 'Contradictory evidence for this scope requires clarification; neither assertion overrides the other.')
                     return EvidenceMatch(Status.ABSENT, [e], 'The profile explicitly records a lack of this competence.')
         # A technology appearing alongside a language does not become confirmed
         # simply because the language alone is known.
@@ -314,6 +328,11 @@ class EvidenceMatcher:
             scoped = matcher(name)
             if scoped is not None:
                 return scoped
+        from app.services.evidence_strength import ARTIFACT, CI, ci_ceiling
+        if CI.search(name):
+            entries = [e for e in self.entries if (CI.search(e.text) or ARTIFACT.search(e.text)) and not NEGATIVE.search(e.text)]
+            status, reason = ci_ceiling(name, entries)
+            return EvidenceMatch(Status(status), entries, reason)
         key = family(name)
         entries = self._find(FAMILIES[key]) if key else []
         practical = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
@@ -387,5 +406,9 @@ class EvidenceMatcher:
             term = re.sub(r'^(?:experience (?:with|in)|knowledge of)\s+', '', name, flags=re.I).strip(' .')
             simple = self._find(r'(?<!\w)' + re.escape(term) + r'(?!\w)')
             if simple:
-                return self._result(simple, True, 'Technology knowledge is documented; a name alone does not verify advanced scope.')
+                from app.services.evidence_strength import evidence_strength
+                needs_practice = bool(re.match(r'experience\s+(?:with|in)\b', name, re.I))
+                practical = any(evidence_strength(e) not in {'declaration', 'theoretical_knowledge'} for e in simple)
+                return self._result(simple, not needs_practice or practical,
+                    'Technology knowledge is documented; a name alone does not verify practical experience or advanced scope.')
         return None

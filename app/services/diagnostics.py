@@ -50,9 +50,21 @@ class DiagnosticLogStore:
         truth_lock_warning_count: int = 0,
         layout_warning_count: int = 0,
         error_message: str | None = None,
+        call_metrics: list[dict] | None = None,
+        assessed_requirements: int | None = None,
     ) -> dict:
+        allowed = {"provider", "model", "stage", "prompt_tokens", "completion_tokens", "reasoning_tokens", "total_ms",
+                   "client_ms", "done_reason", "num_predict", "num_ctx", "thinking_present", "error_kind",
+                   "assessed_requirements", "recovery_calls", "covered_passages", "unassessed_passages", "source_context_resolved", "tokens_per_second"}
+        # Explicit allowlist: never persist raw content, payloads or CV facts here.
+        safe_calls = [{k: v for k, v in call.items() if k in allowed and isinstance(v, (str, int, float, bool, type(None)))}
+                      for call in (call_metrics or [])]
         entry = {
             "id": uuid4().hex[:12],
+            "call_metrics": safe_calls,
+            "llm_call_count": len(safe_calls),
+            "assessed_requirements": assessed_requirements,
+            "output_limit_count": sum(c.get("error_kind") == "output_limit" for c in safe_calls),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "company": (company or "Unknown")[:100],
             "role": (role or "Unknown")[:100],

@@ -61,9 +61,20 @@ class FactValidator:
                             if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
                                 self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
+    def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest):
+        from app.services.resume_edit_validation import validate_manual_edit
+        return validate_manual_edit(self, original, edited, job)
+
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)
         warnings: list[str] = []
+        learning = self.skills_bank.learning_for_job(f"{job.role}\n{job.job_description}") if self.skills_bank else []
+        if preserve_skills:
+            requested = {item.skill_id for item in candidate.currently_learning}
+            learning = [item for item in learning if item.skill_id in requested]
+        if candidate.currently_learning and candidate.currently_learning != learning:
+            warnings.append("Currently learning: unsupported entries or wording replaced by user-confirmed learning declarations.")
+        draft.currently_learning = learning
 
         def skill_key(value: str) -> str:
             return " ".join(value.casefold().replace("(basic)", "").replace("/", " ").replace("-", " ").split())
@@ -109,7 +120,7 @@ class FactValidator:
                         clean_skills.append(canonical)
                 else:
                     warnings.append(f"Unsupported AI fact removed: {skill}")
-            if not clean_skills:
+            if not clean_skills and not preserve_skills:
                 job_text = job.job_description.casefold()
                 relevant = [
                     canonical

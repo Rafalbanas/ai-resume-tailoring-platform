@@ -234,6 +234,7 @@ class ResilientAIProvider(AIProvider):
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
                 response.fallback_reason = f"Primary '{primary_name}' failed ({primary_err}). Automatically recovered using '{fallback_name}'."
+                response.call_metrics = getattr(primary_err, "call_metrics", []) + response.call_metrics
                 return response
             except Exception as fallback_err:
                 logger.error(

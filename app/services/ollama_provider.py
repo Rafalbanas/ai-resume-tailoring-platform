@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import time
+from contextvars import ContextVar
 from typing import Callable, TypeVar
 
 import httpx
@@ -8,22 +10,28 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
 from app.models.candidate import CandidateProfile
-from app.models.interpretation import JobInterpretation
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import (
-    JOB_ANALYSIS_SYSTEM_PROMPT,
     RESUME_TAILOR_SYSTEM_PROMPT,
     AIProvider,
     AIProviderError,
-    build_compact_analysis_payload,
     build_compact_tailor_payload,
 )
 from app.services.analysis_validator import AnalysisValidator
 from app.services.comparison_capture import record_call
 from app.services.fact_catalog import FactCatalog
+from app.services.ollama_analysis import (
+    COMPACT_PROMPT,
+    AnalysisInventory,
+    CompactInterpretation,
+    OllamaAnalysisError,
+    needs_assessment,
+    plan_batches,
+)
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
+from app.services.token_progress import new_call, report
 
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -49,6 +57,7 @@ class OllamaProvider(AIProvider):
         semaphore: asyncio.Semaphore | None = None,
     ):
         self.call_metrics = []
+        self._run_metrics = ContextVar("ollama_run_metrics", default=None)
         self.summary_review_key = settings.csrf_secret
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
@@ -82,8 +91,9 @@ class OllamaProvider(AIProvider):
         allowed_skills: list[str] | None = None,
         allowed_skill_ids: list[str] | None = None,
         _completion_budget: int | None = None,
+        _schema: dict | None = None,
     ) -> ModelT:
-        schema = response_model.model_json_schema()
+        schema = _schema or response_model.model_json_schema()
         if response_model is JobAnalysis and self.skills_bank:
             properties = schema["properties"]
             payload_skill_ids = {s["id"] for s in payload.get("skills_bank", []) if isinstance(s, dict) and "id" in s}
@@ -148,9 +158,19 @@ class OllamaProvider(AIProvider):
             },
             "messages": [
                 {"role": "system", "content": f"{TRUTH_RULES}\n\n{system_prompt}"},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        progress_id = new_call(self.name, self.model)
+        call_start = time.perf_counter()
+        metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
+                   "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
+                   "total_ms": None, "done_reason": None, "num_predict": _completion_budget or self.num_predict,
+                   "num_ctx": self.num_ctx, "thinking_present": False, "error_kind": None}
+        self.call_metrics.append(metrics)
+        del self.call_metrics[:-128]
+        if self._run_metrics.get() is not None:
+            self._run_metrics.get().append(metrics)
         try:
             async with self.semaphore:
                 async with httpx.AsyncClient(
@@ -163,27 +183,52 @@ class OllamaProvider(AIProvider):
                     response.raise_for_status()
                     envelope = response.json()
         except httpx.TimeoutException as exc:
-            raise AIProviderError("Ollama timed out while generating the response. Try again.") from exc
+            metrics["error_kind"] = "timeout"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            metrics["client_ms"] = (time.perf_counter()-call_start)*1000
+            raise OllamaAnalysisError("timeout", "Ollama timed out while generating the response. Try again.") from exc
         except httpx.RequestError as exc:
-            raise AIProviderError("Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
-        except (httpx.HTTPStatusError, ValueError) as exc:
-            raise AIProviderError("Ollama returned an invalid HTTP response.") from exc
+            metrics["error_kind"] = "unavailable"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            metrics["client_ms"] = (time.perf_counter()-call_start)*1000
+            raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
+        except httpx.HTTPStatusError as exc:
+            kind = "context_budget" if any(w in exc.response.text.casefold() for w in ("context", "prompt too long")) else "http"
+            metrics["error_kind"] = kind
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            raise OllamaAnalysisError(kind, "Ollama rejected the request (context budget or HTTP error).") from exc
+        except ValueError as exc:
+            metrics["error_kind"] = "envelope"
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            raise OllamaAnalysisError("envelope", "Ollama returned an invalid HTTP JSON envelope.") from exc
 
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("message"), dict):
+            metrics["error_kind"] = "envelope"
+            raise OllamaAnalysisError("envelope", "Ollama returned an invalid structured JSON envelope.")
         load_ms = (envelope.get("load_duration") or 0) / 1_000_000
         prompt_eval_ms = (envelope.get("prompt_eval_duration") or 0) / 1_000_000
         prompt_tokens = envelope.get("prompt_eval_count") or 0
         eval_ms = (envelope.get("eval_duration") or 0) / 1_000_000
         eval_tokens = envelope.get("eval_count") or 0
         total_ms = (envelope.get("total_duration") or 0) / 1_000_000
-        self.call_metrics.append({"stage": payload.get("stage"), "prompt_tokens": prompt_tokens, "completion_tokens": eval_tokens, "total_ms": total_ms})
+        metrics.update(prompt_tokens=envelope.get("prompt_eval_count"), completion_tokens=envelope.get("eval_count"),
+                       total_ms=total_ms if envelope.get("total_duration") is not None else None,
+                       client_ms=(time.perf_counter()-call_start)*1000,
+                       done_reason=envelope.get("done_reason"),
+                       thinking_present=bool(envelope.get("message", {}).get("thinking")),
+                       reasoning_tokens=envelope.get("thinking_eval_count"))
+        metrics["tokens_per_second"] = eval_tokens/(eval_ms/1000) if eval_ms > 0 and envelope.get("eval_count") is not None else None
+        report(progress_id, phase="done", input_tokens=envelope.get("prompt_eval_count"), output_tokens=envelope.get("eval_count"),
+               total_tokens=prompt_tokens+eval_tokens if envelope.get("prompt_eval_count") is not None and envelope.get("eval_count") is not None else None,
+               tokens_per_second=metrics["tokens_per_second"])
         logger.info(
-            "Ollama call completed: model=%s, load=%.1fms, prompt_eval=%.1fms (%d tokens), eval=%.1fms (%d tokens), total=%.1fms",
+            "Ollama call completed: model=%s, load=%.1fms, prompt_eval=%.1fms (%s tokens), eval=%.1fms (%s tokens), total=%.1fms",
             self.model,
             load_ms,
             prompt_eval_ms,
-            prompt_tokens,
+            prompt_tokens if envelope.get("prompt_eval_count") is not None else "unavailable",
             eval_ms,
-            eval_tokens,
+            eval_tokens if envelope.get("eval_count") is not None else "unavailable",
             total_ms,
         )
 
@@ -191,38 +236,115 @@ class OllamaProvider(AIProvider):
             content = envelope["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
-            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", schema, content, self.call_metrics[-1])
+            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", schema, content, metrics)
             if envelope.get("done_reason") == "length":
-                # Retry only an explicitly truncated response, keeping all source
-                # material and the same model. Respect the remaining context.
-                retry_budget = min(self.num_predict * 2, self.num_ctx - prompt_tokens - 512)
-                if _completion_budget is None and retry_budget > self.num_predict:
-                    logger.warning("Ollama output was truncated; retrying once with completion budget %d", retry_budget)
-                    return await self._chat(
-                        response_model, system_prompt, payload,
-                        source_catalog=source_catalog, allowed_skills=allowed_skills,
-                        allowed_skill_ids=allowed_skill_ids, _completion_budget=retry_budget,
-                    )
-                raise AIProviderError(
-                    "Ollama response was cut off at the output token limit; analysis is incomplete."
-                )
-            return response_model.model_validate_json(content)
-        except (KeyError, TypeError, ValidationError) as exc:
-            raise AIProviderError("Ollama returned invalid structured JSON. Try again.") from exc
+                used = (envelope.get("prompt_eval_count") or 0) + (envelope.get("eval_count") or 0)
+                if envelope.get("eval_count") is not None and eval_tokens < (_completion_budget or self.num_predict) and used >= self.num_ctx - 512:
+                    metrics["error_kind"] = "context_budget"
+                    raise OllamaAnalysisError("context_budget", "Ollama exhausted its available context before completing analysis.")
+                metrics["error_kind"] = "output_limit"
+                recovered = []
+                if response_model is CompactInterpretation:
+                    # Only independently closed, schema-valid row objects survive.
+                    # The incomplete JSON report itself is NEVER accepted.
+                    from app.services.ollama_analysis import closed_rows
+                    recovered = closed_rows(content)
+                raise OllamaAnalysisError("output_limit", "Ollama response was cut off at the output token limit; analysis is incomplete.", recovered=recovered)
+            if envelope.get("done") is False:
+                metrics["error_kind"] = "incomplete_response"
+                raise OllamaAnalysisError("incomplete_response", "Ollama returned a non-final response to a non-streaming request.")
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as exc:
+                metrics["error_kind"] = "invalid_json"
+                raise OllamaAnalysisError("invalid_json", "Ollama returned invalid structured JSON. Try again.") from exc
+            try:
+                return response_model.model_validate(parsed)
+            except ValidationError as exc:
+                metrics["error_kind"] = "schema"
+                raise OllamaAnalysisError("schema", "Ollama returned invalid structured JSON: schema validation failed.") from exc
+        except (KeyError, TypeError) as exc:
+            metrics["error_kind"] = "envelope"
+            raise OllamaAnalysisError("envelope", "Ollama returned invalid structured JSON: missing message content.") from exc
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
-        payload = build_compact_analysis_payload(job, profile, self.skills_bank)
-        interpretation = await self._chat(
-            JobInterpretation,
-            JOB_ANALYSIS_SYSTEM_PROMPT,
-            payload,
-        )
+        inventory = AnalysisInventory.build(job, profile, self.skills_bank)
+        batches = plan_batches(inventory, self.num_predict, self.num_ctx)
+        rows = []
+        recovery_calls = 0
+        # At most two targeted recovery calls for the whole analysis. Successful
+        # passages are retained; no entire-report retry with a doubled budget.
+        for batch in batches:
+            pending = batch
+            while pending:
+                try:
+                    recovery_prompt = ""
+                    if recovery_calls:
+                        recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
+                    keyed_recovery = recovery_calls >= 2
+                    if keyed_recovery:
+                        recovery_prompt += "\nFINAL RECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
+                    result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
+                                              _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
+                    recovered = inventory.validate_rows(result.rows, pending)
+                except OllamaAnalysisError as exc:
+                    if exc.kind != 'output_limit':
+                        if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
+                            self.call_metrics[-1]['error_kind'] = exc.kind
+                        raise
+                    recovered = inventory.validate_rows(exc.recovered, pending)
+                    if recovery_calls >= 2:
+                        raise
+                covered = {r.p for r in recovered}
+                # A context-only row cannot claim coverage of a known qualification.
+                # Semantic exceptions are preserved as explicit incomplete review,
+                # never quietly replaced by deterministic fabricated matches.
+                invalid = {r.p for r in recovered if r.k in {'context', 'responsibility'}
+                           and needs_assessment(inventory.passages[r.p])}
+                recovered = [r for r in recovered if r.p not in invalid]
+                covered -= invalid
+                rows.extend(recovered)
+                missing = [i for i in pending if i not in covered]
+                # Headings, organization/benefit text and portal tags already have
+                # source-parser dispositions. Tags are assessed independently by
+                # the existing role matcher; do not retry an LLM just for metadata.
+                from app.services.ollama_analysis import CompactAssessment
+                context_ids = [pid for pid in missing if inventory.passages[pid]["context_only"] and not needs_assessment(inventory.passages[pid])]
+                rows.extend(CompactAssessment(p=pid, k="context") for pid in context_ids)
+                missing = [pid for pid in missing if pid not in context_ids]
+                if self.call_metrics:
+                    self.call_metrics[-1]['covered_passages'] = len(covered)
+                    self.call_metrics[-1]['source_context_resolved'] = len(context_ids)
+                    self.call_metrics[-1]['unassessed_passages'] = len(missing)
+                    if missing and self.call_metrics[-1].get('error_kind') is None:
+                        self.call_metrics[-1]['error_kind'] = 'coverage'
+                if not missing:
+                    break
+                if recovery_calls >= 2:
+                    raise OllamaAnalysisError('coverage', 'Ollama did not assess every source passage; incomplete analysis — review required.')
+                recovery_calls += 1
+                # If nothing survived a length-limited batch, split just that batch.
+                # This bounds repeated work instead of repeating all completed rows.
+                if len(missing) > 1 and not covered:
+                    midpoint = (len(missing)+1)//2
+                    batches.append(missing[midpoint:])
+                    pending = missing[:midpoint]
+                else:
+                    pending = missing
+        interpretation = inventory.expand(rows)
         analysis = interpretation.to_analysis(job)
         validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
         import hashlib
         validated.company, validated.role = job.company, job.role
         validated.job_source = {'url': str(job.job_url or ''), 'sha256': hashlib.sha256(job.job_description.encode()).hexdigest()}
+        if not validated.is_reliable:
+            if self.call_metrics:
+                self.call_metrics[-1]["error_kind"] = "coverage"
+            raise OllamaAnalysisError('coverage', 'Ollama analysis failed source coverage validation; incomplete analysis — review required.')
         validated._model_output = analysis.model_dump(mode="json")
+        if self.call_metrics:
+            self.call_metrics[-1]["assessed_requirements"] = len(validated.requirements)
+            self.call_metrics[-1]["recovery_calls"] = recovery_calls
         return validated
 
     async def tailor_resume(
@@ -275,13 +397,22 @@ class OllamaProvider(AIProvider):
         profile: CandidateProfile,
         on_stage: Callable[[str], None] | None = None,
     ) -> WorkflowResponse:
-        if on_stage:
-            on_stage("Analyzing job requirements (Ollama)...")
-        analysis = await self.analyze_job(job, profile)
-        if on_stage:
-            on_stage("Generating tailored CV (Ollama)...")
-        resume = await self.tailor_resume(job, profile, analysis)
-        return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.model)
+        metrics = []
+        token = self._run_metrics.set(metrics)
+        try:
+            if on_stage:
+                on_stage("Analyzing job requirements (Ollama)...")
+            analysis = await self.analyze_job(job, profile)
+            if on_stage:
+                on_stage("Generating tailored CV (Ollama)...")
+            resume = await self.tailor_resume(job, profile, analysis)
+            return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.model,
+                                    call_metrics=metrics)
+        except AIProviderError as exc:
+            exc.call_metrics = metrics
+            raise
+        finally:
+            self._run_metrics.reset(token)
 
     async def health(self) -> dict[str, str]:
         try:
@@ -295,7 +426,7 @@ class OllamaProvider(AIProvider):
                 response.raise_for_status()
                 data = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise AIProviderError("Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
+            raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         available = {
             value
             for item in data.get("models", [])

@@ -20,6 +20,7 @@ class ExtractionCandidate:
 class BaseExtractor:
     domains: tuple[str, ...] = ()
     prefer_over_jsonld = False
+    allow_generic_fallback = True
 
     def matches(self, url: str) -> bool:
         hostname = (urlparse(url).hostname or "").lower().rstrip(".")

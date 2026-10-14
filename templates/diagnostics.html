@@ -27,7 +27,7 @@
       </div>
       <p class="health-detail">
         {% if info.model %}Model: <code>{{ info.model }}</code><br>{% endif %}
-        {% if name == 'gemini' %}<small class="provider-sub">Ekonomiczny model do analizy ofert i dopasowywania CV.</small><br>{% endif %}
+        {% if name == 'gemini' %}<small class="provider-sub">Economical model for job analysis and resume tailoring.</small><br>{% endif %}
         {% if info.error %}<span class="error-text">{{ info.error }}</span>{% endif %}
       </p>
     </div>
@@ -76,7 +76,10 @@
             <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td>{{ run.duration_ms }} ms</td>
+          <td>{{ run.duration_ms }} ms
+            {% if run.call_metrics %}<details><summary>{{ run.llm_call_count }} model calls · {{ run.assessed_requirements }} requirements</summary>
+            {% for call in run.call_metrics %}<p><small>{{ call.stage }} · {{ call.model }} · input {{ call.prompt_tokens if call.prompt_tokens is not none else 'unavailable' }} · output {{ call.completion_tokens if call.completion_tokens is not none else 'unavailable' }} · reasoning {{ call.reasoning_tokens if call.reasoning_tokens is not none else 'unavailable' }} · stop {{ call.done_reason or 'unavailable' }}{% if call.error_kind %} · {{ call.error_kind }}{% endif %}</small></p>{% endfor %}</details>{% endif %}
+          </td>
           <td>
             <span class="status-tag tag-{{ run.status }}">{{ run.status|capitalize }}</span>
           </td>

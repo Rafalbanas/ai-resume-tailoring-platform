@@ -189,7 +189,10 @@ class GeminiProvider(AIProvider):
         }
 
         last_error: Exception | None = None
+        from app.services.token_progress import new_call, report
         for attempt in range(self.max_retries + 1):
+            usage_id = new_call(self.name, self.model)
+            usage_reported = False
             try:
                 async with httpx.AsyncClient(
                     timeout=self.timeout,
@@ -244,6 +247,9 @@ class GeminiProvider(AIProvider):
 
                 envelope = response.json()
                 usage = envelope.get("usageMetadata", {})
+                report(usage_id, phase="done", input_tokens=usage.get("promptTokenCount"),
+                       output_tokens=usage.get("candidatesTokenCount"), total_tokens=usage.get("totalTokenCount"))
+                usage_reported = True
                 logger.info(
                     "Gemini call succeeded: model=%s, prompt_tokens=%s, candidate_tokens=%s, total_tokens=%s",
                     self.model,
@@ -265,6 +271,9 @@ class GeminiProvider(AIProvider):
                     await asyncio.sleep(1.0)
                     continue
                 raise ProviderUnavailableError("Cannot connect to Gemini API. Check your network.") from exc
+            finally:
+                if not usage_reported:
+                    report(usage_id, phase="done", total_tokens=None)
         else:
             raise ProviderUnavailableError("Gemini failed after retry attempts.") from last_error
 

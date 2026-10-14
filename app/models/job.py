@@ -136,3 +136,8 @@ class JobAnalysis(BaseModel):
     requirement_counts: dict[str, int] = Field(default_factory=dict)
     scoring_counts: dict[str, int] = Field(default_factory=dict)
     profile_clarifications: list[str] = Field(default_factory=list)
+
+
+class JobTextRequest(BaseModel):
+    text: str = Field(min_length=30, max_length=50_000)
+    url: str = Field(default="", max_length=2048)

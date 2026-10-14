@@ -22,16 +22,37 @@ def job() -> JobRequest:
 
 def analysis_payload() -> dict:
     return {
-        "company": "Acme",
-        "role": "Python Engineer",
-        "strong_matches": ["Python"],
-        "partial_matches": ["Linux"],
-        "missing_requirements": ["Kubernetes"],
-        "supported_keywords": ["Python"],
-        "unsupported_keywords": ["Kubernetes"],
-        "recommendation": "REASONABLE_STRETCH",
-        "match_level": "MEDIUM",
-        "reasoning_summary": "The verified profile supports Python, while Kubernetes is not supported.",
+        "rows": [
+            {"p": "P1", "k": "context"},
+            {"p": "P2", "k": "context"},
+            {
+                "p": "P3",
+                "k": "requirement",
+                "n": "Python",
+                "priority": "mandatory",
+                "s": "strong",
+                "f": ["F2"],
+                "why": "Declared Python knowledge is documented.",
+            },
+            {
+                "p": "P4",
+                "k": "requirement",
+                "n": "Docker",
+                "priority": "mandatory",
+                "s": "missing",
+                "f": [],
+                "why": "Not confirmed in profile.",
+            },
+            {
+                "p": "P5",
+                "k": "requirement",
+                "n": "Kubernetes",
+                "priority": "mandatory",
+                "s": "missing",
+                "f": [],
+                "why": "Not confirmed in profile.",
+            },
+        ]
     }
 
 
@@ -260,39 +281,21 @@ async def test_ollama_logs_telemetry_without_cv_content(profile, caplog):
     assert profile.personal.name not in telemetry_logs[0]
     assert "Built reliable" not in telemetry_logs[0]
 
-@pytest.mark.asyncio
-async def test_truncated_analysis_retries_once_without_changing_model_or_source():
-    requests = []
-
-    async def handler(request):
-        body = json.loads(request.content)
-        requests.append(body)
-        if len(requests) == 1:
-            return httpx.Response(200, json={
-                'message': {'content': '{"requirements": ['},
-                'done_reason': 'length', 'prompt_eval_count': 18000,
-            })
-        return httpx.Response(200, json={'message': {'content': json.dumps(analysis_payload())}, 'done_reason': 'stop'})
-
-    from app.models.interpretation import JobInterpretation
-    await provider(httpx.MockTransport(handler))._chat(JobInterpretation, 'Analyze', {'source': 'unchanged'})
-    assert len(requests) == 2
-    assert requests[0]['options']['num_predict'] == 8192
-    assert requests[1]['options']['num_predict'] == 32768 - 18000 - 512
-    assert requests[0]['messages'] == requests[1]['messages']
-    assert requests[0]['model'] == requests[1]['model']
-
 
 @pytest.mark.asyncio
-async def test_repeated_truncation_fails_clearly_and_does_not_loop():
+async def test_generic_chat_classifies_output_limit_without_full_report_retry():
     requests = []
 
     async def handler(request):
         requests.append(json.loads(request.content))
-        return httpx.Response(200, json={'message': {'content': '{}'}, 'done_reason': 'length', 'prompt_eval_count': 18000})
+        return httpx.Response(
+            200, json={"message": {"content": "{}"}, "done_reason": "length", "prompt_eval_count": 18000}
+        )
 
     from app.models.interpretation import JobInterpretation
-    with pytest.raises(AIProviderError, match='output token limit'):
-        await provider(httpx.MockTransport(handler))._chat(JobInterpretation, 'Analyze', {})
-    assert len(requests) == 2
+    from app.services.ollama_analysis import OllamaAnalysisError
 
+    with pytest.raises(OllamaAnalysisError) as exc:
+        await provider(httpx.MockTransport(handler))._chat(JobInterpretation, "Analyze", {})
+    assert exc.value.kind == "output_limit"
+    assert len(requests) == 1

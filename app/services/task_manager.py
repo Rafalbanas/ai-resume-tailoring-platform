@@ -50,6 +50,7 @@ class TaskRecord(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
     error_status_code: int | None = None
+    token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
 def compute_idempotency_key(kind: str, **kwargs) -> str:
@@ -242,6 +243,15 @@ class TaskManager:
                 self._queue.task_done()
 
     async def _execute_task(self, task: TaskRecord, app_state: Any) -> None:
+        from app.services.token_progress import track_tokens
+        def update(usage):
+            current = self.get_task(task.task_id) or task
+            current.token_usage = usage
+            self._save_task(current)
+        with track_tokens(update):
+            await self._execute_task_with_usage(task, app_state)
+
+    async def _execute_task_with_usage(self, task: TaskRecord, app_state: Any) -> None:
         if task.kind == TaskKind.TAILOR:
             await self._execute_tailor(task, app_state)
         elif task.kind == TaskKind.COMPARE:
@@ -263,6 +273,15 @@ class TaskManager:
             response = await app_state.provider.tailor(
                 job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
             )
+        except AIProviderError as exc:
+            if hasattr(app_state, "diagnostics"):
+                last_call = (getattr(exc, "call_metrics", []) or [{}])[-1]
+                app_state.diagnostics.record(
+                    company=job.company, role=job.role, requested_provider=llm_provider,
+                    provider_used=last_call.get("provider", llm_provider), model_used=last_call.get("model", "unknown"), fallback_occurred=False,
+                    status="error", duration_ms=int((time.perf_counter()-wall_start)*1000),
+                    error_message=str(exc), call_metrics=getattr(exc, "call_metrics", []))
+            raise
         except TypeError:
             try:
                 response = await app_state.provider.tailor(
@@ -279,6 +298,7 @@ class TaskManager:
 
         on_stage_cb("Saving application draft...")
 
+        response.token_usage = (self.get_task(task.task_id) or task).token_usage.copy()
         draft_id = app_state.storage.save_draft(job, response)
         exec_duration = time.perf_counter() - wall_start
         duration_ms = int(exec_duration * 1000)
@@ -296,6 +316,8 @@ class TaskManager:
                 duration_ms=duration_ms,
                 match_level=response.analysis.match_level,
                 recommendation=response.analysis.recommendation,
+                call_metrics=response.call_metrics,
+                assessed_requirements=len(response.analysis.requirements),
             )
 
         task = self.get_task(task.task_id) or task
