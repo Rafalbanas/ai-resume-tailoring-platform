@@ -39,18 +39,25 @@ def select_one_page(resume, validator, job_text, fits):
                and (e.kind == 'summary' or ':fact:' in e.source_id)]
     # Prefer identity first; the remaining sentence supplies relevant evidence.
     entries.sort(key=lambda e: (e.kind != 'summary', tuple(-v for v in rank(e.text, [e.source_id]))))
-    selected = []
-    for entry in entries:
-        if len(entry.text) <= 240 and sum(len(e.text) + 1 for e in selected) + len(entry.text) <= 330:
-            selected.append(entry)
-        if len(selected) == 2:
-            break
+    # Required facts take precedence over the normal two-fact preference.
+    # Several short facts can fit the same length budget without losing evidence.
+    selected = [entry for entry in entries if entry.source_id in protected]
+    if len(' '.join(entry.text for entry in selected)) > 330:
+        selected = []  # Keep the original summary if required evidence is too long.
+    else:
+        for entry in entries:
+            if len(selected) >= 2:
+                break
+            if entry in selected:
+                continue
+            if len(entry.text) <= 240 and sum(len(e.text) + 1 for e in selected) + len(entry.text) <= 330:
+                selected.append(entry)
     missing_protected_summary = protected.intersection(draft.summary_source_fact_ids) - {e.source_id for e in selected}
     if selected and not missing_protected_summary and len(' '.join(e.text for e in selected)) < len(draft.professional_summary):
         draft.professional_summary = ' '.join(e.text for e in selected)
         draft.summary_source_fact_ids = [e.source_id for e in selected]
         draft.summary_attestation = ''
-        actions.append('One-page selection: summary reduced to at most two exact source facts.')
+        actions.append('One-page selection: concise exact source facts retained, including all mandatory summary evidence.')
     for project in draft.projects:
         entries = [e for e in validator.catalog.valid(project.source_fact_ids, kind='project')
                    if ':fact:' in e.source_id and len(e.text) <= 260]

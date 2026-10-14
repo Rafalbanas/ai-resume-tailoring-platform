@@ -150,3 +150,47 @@ def test_generation_failure_explains_field_and_does_not_save_partial_cv(monkeypa
         assert result.status_code==422
         assert 'Select ATS Classic' in result.text
         assert list(app.state.storage.generated_dir.iterdir())==before
+
+
+def required_summary_fixture(profile, texts):
+    from types import SimpleNamespace
+    profile.summary_facts = texts
+    validator, resume = sample(profile)
+    entries = [entry for entry in validator.catalog.prompt_entries if entry.kind == 'summary']
+    resume.summary_source_fact_ids = [entry.source_id for entry in entries]
+    resume.professional_summary = ' '.join(texts) + ' Additional saved explanation. ' * 8
+    resume.summary_attestation = 'old-review'
+    validator.analysis = SimpleNamespace(requirements=[SimpleNamespace(priority='mandatory', status='partial',
+        source_fact_ids=resume.summary_source_fact_ids)], role_competencies=[])
+    return validator, resume
+
+
+def test_three_required_summary_facts_can_shorten_without_dropping_evidence(profile):
+    texts = ['Uses Linux to investigate documented operational incidents.',
+             'Writes verified Python scripts for operational automation.',
+             'Uses English at B2 level in documented professional work.']
+    validator, resume = required_summary_fixture(profile, texts)
+    original = deepcopy(resume)
+    fitted, _ = select_one_page(resume, validator, 'Python Linux', lambda r: len(r.professional_summary) < 230)
+    assert set(fitted.summary_source_fact_ids) == set(original.summary_source_fact_ids)
+    assert all(text in fitted.professional_summary for text in texts)
+    assert validator.catalog.supports_paraphrase(fitted.professional_summary, fitted.summary_source_fact_ids)
+    assert not fitted.summary_attestation
+    assert resume == original
+
+
+def test_required_summary_over_length_budget_is_not_silently_dropped(profile):
+    texts = ['Verified Linux incident handling and investigation. ' * 3,
+             'Verified Python automation and operational scripting. ' * 3,
+             'Verified English communication in technical support. ' * 3]
+    validator, resume = required_summary_fixture(profile, texts)
+    original = deepcopy(resume)
+    seen = []
+    def fits(value):
+        seen.append(deepcopy(value))
+        return False
+    with pytest.raises(ValueError, match='Select ATS Classic'):
+        select_one_page(resume, validator, 'Python Linux', fits)
+    assert all(value.professional_summary == original.professional_summary for value in seen)
+    assert all(value.summary_source_fact_ids == original.summary_source_fact_ids for value in seen)
+    assert resume == original
