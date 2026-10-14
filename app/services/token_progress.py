@@ -34,7 +34,14 @@ def track_tokens(callback):
         finished = [c for c in calls.values() if c.get('phase') == 'done']
         active = [c for c in calls.values() if c.get('phase') != 'done']
         known = [c for c in finished if isinstance(c.get('total_tokens'), int)]
-        callback({'calls': len(calls), 'completed_calls': len(finished),
+        providers = []
+        for provider in dict.fromkeys(c.get('provider', 'unknown') for c in calls.values()):
+            provider_calls = [c for c in calls.values() if c.get('provider', 'unknown') == provider]
+            reported = [c for c in provider_calls if c.get('phase') == 'done' and isinstance(c.get('total_tokens'), int)]
+            providers.append({'provider': provider, 'calls': len(provider_calls),
+                              'total_tokens': sum(c['total_tokens'] for c in reported),
+                              'complete_usage': len(reported) == len(provider_calls)})
+        callback({'providers': providers, 'calls': len(calls), 'completed_calls': len(finished),
                   'input_tokens': sum(c['input_tokens'] for c in finished) if all(isinstance(c.get('input_tokens'), int) for c in finished) else None,
                   'output_tokens': sum(c['output_tokens'] for c in finished) if all(isinstance(c.get('output_tokens'), int) for c in finished) else None,
                   'total_tokens': sum(c['total_tokens'] for c in known),

@@ -76,6 +76,7 @@ class OllamaProvider(AIProvider):
         )
         self.num_predict = settings.ollama_num_predict
         self.num_ctx = settings.ollama_num_ctx
+        self.analysis_recovery_calls = settings.ollama_analysis_recovery_calls
         self.transport = transport
         self.reference_library = reference_library
         self.skills_bank = skills_bank
@@ -267,80 +268,113 @@ class OllamaProvider(AIProvider):
             metrics["error_kind"] = "envelope"
             raise OllamaAnalysisError("envelope", "Ollama returned invalid structured JSON: missing message content.") from exc
 
-    async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
+    async def analyze_job(self, job: JobRequest, profile: CandidateProfile, on_stage=None) -> JobAnalysis:
         inventory = AnalysisInventory.build(job, profile, self.skills_bank)
         batches = plan_batches(inventory, self.num_predict, self.num_ctx)
         rows = []
         recovery_calls = 0
-        # At most two targeted recovery calls for the whole analysis. Successful
-        # passages are retained; no entire-report retry with a doubled budget.
-        for batch in batches:
-            pending = batch
-            while pending:
-                try:
-                    recovery_prompt = ""
-                    if recovery_calls:
-                        recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
-                    keyed_recovery = recovery_calls >= 2
-                    if keyed_recovery:
-                        recovery_prompt += "\nFINAL RECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
-                    result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
-                                              _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
-                    recovered = inventory.validate_rows(result.rows, pending)
-                except OllamaAnalysisError as exc:
-                    if exc.kind != 'output_limit':
-                        if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
-                            self.call_metrics[-1]['error_kind'] = exc.kind
-                        raise
-                    recovered = inventory.validate_rows(exc.recovered, pending)
-                    if recovery_calls >= 2:
-                        raise
-                covered = {r.p for r in recovered}
-                # A context-only row cannot claim coverage of a known qualification.
-                # Semantic exceptions are preserved as explicit incomplete review,
-                # never quietly replaced by deterministic fabricated matches.
-                invalid = {r.p for r in recovered if r.k in {'context', 'responsibility'}
-                           and needs_assessment(inventory.passages[r.p])}
-                recovered = [r for r in recovered if r.p not in invalid]
-                covered -= invalid
-                rows.extend(recovered)
-                missing = [i for i in pending if i not in covered]
-                # Headings, organization/benefit text and portal tags already have
-                # source-parser dispositions. Tags are assessed independently by
-                # the existing role matcher; do not retry an LLM just for metadata.
-                from app.services.ollama_analysis import CompactAssessment
-                context_ids = [pid for pid in missing if inventory.passages[pid]["context_only"] and not needs_assessment(inventory.passages[pid])]
-                rows.extend(CompactAssessment(p=pid, k="context") for pid in context_ids)
-                missing = [pid for pid in missing if pid not in context_ids]
-                if self.call_metrics:
-                    self.call_metrics[-1]['covered_passages'] = len(covered)
-                    self.call_metrics[-1]['source_context_resolved'] = len(context_ids)
-                    self.call_metrics[-1]['unassessed_passages'] = len(missing)
-                    if missing and self.call_metrics[-1].get('error_kind') is None:
-                        self.call_metrics[-1]['error_kind'] = 'coverage'
-                if not missing:
-                    break
-                if recovery_calls >= 2:
-                    raise OllamaAnalysisError('coverage', 'Ollama did not assess every source passage; incomplete analysis — review required.')
-                recovery_calls += 1
-                # If nothing survived a length-limited batch, split just that batch.
-                # This bounds repeated work instead of repeating all completed rows.
-                if len(missing) > 1 and not covered:
-                    midpoint = (len(missing)+1)//2
-                    batches.append(missing[midpoint:])
-                    pending = missing[:midpoint]
-                else:
-                    pending = missing
-        interpretation = inventory.expand(rows)
-        analysis = interpretation.to_analysis(job)
-        validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
+        def coverage_error(message, pending):
+            exc = OllamaAnalysisError('coverage', message)
+            exc.partial_analysis = inventory.expand([r for r in rows if r.p not in pending]).to_analysis(job)
+            exc.unassessed_source_passages = [inventory.passages[pid]["text"] for pid in pending]
+            headings = {"mandatory": "Requirements", "preferred": "Preferred qualifications",
+                        "nice_to_have": "Nice to have", "responsibility": "Responsibilities"}
+            exc.recovery_job_text = "\n".join(
+                headings.get(next((hint for hint in inventory.passages[pid]["hints"] if hint in headings), ''), 'Candidate capabilities')
+                + "\n" + inventory.passages[pid]["text"] for pid in pending)
+            return exc
+
+        async def assess_batches(batches, *, repair=False):
+            nonlocal recovery_calls
+            for batch, is_repair in batches:
+                pending = batch
+                while pending:
+                    if is_repair or repair:
+                        if recovery_calls >= self.analysis_recovery_calls:
+                            unresolved = list(dict.fromkeys(pending + [pid for batch_ids, _ in batches for pid in batch_ids
+                                if not any(row.p == pid for row in rows)]))
+                            raise coverage_error('Ollama did not assess every source passage; incomplete analysis — review required.', unresolved)
+                        recovery_calls += 1
+                        if on_stage:
+                            on_stage(f"Completing {len(pending)} unresolved passages (Ollama repair {recovery_calls}/{self.analysis_recovery_calls})...")
+                    try:
+                        recovery_prompt = ""
+                        if is_repair or repair:
+                            recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
+                        keyed_recovery = is_repair or repair
+                        if keyed_recovery:
+                            recovery_prompt += "\nRECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
+                        result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
+                                                  _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
+                        recovered = inventory.validate_rows(result.rows, pending)
+                    except OllamaAnalysisError as exc:
+                        if exc.kind != 'output_limit':
+                            if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
+                                self.call_metrics[-1]['error_kind'] = exc.kind
+                            raise
+                        recovered = inventory.validate_rows(exc.recovered, pending)
+                    covered = {r.p for r in recovered}
+                    # A context-only row cannot claim coverage of a known qualification.
+                    # Semantic exceptions are preserved as explicit incomplete review,
+                    # never quietly replaced by deterministic fabricated matches.
+                    invalid = {r.p for r in recovered if r.k in {'context', 'responsibility'}
+                               and needs_assessment(inventory.passages[r.p])}
+                    recovered = [r for r in recovered if r.p not in invalid]
+                    covered -= invalid
+                    rows.extend(recovered)
+                    missing = [i for i in pending if i not in covered]
+                    # Headings, organization/benefit text and portal tags already have
+                    # source-parser dispositions. Tags are assessed independently by
+                    # the existing role matcher; do not retry an LLM just for metadata.
+                    from app.services.ollama_analysis import CompactAssessment
+                    context_ids = [pid for pid in missing if inventory.passages[pid]["context_only"] and not needs_assessment(inventory.passages[pid])]
+                    rows.extend(CompactAssessment(p=pid, k="context") for pid in context_ids)
+                    missing = [pid for pid in missing if pid not in context_ids]
+                    if self.call_metrics:
+                        self.call_metrics[-1]['covered_passages'] = len(covered)
+                        self.call_metrics[-1]['source_context_resolved'] = len(context_ids)
+                        self.call_metrics[-1]['unassessed_passages'] = len(missing)
+                        if missing and self.call_metrics[-1].get('error_kind') is None:
+                            self.call_metrics[-1]['error_kind'] = 'coverage'
+                    if not missing:
+                        break
+                    is_repair = True
+                    # If nothing survived a length-limited batch, split just that batch.
+                    # This bounds repeated work instead of repeating all completed rows.
+                    if len(missing) > 1 and not covered:
+                        midpoint = (len(missing)+1)//2
+                        batches.append((missing[midpoint:], True))
+                        pending = missing[:midpoint]
+                    else:
+                        pending = missing
+        await assess_batches([(batch, False) for batch in batches])
+        while True:
+            interpretation = inventory.expand(rows)
+            analysis = interpretation.to_analysis(job)
+            validated = AnalysisValidator(profile, self.skills_bank).validate(
+                analysis, f"{job.role}\n{job.job_description}", semantic=True)
+            if validated.is_reliable:
+                break
+            if self.call_metrics:
+                self.call_metrics[-1]["error_kind"] = "coverage"
+            # Retry only source passages rejected by final semantic coverage.
+            # Completed passages/evidence stay intact; structural source errors
+            # cannot be fixed by more model calls and remain explicit failures.
+            missing_quotes = set(validated.unassessed_source_passages)
+            pending = [pid for pid, passage in inventory.passages.items()
+                       if passage["text"] in missing_quotes]
+            if not pending or recovery_calls >= self.analysis_recovery_calls:
+                if pending:
+                    raise coverage_error('Ollama analysis failed source coverage validation; incomplete analysis — review required.', pending)
+                raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues))
+            for pid in pending:
+                inventory.passages[pid]["assessment_required"] = True
+            rows[:] = [row for row in rows if row.p not in pending]
+            # Smaller batches reduce repeated omissions and output pressure.
+            await assess_batches([([pid], True) for pid in pending], repair=True)
         import hashlib
         validated.company, validated.role = job.company, job.role
         validated.job_source = {'url': str(job.job_url or ''), 'sha256': hashlib.sha256(job.job_description.encode()).hexdigest()}
-        if not validated.is_reliable:
-            if self.call_metrics:
-                self.call_metrics[-1]["error_kind"] = "coverage"
-            raise OllamaAnalysisError('coverage', 'Ollama analysis failed source coverage validation; incomplete analysis — review required.')
         validated._model_output = analysis.model_dump(mode="json")
         if self.call_metrics:
             self.call_metrics[-1]["assessed_requirements"] = len(validated.requirements)
@@ -402,7 +436,7 @@ class OllamaProvider(AIProvider):
         try:
             if on_stage:
                 on_stage("Analyzing job requirements (Ollama)...")
-            analysis = await self.analyze_job(job, profile)
+            analysis = await self.analyze_job(job, profile, on_stage=on_stage)
             if on_stage:
                 on_stage("Generating tailored CV (Ollama)...")
             resume = await self.tailor_resume(job, profile, analysis)

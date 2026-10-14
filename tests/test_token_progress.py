@@ -70,3 +70,17 @@ async def test_concurrent_task_usage_is_isolated():
     a, b = await asyncio.gather(run(10), run(20))
     assert a['total_tokens'] == 10 and b['total_tokens'] == 20
     assert a['calls'] == b['calls'] == 1
+
+
+def test_usage_separates_ollama_repairs_from_gemini_fallback():
+    updates = []
+    with track_tokens(updates.append):
+        for provider, amount in [('ollama', 20), ('ollama', 10), ('gemini', 7)]:
+            call = new_call(provider, 'test')
+            report(call, phase='done', input_tokens=amount, output_tokens=0, total_tokens=amount)
+        new_call('gemini', 'test')
+    final = updates[-1]
+    assert final['total_tokens'] == 37 and final['calls'] == 4
+    assert final['providers'] == [
+        {'provider': 'ollama', 'calls': 2, 'total_tokens': 30, 'complete_usage': True},
+        {'provider': 'gemini', 'calls': 2, 'total_tokens': 7, 'complete_usage': False}]
