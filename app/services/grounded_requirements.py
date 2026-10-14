@@ -216,6 +216,9 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
             result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
     result.completeness_issues = []
+    result.unassessed_source_passages = list(candidate.unassessed_source_passages)
+    if result.unassessed_source_passages:
+        result.completeness_issues.append("Explicitly unresolved source passages still require model assessment.")
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
     suggestions += [r.name for r in candidate.requirements]
     # Use model phrasing only if it occurs verbatim in the job
@@ -368,16 +371,19 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     expected = {u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
     omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(r.source_quote == u.quote or r.source_quote in u.quote or u.quote in r.source_quote for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
+        result.unassessed_source_passages.extend(u.quote for u in units if u.name in omitted)
         result.completeness_issues.append("Some source requirements were not assessed.")
     # Cover source passages even when some headings were successfully recognized.
     # Organization context and duties are represented separately, not scored.
-    covered_quotes = [u.quote for u in units] + [r.source_quote for r in requirements]
+    covered_quotes = [u.quote for u in units] + [r.source_quote for r in requirements + result.role_competencies]
+    covered_quotes += [r.get("source_quote", "") for r in result.responsibilities if r.get("source_quote")]
     uncovered = [line.strip() for line in job_text.splitlines()
                  if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line) and not INJECTION.search(line)
                  and line.strip().rstrip(':') not in sections
                  and not re.search(r'knowledge with:\s*$', line, re.I)
                  and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
     if uncovered:
+        result.unassessed_source_passages.extend(uncovered)
         result.completeness_issues.append("Requirement-bearing source passages are not covered by the analysis.")
     malformed = [u for u in units if u.category in {'mandatory','preferred','nice_to_have'} and u.quote.count('(') != u.quote.count(')')]
     if malformed:

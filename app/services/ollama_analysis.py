@@ -392,10 +392,12 @@ def plan_batches(inventory, output_limit, context_limit):
 
 
 def closed_rows(content):
-    """Recover complete rows from a length-truncated JSON array, no regex repair."""
+    """Salvage only complete, valid array or keyed rows from truncated JSON."""
     import re
 
-    match = re.match(r'\s*\{\s*"rows"\s*:\s*\[', content)
+    array = re.match(r'\s*\{\s*"rows"\s*:\s*\[', content)
+    keyed = re.match(r'\s*\{\s*"assessments"\s*:\s*\{', content)
+    match = array or keyed
     if not match:
         return []
     decoder, position, rows = json.JSONDecoder(), match.end(), []
@@ -404,6 +406,21 @@ def closed_rows(content):
             position += 1
         try:
             value, position = decoder.raw_decode(content, position)
+            if keyed:
+                if not isinstance(value, str):
+                    break
+                pid = value
+                while position < len(content) and content[position].isspace():
+                    position += 1
+                if position == len(content) or content[position] != ':':
+                    break
+                position += 1
+                while position < len(content) and content[position].isspace():
+                    position += 1
+                value, position = decoder.raw_decode(content, position)
+                if not isinstance(value, dict) or 'p' in value:
+                    break
+                value = dict(value, p=pid)
             rows.append(CompactAssessment.model_validate(value))
         except (ValueError, TypeError):
             break
@@ -414,6 +431,8 @@ def needs_assessment(passage):
     """Detect candidate capability passages left as context, not infer their status."""
     import re
 
+    if passage.get("assessment_required"):
+        return True
     hints = set(passage["hints"])
     if hints & {"mandatory", "preferred", "nice_to_have"}:
         return True

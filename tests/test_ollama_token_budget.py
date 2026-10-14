@@ -536,3 +536,109 @@ def test_literal_statement_aliases_do_not_duplicate_framework_or_debugging_requi
             JobRequirement(name=quote, source_quote=quote, status="partial", required_level="basic"),
         ]
         assert len(merge_equivalent_source_rows(rows)) == 1
+
+
+@pytest.mark.asyncio
+async def test_ollama_gets_four_targeted_repairs_without_repeating_completed_rows(profile):
+    requests = []
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        rows = body_rows(body)
+        if len(requests) <= 4:
+            rows = [row for row in rows if row['p'] != 'P4']
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done_reason': 'stop'})
+    provider = make_provider(handler)
+    result = await provider.analyze_job(offer(3), profile)
+    assert result.is_reliable and len(result.requirements) == 3
+    assert len(requests) == 5
+    assert provider.call_metrics[-1]['recovery_calls'] == 4
+    for request in requests[1:]:
+        assert [p['id'] for p in json.loads(request['messages'][1]['content'])['passages']] == ['P4']
+        assert request['format']['properties']['assessments']['required'] == ['P4']
+
+
+@pytest.mark.asyncio
+async def test_exhaustion_retains_completed_assessments_for_targeted_fallback(profile):
+    calls = []
+    async def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        rows = [row for row in body_rows(body) if row['p'] != 'P4']
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done_reason': 'stop'})
+    provider = make_provider(handler, ollama_analysis_recovery_calls=2)
+    with pytest.raises(OllamaAnalysisError) as caught:
+        await provider.analyze_job(offer(3), profile)
+    assert len(calls) == 3
+    assert caught.value.unassessed_source_passages == ['Experience with Tool1.']
+    assert {r.source_quote for r in caught.value.partial_analysis.requirements} == {'Experience with Tool0.', 'Experience with Tool2.'}
+    assert 'Tool1' in caught.value.recovery_job_text and 'Tool0' not in caught.value.recovery_job_text
+
+
+@pytest.mark.asyncio
+async def test_final_semantic_coverage_requests_targeted_ollama_repair(profile, monkeypatch):
+    import app.services.ollama_provider as module
+    requests = []
+    original = module.AnalysisValidator.validate
+    validations = []
+    def validate(self, analysis, text, **kwargs):
+        result = original(self, analysis, text, **kwargs)
+        validations.append(result)
+        if len(validations) == 1:
+            result.is_reliable = False
+            result.unassessed_source_passages = ['Experience with Tool1.']
+        return result
+    monkeypatch.setattr(module.AnalysisValidator, 'validate', validate)
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': body_rows(body)})}, 'done_reason': 'stop'})
+    result = await make_provider(handler).analyze_job(offer(3), profile)
+    assert result.is_reliable and len(requests) == 2
+    assert [p['text'] for p in json.loads(requests[1]['messages'][1]['content'])['passages']] == ['Experience with Tool1.']
+
+
+def test_validated_role_assessment_counts_as_source_coverage(profile):
+    from app.models.job import JobAnalysis
+    from app.services.ollama_analysis import CompactAssessment
+    source = JobRequest(company='Example', role='Support',
+        job_description='About the role\nUnderstanding unusual platform behaviour.')
+    inventory = AnalysisInventory.build(source, profile)
+    pid = next(pid for pid, item in inventory.passages.items() if item['text'].startswith('Understanding'))
+    interpretation = inventory.expand([CompactAssessment(p=pid, k='competency',
+        n='Understanding unusual platform behaviour', s='missing', why='Not confirmed by candidate evidence.')])
+    result = AnalysisValidator(profile).validate(interpretation.to_analysis(source), source.job_description, semantic=True)
+    assert result.is_reliable and result.role_competencies
+    assert not result.unassessed_source_passages
+    result.unassessed_source_passages = ['Understanding unusual platform behaviour.']
+    # Persisted incomplete reports cannot become reliable just by revalidation.
+    reopened = AnalysisValidator(profile).validate(JobAnalysis.model_validate_json(result.model_dump_json()),
+                                                   source.job_description, semantic=True)
+    assert not reopened.is_reliable and reopened.unassessed_source_passages
+
+
+def test_truncated_keyed_rows_preserve_only_complete_valid_objects():
+    valid = '"P3":{"k":"requirement","n":"XML","s":"missing","why":"No evidence."}'
+    rows = closed_rows('{"assessments":{' + valid + ',"P4":{"k":')
+    assert len(rows) == 1 and rows[0].p == 'P3'
+    assert closed_rows('{"assessments":{"P3":{"p":"P9","k":"context"},') == []
+
+
+@pytest.mark.asyncio
+async def test_truncated_keyed_repair_keeps_completed_passages(profile):
+    calls = []
+    async def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        rows = body_rows(body)
+        if len(calls) == 1:
+            rows = [row for row in rows if row['p'] not in {'P4', 'P5'}]
+        elif len(calls) == 2:
+            completed = dict(rows[0])
+            pid = completed.pop('p')
+            content = '{"assessments":{' + json.dumps(pid) + ':' + json.dumps(completed) + ',"P5":{"k":'
+            return httpx.Response(200, json={'message': {'content': content}, 'done_reason': 'length', 'eval_count': 8192})
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done_reason': 'stop'})
+    result = await make_provider(handler).analyze_job(offer(3), profile)
+    assert result.is_reliable and len(calls) == 3
+    assert [p['id'] for p in json.loads(calls[2]['messages'][1]['content'])['passages']] == ['P5']

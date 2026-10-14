@@ -312,7 +312,8 @@ class TaskManager:
                 model_used=getattr(response, "model_used", "unknown"),
                 fallback_occurred=getattr(response, "fallback_used", False),
                 fallback_reason=getattr(response, "fallback_reason", None),
-                status="fallback" if getattr(response, "fallback_used", False) else "success",
+                status=("review_required" if not response.analysis.is_reliable else
+                        "fallback" if getattr(response, "fallback_used", False) else "success"),
                 duration_ms=duration_ms,
                 match_level=response.analysis.match_level,
                 recommendation=response.analysis.recommendation,

@@ -17,6 +17,7 @@ from app.services.ai_provider import (
     ProviderResponseError,
     ProviderUnavailableError,
 )
+from app.services.analysis_validator import AnalysisValidator
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,34 @@ class ResilientAIProvider(AIProvider):
             elapsed = time.monotonic() - start_time
             return max(0.0, self.operation_budget_seconds - elapsed)
 
-        async def _call(target: AIProvider, reason: str | None = None) -> WorkflowResponse:
+        async def _call(target: AIProvider, recovery_error=None) -> WorkflowResponse:
+            partial = getattr(recovery_error, 'partial_analysis', None)
+            missing = getattr(recovery_error, 'unassessed_source_passages', [])
+            if partial is not None and missing:
+                if on_stage:
+                    on_stage(f"Completing {len(missing)} unresolved source passages ({target.name})...")
+                focused_job = job.model_copy(update={'job_description': recovery_error.recovery_job_text})
+                repaired = await target.analyze_job(focused_job, profile)
+                # Use the source-backed model rows, then validate the combined
+                # interpretation against the original full offer and profile.
+                repair_rows = JobAnalysis.model_validate(repaired._model_output) if repaired._model_output else repaired
+                combined = partial.model_copy(deep=True)
+                for field in ('requirements', 'role_competencies', 'responsibilities', 'source_context'):
+                    additions = [row for row in getattr(repair_rows, field)
+                                 if (row.get('source_quote') if isinstance(row, dict) else row.source_quote) in missing]
+                    getattr(combined, field).extend(additions)
+                assessed_quotes = {row.source_quote for row in repair_rows.requirements + repair_rows.role_competencies}
+                assessed_quotes.update(row.get('source_quote') for row in repair_rows.responsibilities)
+                combined.unassessed_source_passages = [quote for quote in missing if quote not in assessed_quotes]
+                model_output = combined.model_dump(mode='json')
+                combined = AnalysisValidator(profile, getattr(target, 'skills_bank', None)).validate(
+                    combined, f"{job.role}\n{job.job_description}", semantic=True)
+                combined._model_output = model_output
+                import hashlib
+                combined.company, combined.role = job.company, job.role
+                combined.job_source = {'url': str(job.job_url or ''), 'sha256': hashlib.sha256(job.job_description.encode()).hexdigest()}
+                resume = await target.tailor_resume(job, profile, combined)
+                return WorkflowResponse(analysis=combined, resume=resume)
             try:
                 return await target.tailor(job, profile, on_stage=on_stage)
             except TypeError:
@@ -189,7 +217,7 @@ class ResilientAIProvider(AIProvider):
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
-                response.fallback_reason = f"Primary '{primary_name}' timed out. Automatically recovered using '{fallback_name}'."
+                response.fallback_reason = f"Primary '{primary_name}' timed out. Switched to '{fallback_name}'; analysis completeness is checked separately."
                 return response
             except Exception as fallback_err:
                 logger.error(
@@ -229,11 +257,11 @@ class ResilientAIProvider(AIProvider):
             if on_stage:
                 on_stage(f"Switching to fallback provider ({fallback_name})...")
             try:
-                response = await asyncio.wait_for(_call(fallback), timeout=rem_fb)
+                response = await asyncio.wait_for(_call(fallback, recovery_error=primary_err), timeout=rem_fb)
                 response.provider_used = fallback.name
                 response.model_used = getattr(fallback, "model", fallback.name)
                 response.fallback_used = True
-                response.fallback_reason = f"Primary '{primary_name}' failed ({primary_err}). Automatically recovered using '{fallback_name}'."
+                response.fallback_reason = f"Primary '{primary_name}' failed ({primary_err}). Switched to '{fallback_name}'; analysis completeness is checked separately."
                 response.call_metrics = getattr(primary_err, "call_metrics", []) + response.call_metrics
                 return response
             except Exception as fallback_err:

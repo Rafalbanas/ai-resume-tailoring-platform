@@ -336,3 +336,56 @@ def test_retry_task_idempotency_and_form_prefill(tmp_path, monkeypatch):
         assert f"/tasks/{new_task_id}/view" in dup_res.headers["location"]
 
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('complete', [True, False])
+async def test_gemini_repairs_only_ollama_omissions_then_validates_full_source(profile, complete):
+    from app.models.job import JobAnalysis, JobRequirement
+    from app.services.ollama_analysis import OllamaAnalysisError
+    source = JobRequest(company='Example', role='Support engineer',
+                        job_description='Requirements\nExperience with Alpha.\nExperience with Beta.')
+    partial = sample_workflow_response('ollama', 'local').analysis.model_copy(deep=True)
+    partial.strong_matches = partial.partial_matches = partial.missing_requirements = []
+    partial.requirements = [JobRequirement(name='Alpha', source_quote='Experience with Alpha.',
+                                         status='missing', reason='No evidence.')]
+    error = OllamaAnalysisError('coverage', 'Missing Beta assessment.')
+    error.partial_analysis = partial
+    error.unassessed_source_passages = ['Experience with Beta.']
+    error.recovery_job_text = 'Requirements\nExperience with Beta.'
+    class RepairProvider(SucceedingProvider):
+        async def tailor(self, *args, **kwargs):
+            pytest.fail('Must not repeat full analysis through tailor')
+        async def analyze_job(self, focused, profile):
+            assert 'Alpha' not in focused.job_description and 'Beta' in focused.job_description
+            return JobAnalysis(company=focused.company, role=focused.role,
+                strong_matches=[], partial_matches=[], missing_requirements=[], recommendation='REVIEW', match_level='LOW',
+                requirements=[JobRequirement(name='Beta', source_quote='Experience with Beta.', status='strong',
+                    source_fact_ids=['unknown:fake'], reason='Unsupported model claim.')] if complete else [])
+        async def tailor_resume(self, full_job, profile, analysis):
+            assert full_job.job_description == source.job_description
+            return sample_workflow_response('gemini', 'remote').resume
+    router = ResilientAIProvider({'ollama': FailingProvider('ollama', error), 'gemini': RepairProvider('gemini')})
+    response = await router.tailor(source, profile)
+    assert response.fallback_used and 'Automatically recovered' not in response.fallback_reason
+    assert response.analysis.is_reliable == complete
+    assert not response.analysis.strong_matches  # Truth Lock rejects invented evidence.
+    if complete:
+        assert {r.source_quote for r in response.analysis.requirements} == {'Experience with Alpha.', 'Experience with Beta.'}
+
+
+def test_legacy_fallback_report_does_not_claim_incomplete_recovery_succeeded():
+    from pathlib import Path
+
+    from jinja2 import Environment, FileSystemLoader
+    analysis = sample_workflow_response('gemini', 'remote').analysis
+    analysis.is_reliable = False
+    analysis.match_level = 'UNRELIABLE'
+    html = Environment(loader=FileSystemLoader(Path(__file__).resolve().parents[1] / 'templates')).get_template('analysis.html').render(
+        analysis=analysis, job=job(), fallback_used=True, request=type('Request', (), {'query_params': {}, 'state': type('State', (), {'authenticated': False})()})(),
+        fallback_reason="Primary 'ollama' failed (coverage). Automatically recovered using 'gemini'.",
+        token_usage={'total_tokens': 55051, 'input_tokens': 47091, 'output_tokens': 7960,
+                     'calls': 5, 'complete_usage': True, 'tokens_per_second': None})
+    assert 'Automatically recovered' not in html
+    assert 'fallback analysis is also incomplete' in html
+    assert 'including retries and fallback' in html and '5 model calls' in html
