@@ -1,6 +1,8 @@
 """Qualification absence is different from incomplete processing."""
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from jinja2 import Environment, FileSystemLoader
 
 from app.models.job import JobAnalysis
@@ -11,6 +13,44 @@ from app.services.job_extractors.justjoin import JustJoinExtractor
 def candidate():
     return JobAnalysis(company='Example', role='Support', strong_matches=[], partial_matches=[],
                        missing_requirements=[], match_level='HIGH', recommendation='APPLY')
+
+
+@pytest.mark.parametrize('heading', ["What you'll need (essential)", 'What you’ll need (essential):',
+                                    'What you will need', 'What you need (required)'])
+def test_essential_heading_ends_responsibilities(profile, heading):
+    result = AnalysisValidator(profile).validate(candidate(),
+        f'Responsibilities\nMonitor production services.\n{heading}\n'
+        'Experience with Kubernetes.\nAbility to write SQL queries.\nTECH STACK\nPython', semantic=True)
+    assert result.is_reliable
+    assert len(result.requirements) == 2
+    assert result.requirement_counts['mandatory'] == 2
+    assert len(result.responsibilities) == 1
+    assert result.match_level != 'LIMITED'
+
+
+def test_infoplus_essential_requirements_are_not_hidden_as_duties(profile):
+    text = (Path(__file__).parent / 'fixtures/infoplus_production_support.txt').read_text()
+    result = AnalysisValidator(profile).validate(candidate(), text, semantic=True)
+    assert result.is_reliable and not result.completeness_issues
+    assert len(result.requirements) == 11
+    assert result.requirement_counts['mandatory'] == 11
+    assert any('Kubernetes' in r.source_quote for r in result.requirements)
+    assert all(r.source_section == "What you'll need (essential)" for r in result.requirements)
+    assert not any('Practical experience supporting' in r['source_quote'] for r in result.responsibilities)
+    assert result.match_level != 'LIMITED'
+
+
+def test_report_with_only_role_competencies_explains_empty_qualification_assessment(profile):
+    from types import SimpleNamespace
+
+    analysis = AnalysisValidator(profile).validate(candidate(), 'TECH STACK\nPython')
+    html = Environment(loader=FileSystemLoader('templates')).get_template('analysis.html').render(
+        analysis=analysis, job={'role': 'Support', 'company': 'Example'},
+        request=SimpleNamespace(query_params={}, state=SimpleNamespace(authenticated=False)),
+        csrf_token='fixture', draft_id='fixture')
+    assert 'No qualification requirements were assessed.' in html
+    assert 'Role competencies — evidence and listed levels' in html
+    assert 'No unconfirmed requirements identified' not in html
 
 
 def test_qualified_offer_still_assesses_explicit_conditions(profile):

@@ -1,0 +1,48 @@
+JOB DESCRIPTION
+Role purpose
+You'll help maintain and support critical payment applications, ensuring stable and reliable production services. You'll work closely with development and infrastructure teams to investigate incidents, resolve production issues, improve operational processes, and reduce manual effort through automation.
+Our team values strong troubleshooting skills, collaboration, and continuous improvement. This role is ideal for someone who enjoys production support, automation, and working with modern infrastructure technologies.
+What you'll do
+Service support & incident management
+Monitor and support production services, responding to incidents and service requests within agreed SLAs.
+Perform initial troubleshooting by reviewing logs, monitoring dashboards, SQL data and application behaviour.
+Investigate issues on Unix/Linux environments using standard command-line tools.
+Coordinate recovery activities with engineering and infrastructure teams where required.
+Provide timely updates to stakeholders on service status and recovery progress.
+Problem management & continuous improvement
+Participate in root cause analysis and post-incident reviews.
+Create and maintain operational documentation, runbooks and knowledge articles.
+Identify opportunities to improve monitoring, reduce alert noise and increase operational resilience.
+Automation & Operational Excellence
+Automate repetitive operational tasks using scripting languages such as Bash, PowerShell or Python.
+Develop simple operational tools that improve team efficiency.
+Demonstrate practical use of AI tools (e.g. Copilot, Claude) to improve documentation, automate repetitive activities or support operational analysis.
+Change & Release Support
+Participate in deployment, patching, disaster recovery exercises and platform maintenance.
+Review operational readiness of changes and highlight potential support risks.
+What you'll need (essential)
+Experience in Production Support or IT Operations, preferably within financial services.
+Basic hands-on Unix/Linux skills, including navigating the operating system, checking logs and investigating application status.
+Ability to write and troubleshoot SQL queries.
+Experience writing scripts using Bash, PowerShell or Python.
+Practical experience supporting and maintaining Kubernetes environments.
+Experience using monitoring and observability tools such as Splunk, AppDynamics, Prometheus or similar.
+Good understanding of IT infrastructure concepts and distributed applications.
+Working knowledge of Incident, Problem and Change Management processes.
+Strong communication skills in English and the ability to collaborate effectively with global teams.
+Demonstrated experience improving operational processes through automation and continuous improvement initiatives.
+Practical experience using AI productivity tools (e.g. Copilot, Claude) to support automation, documentation or operational analysis.
+
+TECH STACK
+Production Support
+application support
+Linux / Unix
+advanced
+SQL
+advanced
+Python
+regular
+Bash
+regular
+Splunk
+regular

@@ -42,6 +42,7 @@
 <h2>Role alignment — documented experience</h2><p>{{ analysis.role_alignment_summary }}</p></section>{% endif %}
 {% if analysis.requirements and analysis.requirement_counts %}{% set optional_count = analysis.requirements|selectattr("priority", "equalto", "nice_to_have")|list|length %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred - optional_count }} preferred · {{ optional_count }} optional · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
 {% if analysis.scoring_counts %}<p class="muted">{{ analysis.scoring_counts.mandatory_groups }} distinct mandatory conditions used in scoring. Equivalent requirements share one weight; all source rows remain available below. Portal tags have unspecified employer priority.</p>{% endif %}
+{% if analysis.requirements or analysis.strong_matches or analysis.partial_matches or analysis.missing_requirements %}
 <div class="match-grid">
   <section class="card">
     <h2><span class="dot good"></span>Confirmed</h2>
@@ -87,6 +88,9 @@
     </div>
   </section>
 </div>
+{% else %}
+<p class="alert">No qualification requirements were assessed. Review the source text and the role competencies below.</p>
+{% endif %}
 {% if analysis.analysis_language != 'en' %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
 <section class="recommendation">
   <p class="eyebrow">REASONING</p>
