@@ -255,7 +255,7 @@ class AnalysisInventory:
         allowed = set(ids)
         if len(rows) > len(ids) * 3:
             raise OllamaAnalysisError("schema", "Ollama exceeded the bounded assessment row count.")
-        seen, valid = set(), []
+        seen, valid = {}, []
         for row in rows:
             if row.p not in allowed:
                 raise OllamaAnalysisError("coverage", "Ollama referenced an unknown job passage.")
@@ -279,8 +279,12 @@ class AnalysisInventory:
                 raise OllamaAnalysisError("schema", "Ollama referenced unknown candidate evidence.")
             key = (row.p, row.k, row.n.casefold().strip())
             if key in seen:
+                if seen[key].s != row.s:
+                    raise OllamaAnalysisError(
+                        "coverage", "Ollama returned conflicting duplicate assessments; review required."
+                    )
                 continue
-            seen.add(key)
+            seen[key] = row
             valid.append(row)
         return valid
 

@@ -21,6 +21,10 @@ class SourceUnit:
 
 PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
 MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
+NEEDED = re.compile(
+    r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
+    re.I,
+)
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:company overview|department overview|about (?:us|the company|the team)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
@@ -106,7 +110,7 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
         heading = line.rstrip(':').strip()
         if PREFERRED.fullmatch(line):
             category = 'preferred'
-        elif MANDATORY.fullmatch(heading):
+        elif MANDATORY.fullmatch(heading) or NEEDED.fullmatch(heading):
             category = 'mandatory'
         elif DUTY.fullmatch(line):
             category = 'responsibility'

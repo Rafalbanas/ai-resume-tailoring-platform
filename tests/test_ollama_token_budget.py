@@ -487,6 +487,30 @@ def test_conflicting_duplicate_status_never_promotes_a_match():
     assert len(merged) == 1 and merged[0].status == "partial" and merged[0].interpretation_uncertain
 
 
+def test_conflicting_duplicate_in_one_passage_triggers_fallback(profile):
+    from app.services.ollama_analysis import CompactAssessment
+
+    inventory = AnalysisInventory.build(offer(1), profile)
+    rows = [CompactAssessment(p='P3', k='requirement', n='Tool0', s=status,
+                              why='Evidence scope requires review.')
+            for status in ('strong', 'missing')]
+    with pytest.raises(OllamaAnalysisError, match='conflicting duplicate'):
+        inventory.validate_rows(rows, ['P3'])
+
+
+def test_conflicting_duplicate_source_passages_trigger_fallback(profile):
+    from app.services.ollama_analysis import CompactAssessment
+
+    job = JobRequest(company='Example', role='Support',
+                     job_description='Requirements\nExperience with Python.\nExperience with Python.')
+    inventory = AnalysisInventory.build(job, profile)
+    rows = [CompactAssessment(p=pid, k='requirement', n='Python experience', s=status,
+                              why='Evidence scope requires review.')
+            for pid, status in [('P3', 'strong'), ('P4', 'missing')]]
+    with pytest.raises(OllamaAnalysisError, match='conflicting duplicate'):
+        inventory.expand(inventory.validate_rows(rows, ['P3', 'P4']))
+
+
 def test_technology_declaration_cannot_establish_practical_and_component_experience():
     from app.models.job import RequirementComponent
     from tests.test_provider_fallback import sample_workflow_response
