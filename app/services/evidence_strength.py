@@ -22,6 +22,9 @@ USE = re.compile(r"\b(?:uses?|used|using|maintains?|implemented|configured|creat
 
 def evidence_strength(entry):
     text = entry.text
+    from app.services.academic_ml import academic_entry
+    if academic_entry(entry):
+        return 'academic_use' if USE.search(text) else 'academic_knowledge'
     if CI.search(text) or ARTIFACT.search(text):
         if EXECUTION.search(text) and not NEGATION.search(text):
             return "operational_result"

@@ -301,6 +301,11 @@ class EvidenceMatcher:
                 if any(b.status == Status.ABSENT for b in branches):
                     return EvidenceMatch(Status.ABSENT, [e for b in branches for e in b.entries], 'An AND condition has an explicitly documented gap; every condition is required.')
                 return self._result([e for b in branches for e in b.entries], complete, 'AND requires every condition: ' + '; '.join(f'{n}: {b.status.value}' for n, b in zip(alternatives, branches, strict=True)))
+        from app.services.academic_ml import ml_ceiling, ml_entries
+        ceiling = ml_ceiling(name, self.entries, self.bank, operator=operator)
+        if ceiling is not None:
+            relevant = ml_entries(name, self.entries)
+            return EvidenceMatch(Status(ceiling[0]), relevant, ceiling[1])
         scoped = scoped_match(self, name)
         if scoped is not None:
             return scoped
@@ -408,7 +413,7 @@ class EvidenceMatcher:
             if simple:
                 from app.services.evidence_strength import evidence_strength
                 needs_practice = bool(re.match(r'experience\s+(?:with|in)\b', name, re.I))
-                practical = any(evidence_strength(e) not in {'declaration', 'theoretical_knowledge'} for e in simple)
+                practical = any(evidence_strength(e) not in {'declaration', 'theoretical_knowledge', 'academic_knowledge'} for e in simple)
                 return self._result(simple, not needs_practice or practical,
                     'Technology knowledge is documented; a name alone does not verify practical experience or advanced scope.')
         return None
