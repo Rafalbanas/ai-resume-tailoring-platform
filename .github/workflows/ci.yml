@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15"
           cache: pip
       - run: pip install -r requirements-dev.txt
       - name: Install Chromium for layout regression tests
@@ -26,16 +26,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build application image
         run: docker build --tag cvtailor:ci .
-      - name: Verify image runtime and PDF dependencies
+      - name: Verify image runtime, document exports and browser
         run: |
           docker run --rm -i --network none --entrypoint python cvtailor:ci - <<'PY'
           import sys
+          from io import BytesIO
           from app.main import app
+          from docx import Document
+          from playwright.sync_api import sync_playwright
           from weasyprint import HTML
 
-          assert sys.version_info[:2] == (3, 12), sys.version
+          assert sys.version_info[:2] == (3, 15), sys.version
           assert app is not None
           pdf = HTML(string="<p>CV Tailor image check</p>").write_pdf()
           assert pdf.startswith(b"%PDF-")
-          print("Python 3.12, application imports and PDF rendering OK")
+          document = Document()
+          document.add_paragraph("CV Tailor image check")
+          output = BytesIO()
+          document.save(output)
+          assert output.getvalue().startswith(b"PK")
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch(args=["--no-sandbox"])
+              page = browser.new_page()
+              page.set_content("<title>CV Tailor image check</title>")
+              assert page.title() == "CV Tailor image check"
+              browser.close()
+          print("Python 3.15, application imports, PDF/DOCX exports and Chromium OK")
           PY
