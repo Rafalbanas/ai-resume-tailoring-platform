@@ -42,3 +42,7 @@ data/.ai-settings-*
 AUDIT_REPORT.md
 audit/
 data/test_*_result.json
+
+# Private Kubernetes runtime artifacts and deployment coordination
+.k8s-lab
+data/.deployment-admission.lock

@@ -1,0 +1,16 @@
+[Unit]
+Description=CVTailor consistent backup and isolated restore verification
+After=k3s.service
+ConditionPathIsMountPoint=/storage
+StartLimitIntervalSec=24h
+StartLimitBurst=48
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cvtailor-operations backup
+UMask=0077
+Nice=10
+IOWeight=10
+TimeoutStartSec=10min
+Restart=on-failure
+RestartSec=15min

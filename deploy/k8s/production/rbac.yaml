@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cvtailor-deployer
+  namespace: cvtailor-prod
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cvtailor-deployer
+  namespace: cvtailor-prod
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [cvtailor]
+    verbs: [get, patch, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cvtailor-deployer
+  namespace: cvtailor-prod
+subjects:
+  - kind: ServiceAccount
+    name: cvtailor-deployer
+    namespace: cvtailor-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cvtailor-deployer

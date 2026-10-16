@@ -1,0 +1,525 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "cvtailor-prod"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "cvtailor-runtime-code",
+        "namespace": "cvtailor-prod"
+      },
+      "data": {
+        "runtime.py": "\"\"\"Keep application behavior; serialize deployment drain with mutating requests.\"\"\"\n\nimport fcntl\nimport os\nimport sys\nfrom pathlib import Path\n\nimport uvicorn\nfrom starlette.responses import JSONResponse\n\n\nclass DeploymentAdmission:\n    def __init__(self, app, data_dir):\n        self.app = app\n        self.path = Path(data_dir) / \".deployment-admission.lock\"\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\" or scope[\"method\"] not in {\"POST\", \"PUT\", \"PATCH\", \"DELETE\"}:\n            return await self.app(scope, receive, send)\n        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)\n        try:\n            try:\n                fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)\n            except BlockingIOError:\n                response = JSONResponse({\"detail\": \"Deployment in progress. Please retry shortly.\"}, status_code=503, headers={\"Retry-After\": \"30\"})\n                return await response(scope, receive, send)\n            return await self.app(scope, receive, send)\n        finally:\n            os.close(descriptor)\n\n\nif __name__ == \"__main__\":\n    sys.path.insert(0, \"/app\")\n    from app.main import app\n\n    app.add_middleware(DeploymentAdmission, data_dir=os.environ[\"DATA_DIR\"])\n    uvicorn.run(\n        app,\n        host=\"127.0.0.1\",\n        port=int(os.environ.get(\"CVTAILOR_PORT\", \"18000\")),\n        root_path=os.environ.get(\"APP_ROOT_PATH\", \"\"),\n        proxy_headers=True,\n        forwarded_allow_ips=\"127.0.0.1\",\n    )\n"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "cvtailor-config",
+        "namespace": "cvtailor-prod"
+      },
+      "data": {
+        "APP_ROOT_PATH": "",
+        "DEMO_MODE": "false",
+        "SESSION_TTL_SECONDS": "28800",
+        "BASE_URL": "http://localhost:8000",
+        "APP_BUILD_SHA": "4ab82e71cb7a00a04114fbb49eb0f18536f61841",
+        "APP_BUILD_TIMESTAMP": "2026-10-15T10:20:18Z",
+        "DATA_DIR": "/app/data",
+        "AI_PROVIDER": "ollama",
+        "LLM_PROVIDER": "",
+        "LLM_FALLBACK_PROVIDER": "gemini",
+        "PROFILE_MODE": "production",
+        "REQUEST_TIMEOUT_SECONDS": "60.0",
+        "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+        "OLLAMA_MODEL": "qwen3.5:9b",
+        "OLLAMA_CONNECT_TIMEOUT_SECONDS": "10.0",
+        "OLLAMA_READ_TIMEOUT_SECONDS": "540.0",
+        "OLLAMA_TIMEOUT_SECONDS": "300.0",
+        "OLLAMA_KEEP_ALIVE": "15m",
+        "OLLAMA_MAX_CONCURRENCY": "1",
+        "OLLAMA_NUM_PREDICT": "8192",
+        "OLLAMA_NUM_CTX": "32768",
+        "GEMINI_MODEL": "gemini-3.1-flash-lite",
+        "GEMINI_BASE_URL": "https://generativelanguage.googleapis.com",
+        "GEMINI_CONNECT_TIMEOUT_SECONDS": "15.0",
+        "GEMINI_READ_TIMEOUT_SECONDS": "60.0",
+        "GEMINI_TIMEOUT_SECONDS": "60.0",
+        "GEMINI_MAX_RETRIES": "0",
+        "LLM_OPERATION_BUDGET_SECONDS": "720.0",
+        "REFERENCE_CV_MAX_BYTES": "10000000",
+        "PROFILE_PHOTO_MAX_BYTES": "10000000",
+        "MAX_JOB_DESCRIPTION_CHARS": "30000",
+        "RATE_LIMIT_PER_MINUTE": "20",
+        "JOB_FETCH_TIMEOUT_SECONDS": "12.0",
+        "JOB_FETCH_MAX_BYTES": "2000000",
+        "JOB_FETCH_MAX_REDIRECTS": "3",
+        "JOB_FETCH_PLAYWRIGHT_ENABLED": "true",
+        "CVTAILOR_PORT": "18000",
+        "PYTHONPATH": "/app"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolume",
+      "metadata": {
+        "name": "cvtailor-prod-main"
+      },
+      "spec": {
+        "capacity": {
+          "storage": "4Gi"
+        },
+        "volumeMode": "Filesystem",
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "persistentVolumeReclaimPolicy": "Retain",
+        "storageClassName": "cvtailor-local",
+        "local": {
+          "path": "/var/lib/cvtailor/production/main"
+        },
+        "nodeAffinity": {
+          "required": {
+            "nodeSelectorTerms": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "kubernetes.io/hostname",
+                    "operator": "In",
+                    "values": [
+                      "cvtailor-prod"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "cvtailor-data",
+        "namespace": "cvtailor-prod"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "cvtailor-local",
+        "volumeName": "cvtailor-prod-main",
+        "resources": {
+          "requests": {
+            "storage": "4Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "cvtailor",
+        "namespace": "cvtailor-prod",
+        "annotations": {
+          "cvtailor.dev/revision": "4ab82e71cb7a00a04114fbb49eb0f18536f61841"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "revisionHistoryLimit": 3,
+        "selector": {
+          "matchLabels": {
+            "app": "cvtailor"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "cvtailor"
+            }
+          },
+          "spec": {
+            "hostNetwork": true,
+            "dnsPolicy": "ClusterFirstWithHostNet",
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 120,
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "fsGroup": 10001
+            },
+            "containers": [
+              {
+                "name": "app",
+                "image": "ghcr.io/rafalbanas/ai-resume-tailoring-platform@sha256:49010a5914ed6b3d65513a020bddcaf35195d61490ff35fb4b05172166ece5a2",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python",
+                  "/opt/cvtailor/runtime.py"
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "cvtailor-config"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "cvtailor-runtime"
+                    }
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 18000,
+                    "hostPort": 18000,
+                    "hostIP": "127.0.0.1"
+                  }
+                ],
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "256Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "1Gi"
+                  }
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18000
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 2,
+                  "failureThreshold": 90
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18000
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 10,
+                  "failureThreshold": 3
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18000
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 15,
+                  "failureThreshold": 6
+                },
+                "volumeMounts": [
+                  {
+                    "name": "data",
+                    "mountPath": "/app/data"
+                  },
+                  {
+                    "name": "runtime",
+                    "mountPath": "/opt/cvtailor",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "cvtailor-data"
+                }
+              },
+              {
+                "name": "runtime",
+                "configMap": {
+                  "name": "cvtailor-runtime-code"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "cvtailor-demo-config",
+        "namespace": "cvtailor-prod"
+      },
+      "data": {
+        "APP_ROOT_PATH": "/demo",
+        "DEMO_MODE": "true",
+        "SESSION_TTL_SECONDS": "28800",
+        "BASE_URL": "https://cv.banas.dev/demo",
+        "APP_BUILD_SHA": "development",
+        "APP_BUILD_TIMESTAMP": "unknown",
+        "DATA_DIR": "/app/data",
+        "AI_PROVIDER": "ollama",
+        "LLM_PROVIDER": "ollama",
+        "LLM_FALLBACK_PROVIDER": "gemini",
+        "PROFILE_MODE": "sample",
+        "REQUEST_TIMEOUT_SECONDS": "60.0",
+        "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+        "OLLAMA_MODEL": "qwen3.5:9b",
+        "OLLAMA_CONNECT_TIMEOUT_SECONDS": "10.0",
+        "OLLAMA_READ_TIMEOUT_SECONDS": "540.0",
+        "OLLAMA_TIMEOUT_SECONDS": "300.0",
+        "OLLAMA_KEEP_ALIVE": "15m",
+        "OLLAMA_MAX_CONCURRENCY": "1",
+        "OLLAMA_NUM_PREDICT": "8192",
+        "OLLAMA_NUM_CTX": "32768",
+        "GEMINI_MODEL": "gemini-3.1-flash-lite",
+        "GEMINI_BASE_URL": "https://generativelanguage.googleapis.com",
+        "GEMINI_CONNECT_TIMEOUT_SECONDS": "15.0",
+        "GEMINI_READ_TIMEOUT_SECONDS": "60.0",
+        "GEMINI_TIMEOUT_SECONDS": "60.0",
+        "GEMINI_MAX_RETRIES": "0",
+        "LLM_OPERATION_BUDGET_SECONDS": "720.0",
+        "REFERENCE_CV_MAX_BYTES": "10000000",
+        "PROFILE_PHOTO_MAX_BYTES": "10000000",
+        "MAX_JOB_DESCRIPTION_CHARS": "30000",
+        "RATE_LIMIT_PER_MINUTE": "20",
+        "JOB_FETCH_TIMEOUT_SECONDS": "12.0",
+        "JOB_FETCH_MAX_BYTES": "2000000",
+        "JOB_FETCH_MAX_REDIRECTS": "3",
+        "JOB_FETCH_PLAYWRIGHT_ENABLED": "true",
+        "CVTAILOR_PORT": "18001",
+        "PYTHONPATH": "/app"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolume",
+      "metadata": {
+        "name": "cvtailor-prod-demo"
+      },
+      "spec": {
+        "capacity": {
+          "storage": "1Gi"
+        },
+        "volumeMode": "Filesystem",
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "persistentVolumeReclaimPolicy": "Retain",
+        "storageClassName": "cvtailor-local",
+        "local": {
+          "path": "/var/lib/cvtailor/production/demo"
+        },
+        "nodeAffinity": {
+          "required": {
+            "nodeSelectorTerms": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "kubernetes.io/hostname",
+                    "operator": "In",
+                    "values": [
+                      "cvtailor-prod"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "cvtailor-demo-data",
+        "namespace": "cvtailor-prod"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "cvtailor-local",
+        "volumeName": "cvtailor-prod-demo",
+        "resources": {
+          "requests": {
+            "storage": "1Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "cvtailor-demo",
+        "namespace": "cvtailor-prod"
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "revisionHistoryLimit": 3,
+        "selector": {
+          "matchLabels": {
+            "app": "cvtailor-demo"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "cvtailor-demo"
+            }
+          },
+          "spec": {
+            "hostNetwork": true,
+            "dnsPolicy": "ClusterFirstWithHostNet",
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 120,
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "fsGroup": 10001
+            },
+            "containers": [
+              {
+                "name": "app",
+                "image": "docker.io/library/cvtailor-demo@sha256:116618b16403879e49f5b47aeda756b15be241db94e0333acc3c43c095c2a67d",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python",
+                  "/opt/cvtailor/runtime.py"
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "cvtailor-demo-config"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "cvtailor-demo-runtime"
+                    }
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 18001,
+                    "hostPort": 18001,
+                    "hostIP": "127.0.0.1"
+                  }
+                ],
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "192Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "768Mi"
+                  }
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18001
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 2,
+                  "failureThreshold": 90
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18001
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 10,
+                  "failureThreshold": 3
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "host": "127.0.0.1",
+                    "path": "/health",
+                    "port": 18001
+                  },
+                  "timeoutSeconds": 10,
+                  "periodSeconds": 15,
+                  "failureThreshold": 6
+                },
+                "volumeMounts": [
+                  {
+                    "name": "data",
+                    "mountPath": "/app/data"
+                  },
+                  {
+                    "name": "runtime",
+                    "mountPath": "/opt/cvtailor",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "cvtailor-demo-data"
+                }
+              },
+              {
+                "name": "runtime",
+                "configMap": {
+                  "name": "cvtailor-runtime-code"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

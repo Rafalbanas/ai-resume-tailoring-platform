@@ -1,0 +1,7 @@
+# Build against the captured running production image, using the privately
+# captured demo-build/{app,templates,static} context. Never include .env or data.
+ARG BASE_IMAGE=ghcr.io/rafalbanas/ai-resume-tailoring-platform@sha256:49010a5914ed6b3d65513a020bddcaf35195d61490ff35fb4b05172166ece5a2
+FROM ${BASE_IMAGE}
+COPY --chown=10001:10001 app /app/app
+COPY --chown=10001:10001 templates /app/templates
+COPY --chown=10001:10001 static /app/static

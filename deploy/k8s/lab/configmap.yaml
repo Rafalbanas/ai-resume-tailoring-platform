@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cvtailor-config
+  namespace: cvtailor-lab
+data:
+  AI_PROVIDER: mock
+  LLM_PROVIDER: mock
+  LLM_FALLBACK_PROVIDER: none
+  PROFILE_MODE: sample
+  DATA_DIR: /lab-data
+  BASE_URL: http://localhost:18080
+  APP_BUILD_SHA: kubernetes-lab
