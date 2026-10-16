@@ -22,7 +22,7 @@ flowchart TD
     subgraph Ingestion["1. Ingestion & Extraction"]
         Browser[Mobile / Desktop Browser] -->|URL or Raw Text| FastAPI[FastAPI Web Server]
         FastAPI -->|Single Supplied URL| Extractor[SSRF-Safe Job Extractor]
-        Extractor --> PortalParsers[Portal Adapters: JustJoin, NoFluff, Pracuj, Workday]
+        Extractor --> PortalParsers[Portal Adapters: JustJoin, NoFluff, Pracuj, Workday, CzyJestEldorado]
         Extractor --> JSONLD[Schema.org JSON-LD Parser]
         Extractor -. Headless Fallback .-> PW[Safe Playwright Renderer]
     end
@@ -62,7 +62,7 @@ flowchart TD
 
 ### Pipeline Breakdown
 
-1. **SSRF-Safe Web Extraction**: Fetches a single user-supplied job URL. Validates and pins IP addresses, prevents DNS rebinding, blocks internal/loopback/private IP ranges (RFC 1918, RFC 3927), limits redirects, and parses portal-specific HTML structures (JustJoin.it, NoFluffJobs.com, Pracuj.pl, MyWorkdayJobs), JSON-LD Schema.org data, or falls back to headless Playwright rendering.
+1. **SSRF-Safe Web Extraction**: Fetches a single user-supplied job URL. Validates and pins IP addresses, prevents DNS rebinding, blocks internal/loopback/private IP ranges (RFC 1918, RFC 3927), limits redirects, and parses portal-specific HTML structures (JustJoin.it, NoFluffJobs.com, Pracuj.pl, MyWorkdayJobs, CzyJestEldorado via official JSON-RPC MCP), JSON-LD Schema.org data, or falls back to headless Playwright rendering.
 2. **LLM-First Requirement Interpretation (`JobInterpretation`)**: A shared, provider-neutral Pydantic contract between Ollama and Gemini. Extracts requirements with literal source quotes, priorities (`mandatory`, `preferred`, `optional`, `context`), provenance source IDs, explicit `AND` / `OR` logical components, and uncertainty flags.
 3. **Requirement Grounding & Semantic Validation (`AnalysisValidator`)**: Separates qualifications from employment benefits and marketing context. Distinguishes negated statements (e.g. "no commercial experience with X" vs. expertise) and flags ambiguous postings as `REVIEW` or `UNRELIABLE / RETRY`.
 4. **Offer-Specific Resume Tailoring**: The active model ranks candidate evidence and selects relevant factual source statements and verified skills for the specific offer, without ever fabricating claims or promoting skill levels.
@@ -100,20 +100,29 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 
 ### 4. Dual Resume Themes & Layout Integrity
 - **Modern Sidebar Theme**: Two-column layout featuring a navy blue sidebar with contact details, core skills, languages, an optional profile photo or initials, and a seamless GDPR clause without borders or steps. The main section displays professional summary, experience bullets, projects, education, and certifications.
+- **One-Page Policy for Modern Sidebar**: Newly generated Modern Sidebar resumes strictly target a crisp single-page PDF. The engine consolidates redundant bullets, uses concise cited summary/project facts, and omits lower-priority optional details if needed. Employment history, education, verified competence levels, and mandatory evidence remain protected. If protected content cannot physically fit on one page, generation returns a clear HTTP 422 recommending ATS Classic or manual editing.
 - **ATS Classic Theme**: Single-column, minimalist, text-focused layout without photos or multi-column grids, maximizing automated ATS readability and natural multi-page flow.
+- **Currently Learning Section**: Dedicated, separate section across PDF/DOCX layouts displaying job-relevant `learning` skills with explicit `manual_verified` declarations. Courses render as "Course in progress" while general self-study renders as "Learning in progress". They are never promoted into Core Skills or satisfied qualifications.
 - **Dynamic Layout Fitting**: WeasyPrint page boxes and text bounds are dynamically evaluated. Spacing and skill counts adapt to prevent sparse continuations (e.g. a single dangling bullet on page 2) while keeping all factual content intact.
 - **Single GDPR Consent**: The recruitment consent clause is placed cleanly at the bottom margin of the final page in both PDF and DOCX.
 
-### 5. Document Export & Hyperlink Integrity
+### 5. Multi-Portal Job Extraction & Resilient Copied-Page Cleaning
+- **CzyJestEldorado (`czyjesteldorado.pl`)**: Connects to the official remote Model Context Protocol (MCP) server at `https://czyjesteldorado.pl/_mcp` via JSON-RPC, bypassing Cloudflare Turnstile blocks. Automatically retrieves role titles, company names, salary ranges, employment conditions, and technology tags. When pasting full offer descriptions copied from the browser, the extractor cleanly isolates detailed requirements (including tools like Docker and Kubernetes), responsibilities, and conditions while stripping portal UI noise.
+- **Pracuj.pl**: Dedicated extraction pipeline isolating descriptions, responsibilities, requirements, and tech tags while discarding recruitment widgets, cookies, and navigation elements. If anti-bot defenses return HTTP 403, users can paste the copied page into the description field and run **Clean pasted job offer** to parse employer, title, and structured content locally.
+- **JustJoin.it & NoFluffJobs**: Custom HTML and JSON-LD Schema.org adapters capturing salary ranges, contract types, seniority levels, and tech stacks.
+- **Workday & Enterprise ATS**: JSON-LD Schema.org and Workday-specific layout extractors with Playwright headless fallback.
+- **Universal Copied Offer Cleaning**: The **Clean pasted job offer** button works with any job board or corporate career site without network overhead, detecting Polish and English section headers, removing boilerplate controls, and extracting role/company metadata.
+
+### 6. Document Export & Hyperlink Integrity
 - **PDF Export**: Pixel-accurate WeasyPrint rendering with native hyperlink annotations (`mailto:`, `https://`) and Poppler-verified geometry.
 - **DOCX Export**: Clean, single-column editable Word document with active hyperlinks and standard headings for universal compatibility.
 - **URL & Contact Normalization**: RFC-compliant URL parsing and normalization preserve ASCII URLs byte-for-byte, encode Unicode paths cleanly, and format readable display text while keeping tracking parameters in link targets.
 
-### 6. In-Browser Resume Editing
+### 7. In-Browser Resume Editing
 - **Interactive Form**: Edit professional summary, selected skills, experience bullets, and projects directly in the browser.
 - **Instant Truth Lock Re-validation**: Manual edits are checked against the candidate's verified profile catalog. Unsupported claims return HTTP 422 with actionable error messages and preserve form state without corrupting the saved resume.
 
-### 7. Security & Privacy
+### 8. Security & Privacy
 - **SSRF Defense**: IP address validation, IP pinning, DNS rebinding mitigation, RFC 1918/3927 blocking, and strict redirect limits.
 - **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), fixed-window login rate limiting (5 attempts per 5 minutes per IP), and server-revocable SQLite sessions (`data/sessions.sqlite3`).
 - **CSRF & Cookie Protection**: Double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
@@ -176,7 +185,7 @@ ai-resume-tailoring-platform/
 │       ├── fact_catalog.py        # Tokenizer and source fact catalog
 │       ├── fact_validator.py      # Truth Lock boundary and candidate fact enforcement
 │       ├── gemini_provider.py     # Google Gemini API provider
-│       ├── job_extractors/        # SSRF-safe fetcher & portal parsers (JustJoin, NoFluff, etc.)
+│       ├── job_extractors/        # SSRF-safe fetcher & portal parsers (JustJoin, NoFluff, Pracuj, Eldorado via MCP, etc.)
 │       ├── job_sections.py        # Section classification (qualifications, duties, benefits)
 │       ├── languages.py           # Language proficiency verification
 │       ├── mock_provider.py       # Deterministic mock provider for tests & offline dev
@@ -202,14 +211,24 @@ ai-resume-tailoring-platform/
 │   └── recording_demo.py          # Isolated runner for synthetic video demo recordings
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (411 tests)
+└── tests/                         # Comprehensive automated test suite (538 tests)
 ```
 
 ---
 
-## Installation & Quick Start
+## Installation & Deployment
 
-### Option A: Docker Deployment (Recommended for VPS)
+### Option A: Production K3s Deployment (Kubernetes on VPS)
+
+The production environment operates as a hardened, single-node **K3s (v1.36.5+k3s1)** deployment under the `cvtailor-prod` namespace:
+- **Loopback & Ingress Architecture**: Pods listen on host loopback (`127.0.0.1:18000` for main, `127.0.0.1:18001` for demo) via `hostNetwork`, preserving host-level Nginx reverse proxying, TLS termination, and existing SSH tunnels to Ollama (`127.0.0.1:11434`).
+- **Storage & Volume Management**: State (master profile, SQLite sessions, tasks, generated CVs) is mounted on dedicated PersistentVolumeClaims backed by host storage under `/storage/cvtailor-k3s-runtime/`.
+- **Nightly Backups & Monitoring**: Automated systemd timers execute atomic archives of application volumes with SHA-256 integrity verification.
+- **Continuous Deployment**: Triggered via GitHub Actions `workflow_dispatch` on `main`. Executes automated regression testing, builds and pushes an immutable image by exact digest to GHCR, and deploys via a restricted SSH entrypoint on the VPS with active task draining and automatic rollback.
+
+For complete K3s operations, RBAC, and storage architecture, see [Kubernetes Production Guide](docs/kubernetes-production.md) and [Deployment Guide](docs/deployment.md).
+
+### Option B: Docker Compose Deployment (Standalone VPS)
 
 Docker Compose uses `network_mode: host` on Linux so that the container can reach an Ollama instance running on host loopback (`127.0.0.1:11434`), while Uvicorn binds to `127.0.0.1:${CV_TAILOR_PORT:-8000}` behind your reverse proxy (see [VPS Deployment Guide](docs/deployment.md) for full reverse-proxy and TLS configuration).
 
@@ -247,7 +266,7 @@ Docker Compose uses `network_mode: host` on Linux so that the container can reac
    docker compose exec cv-tailor python -m app.cli reset-password
    ```
 
-### Option B: Local Development (Python 3.14)
+### Option C: Local Development (Python 3.14)
 
 1. **Set up virtual environment**:
    ```bash
@@ -381,7 +400,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (411 tests)
+# Run complete test suite (538 tests)
 pytest -q
 ```
 
@@ -411,11 +430,3 @@ This project is licensed under the **Apache License, Version 2.0**.
 - Copyright and project notices: [NOTICE](NOTICE)
 
 Under the terms of the Apache License 2.0, you are free to use, modify, distribute, and sublicense this software, including for commercial purposes, subject to the conditions set forth in the license.
-
-
-Modern Sidebar generation now selects a one-page PDF from verified source content. It removes redundant bullets, uses concise cited summary/project facts, and omits lower-priority optional details if necessary. Employment history, education, competence levels, learning status and mandatory evidence remain protected. The full validated pre-fit version and selection warnings are retained for review. If protected content cannot fit, generation returns a clear 422 message recommending ATS Classic or manual shortening. Manual edits and ATS Classic keep their chosen content; DOCX pagination depends on its separate editable layout.
-
-
-Pracuj.pl import collects the offer description, duties, requirements, preferences, technology tags and employment conditions as separate sections. Benefits, navigation, recruitment widgets and saved-CV information are excluded. If Pracuj.pl blocks the VPS with HTTP 403, paste the copied page into Job description and choose **Clean pasted job offer** to extract employer/title and clean the content without another network request. Review the imported text before analysis; inconsistent locations remain in the source for clarification. The same button accepts text from any job board or company website without a URL or another network request. It removes common page controls and recognizes Polish and English section headings; unstructured descriptions are kept as text. Company and role are only filled when identified, so review all fields before analysis.
-
-CzyJestEldorado's MCP search supplies metadata, not the full offer description. The importer also tries the offer page and, when enabled, browser rendering. If those are blocked, it returns `manual_required`, fills available company/title fields and asks for the full copied offer; it keeps the existing description. Technology tags are not converted into mandatory requirements. Pasted Eldorado text supports Markdown headings and literal `svg` icon markers.
