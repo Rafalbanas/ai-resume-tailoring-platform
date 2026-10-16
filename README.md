@@ -245,7 +245,7 @@ ai-resume-tailoring-platform/
 │   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (<!-- TEST_COUNT:START -->610<!-- TEST_COUNT:END --> tests)
+└── tests/                         # Comprehensive automated test suite (538 tests)
 ```
 
 ---
@@ -434,7 +434,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (<!-- TEST_COUNT:START -->610<!-- TEST_COUNT:END --> tests)
+# Run complete test suite (538 tests)
 pytest -q
 ```
 
@@ -455,6 +455,18 @@ pytest -q
 - **Review Requirement**: Truth Lock enforces source fact IDs and exact sentence replacement, but semantic nuances and job-specific relevance still require human review before submitting an application.
 
 ---
+
+## Contributing and community
+
+CVTailor is a personal project maintained on a best-effort basis. See the
+[contribution guide](CONTRIBUTING.md) for local development, checks, and pull requests,
+and the [code of conduct](CODE_OF_CONDUCT.md) for project communication.
+
+Use the [issue forms](https://github.com/Rafalbanas/ai-resume-tailoring-platform/issues/new/choose)
+for bugs, feature requests, and accessibility barriers. Read the
+[accessibility statement](ACCESSIBILITY.md) for current testing and known limitations.
+Report vulnerabilities privately as described in the [security policy](SECURITY.md).
+Public reports and examples must not contain real CVs, personal data, or credentials.
 
 ## License & Attribution
 
