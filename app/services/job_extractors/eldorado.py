@@ -73,13 +73,9 @@ def candidate_from_job_data(job_data: dict[str, Any]) -> ExtractionCandidate:
     if keywords:
         sections.append("PORTAL TECHNOLOGY TAGS\n" + "\n".join(keywords))
 
-    req_lines: list[str] = list(keywords)
-    if seniority and seniority.lower() not in {"null", "none"}:
-        req_lines.append(f"Poziom doświadczenia: {seniority}")
-    if req_lines:
-        sections.append("REQUIREMENTS\n" + "\n".join(req_lines))
-
     conditions: list[str] = []
+    if seniority and seniority.lower() not in {"null", "none"}:
+        conditions.append(f"Poziom doświadczenia: {seniority}")
     if cities:
         conditions.append(f"Lokalizacja: {', '.join(cities)}")
     if work_modes:
@@ -99,18 +95,6 @@ def candidate_from_job_data(job_data: dict[str, Any]) -> ExtractionCandidate:
 
     if conditions:
         sections.append("EMPLOYMENT CONDITIONS\n" + "\n".join(conditions))
-
-    summary = f"Oferta pracy na stanowisko {role}"
-    if company:
-        summary += f" w firmie {company}"
-    summary += " (serwis Czy Jest Eldorado)."
-    notice = (
-        "[UWAGA: Pobrano oficjalne metadane i tagi technologiczne z serwisu CzyJestEldorado. "
-        "Serwis chroni pełną treść oferty przez Cloudflare, dlatego szczegółowy opis nie jest dostępny przez API. "
-        "Aby uwzględnić pełne wymagania (np. Docker, Kubernetes) i zadania, skopiuj treść ogłoszenia ze strony, "
-        "wklej w to pole i kliknij 'Wyczyść wklejoną ofertę'.]"
-    )
-    sections.append(f"OFFER DESCRIPTION\n{summary}\n\n{notice}")
 
     return ExtractionCandidate(
         company=company,
@@ -191,17 +175,13 @@ NUMERIC_BADGE = re.compile(r"^\d+$")
 class EldoradoExtractor(BaseExtractor):
     domains = ("czyjesteldorado.pl",)
     prefer_over_jsonld = True
-    allow_generic_fallback = True
+    allow_generic_fallback = False
     mcp_endpoint = MCP_ENDPOINT
 
     def extract(self, html: str) -> ExtractionCandidate:
-        candidate = self._extract_json_script(html)
-        if candidate and candidate.usable:
-            return candidate
-
         soup = cleaned_soup(html)
         role = first_text(soup, ("h1", "[data-test*='title']", ".offer-title", ".job-title", "header h1"))
-        company = first_text(soup, ("[data-test*='company']", ".company-name", "h1 + h2", "h2", "a[href*='/firma/']"))
+        company = first_text(soup, ("[data-test*='company']", ".company-name", "a[href*='/firma/']", "h1 + h2", "h2"))
 
         cloned_soup = cleaned_soup(html)
         for node in list(cloned_soup.select("h1,h2,h3,h4,p,li")):
@@ -216,7 +196,9 @@ class EldoradoExtractor(BaseExtractor):
         if company:
             candidate.company = company
 
-        if any(h in candidate.job_description for h in ("REQUIREMENTS", "RESPONSIBILITIES", "PORTAL TECHNOLOGY TAGS")):
+        headings = {node.get_text(" ", strip=True).casefold().rstrip(":") for node in soup.select("h2,h3,h4")}
+        if any(ELDORADO_HEADINGS.get(heading) in {"REQUIREMENTS", "RESPONSIBILITIES", "OFFER DESCRIPTION"}
+               for heading in headings):
             return candidate
 
         tags: list[str] = []
@@ -228,15 +210,15 @@ class EldoradoExtractor(BaseExtractor):
                 tags.append(t)
 
         description_node = soup.select_one("#job-description, .job-description, article")
-        desc_text = normalized_text(description_node) if description_node else normalized_text(soup.select_one("main"))
+        desc_text = normalized_text(description_node) if description_node else ""
+        if not desc_text:
+            return ExtractionCandidate(company=company, role=role)
 
         sections: list[str] = []
         if tags:
             sections.append("PORTAL TECHNOLOGY TAGS\n" + "\n".join(tags))
         if desc_text:
             sections.append(f"OFFER DESCRIPTION\n{desc_text}")
-        elif tags:
-            sections.append("REQUIREMENTS\n" + "\n".join(tags))
 
         if sections:
             return ExtractionCandidate(
@@ -248,6 +230,8 @@ class EldoradoExtractor(BaseExtractor):
         return candidate
 
     def extract_text(self, text: str) -> ExtractionCandidate:
+        # Markdown copies may include literal icon names glued to text.
+        text = re.sub(r"\bsvg|svg(?=[A-ZĄĆĘŁŃÓŚŹŻ]|$)", "\n", text, flags=re.M)
         raw_lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not raw_lines:
             return ExtractionCandidate()
@@ -272,7 +256,8 @@ class EldoradoExtractor(BaseExtractor):
         for raw_line in raw_lines:
             clean_line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", raw_line)
             clean_line = re.sub(r"^\s*(?:#{1,6}\s+|[-*•]\s+)", "", clean_line).strip()
-            if not clean_line:
+            clean_line = clean_line.strip("* ").rstrip("\\").strip()
+            if not clean_line or clean_line in {"-", "*", "•"}:
                 continue
 
             folded = clean_line.casefold().rstrip(":")
@@ -296,7 +281,8 @@ class EldoradoExtractor(BaseExtractor):
             if p.casefold() not in ELDORADO_UI_NOISE
             and not p.startswith("#")
             and not NUMERIC_BADGE.match(p)
-            and not p.casefold().startswith(("dodano", "źródło:"))
+            and not p.casefold().startswith(("dodano", "źródło:", "#"))
+            and "(image)" not in p.casefold()
         ]
 
         candidate_names: list[str] = []
@@ -504,7 +490,8 @@ class EldoradoExtractor(BaseExtractor):
                         except json.JSONDecodeError:
                             pass
 
-            if jobs and isinstance(jobs[0], dict):
-                return candidate_from_job_data(jobs[0])
+            for job in jobs:
+                if isinstance(job, dict) and extract_job_id(str(job.get("url", ""))) == job_id:
+                    return candidate_from_job_data(job)
 
         return None

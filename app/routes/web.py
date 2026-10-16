@@ -103,24 +103,9 @@ async def clean_job_text(request: Request, payload: JobTextRequest):
     validate_csrf(request.headers.get("X-CSRF-Token", ""),
                   request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
                   request.app.state.settings.csrf_secret)
-    from app.services.job_extractors.eldorado import EldoradoExtractor
-    from app.services.job_extractors.pracuj import PracujExtractor
+    from app.services.job_extractors.pasted import clean_pasted_offer
 
-    eldorado = EldoradoExtractor()
-    text_lower = payload.text.casefold()
-    if (
-        (payload.url and eldorado.matches(payload.url))
-        or "tech stack / keywords" in text_lower
-        or "firma i stanowisko" in text_lower
-        or "czyjesteldorado" in text_lower
-    ):
-        candidate = eldorado.extract_text(payload.text)
-    else:
-        candidate = PracujExtractor().extract_text(payload.text)
-        if not candidate.usable:
-            fallback = eldorado.extract_text(payload.text)
-            if fallback.usable:
-                candidate = fallback
+    candidate = clean_pasted_offer(payload.text, payload.url)
     return request.app.state.job_extractor._result(candidate, payload.url, "html" if candidate.usable else "manual_required")
 
 

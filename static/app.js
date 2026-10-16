@@ -437,7 +437,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) throw new Error("request failed");
       const result = await response.json();
       if (result.extraction_method === "manual_required" || !result.job_description) {
-        setStatus("Automatic fetching was unavailable or blocked. Paste the offer; for Pracuj.pl use Clean pasted Pracuj.pl page.", "error");
+        if (result.company || result.role) {
+          if (companyInput.value === beforeFetch[0] && !beforeFetch[0].trim()) companyInput.value = result.company || "";
+          if (roleInput.value === beforeFetch[1] && !beforeFetch[1].trim()) roleInput.value = result.role || "";
+          setStatus("Only offer metadata is available; the full description could not be fetched. Paste the full offer and use Clean pasted job offer before analysis.", "error");
+        } else {
+          setStatus("Automatic fetching was unavailable or blocked. Paste the offer from any website and use Clean pasted job offer.", "error");
+        }
         return false;
       }
       if ([companyInput.value, roleInput.value, descriptionInput.value].some((value, index) => value !== beforeFetch[index])) {
@@ -450,7 +456,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Job details fetched. Review and edit them before analysis.", "success");
       return fieldsAreComplete();
     } catch (_) {
-      setStatus("Automatic fetching was unavailable or blocked. Paste the offer; for Pracuj.pl use Clean pasted Pracuj.pl page.", "error");
+      setStatus("Automatic fetching was unavailable or blocked. Paste the offer from any website and use Clean pasted job offer.", "error");
       return false;
     } finally {
       fetching = false;
@@ -476,7 +482,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) throw new Error("request failed");
       const result = await response.json();
       if (result.extraction_method === "manual_required" || !result.job_description) {
-        setStatus("No complete Pracuj.pl offer sections found. Your text was kept; paste the full offer or edit it manually.", "error");
+        setStatus("Not enough offer text found. Your text was kept; paste the full offer or edit it manually.", "error");
         return;
       }
       if ([companyInput.value, roleInput.value, descriptionInput.value].some((v, i) => v !== original[i])) {

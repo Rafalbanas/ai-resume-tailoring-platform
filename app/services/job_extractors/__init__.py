@@ -81,6 +81,7 @@ class JobExtractorService:
     async def extract(self, url: str) -> JobExtraction:
         source = url
         adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
+        metadata = None
         if isinstance(adapter, EldoradoExtractor):
             try:
                 candidate = await adapter.fetch_remote(
@@ -89,8 +90,8 @@ class JobExtractorService:
                     timeout=self.fetcher.timeout_seconds,
                     transport=self.fetcher.transport,
                 )
-                if candidate and (candidate.usable or candidate.ambiguous):
-                    return self._result(candidate, source, "html")
+                if candidate and candidate.usable:
+                    metadata = candidate
             except UnsafeUrlError:
                 return JobExtraction(source=url, extraction_method="manual_required")
             except Exception:
@@ -116,6 +117,8 @@ class JobExtractorService:
                     return self._result(candidate, source, "playwright")
             except (UnsafeUrlError, BrowserRenderError):
                 logger.info("Browser job page extraction failed", extra={"stage": "job_fetch_browser"})
+        if metadata:
+            return self._result(metadata, source, "manual_required")
         return JobExtraction(source=source, extraction_method="manual_required")
 
 
