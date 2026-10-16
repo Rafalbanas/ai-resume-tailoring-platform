@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a focused improvement to CVTailor.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: This is a personal, single-owner project. Discuss substantial changes before implementing them; a request does not guarantee implementation. Keep examples fictional.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What task is difficult today, and who would benefit?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired outcome and how you would tell it works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or current workaround
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: My examples contain no private data or credentials.
+          required: true

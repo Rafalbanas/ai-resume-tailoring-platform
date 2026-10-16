@@ -403,6 +403,18 @@ pytest -q
 
 ---
 
+## Contributing and community
+
+CVTailor is a personal project maintained on a best-effort basis. See the
+[contribution guide](CONTRIBUTING.md) for local development, checks, and pull requests,
+and the [code of conduct](CODE_OF_CONDUCT.md) for project communication.
+
+Use the [issue forms](https://github.com/Rafalbanas/ai-resume-tailoring-platform/issues/new/choose)
+for bugs, feature requests, and accessibility barriers. Read the
+[accessibility statement](ACCESSIBILITY.md) for current testing and known limitations.
+Report vulnerabilities privately as described in the [security policy](SECURITY.md).
+Public reports and examples must not contain real CVs, personal data, or credentials.
+
 ## License & Attribution
 
 This project is licensed under the **Apache License, Version 2.0**.
