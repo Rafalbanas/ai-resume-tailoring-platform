@@ -104,7 +104,13 @@ def candidate_from_job_data(job_data: dict[str, Any]) -> ExtractionCandidate:
     if company:
         summary += f" w firmie {company}"
     summary += " (serwis Czy Jest Eldorado)."
-    sections.append(f"OFFER DESCRIPTION\n{summary}")
+    notice = (
+        "[UWAGA: Pobrano oficjalne metadane i tagi technologiczne z serwisu CzyJestEldorado. "
+        "Serwis chroni pełną treść oferty przez Cloudflare, dlatego szczegółowy opis nie jest dostępny przez API. "
+        "Aby uwzględnić pełne wymagania (np. Docker, Kubernetes) i zadania, skopiuj treść ogłoszenia ze strony, "
+        "wklej w to pole i kliknij 'Wyczyść wklejoną ofertę'.]"
+    )
+    sections.append(f"OFFER DESCRIPTION\n{summary}\n\n{notice}")
 
     return ExtractionCandidate(
         company=company,
@@ -118,15 +124,22 @@ ELDORADO_HEADINGS = {
     "tech stack": "PORTAL TECHNOLOGY TAGS",
     "technologie": "PORTAL TECHNOLOGY TAGS",
     "keywords": "PORTAL TECHNOLOGY TAGS",
+    "portal technology tags": "PORTAL TECHNOLOGY TAGS",
     "firma i stanowisko": "OFFER DESCRIPTION",
     "o firmie": "OFFER DESCRIPTION",
     "o projekcie": "OFFER DESCRIPTION",
+    "offer description": "OFFER DESCRIPTION",
     "wymagania": "REQUIREMENTS",
     "nasze wymagania": "REQUIREMENTS",
+    "requirements": "REQUIREMENTS",
     "obowiązki": "RESPONSIBILITIES",
     "twój zakres obowiązków": "RESPONSIBILITIES",
     "twoje zadania": "RESPONSIBILITIES",
+    "responsibilities": "RESPONSIBILITIES",
+    "employment conditions": "EMPLOYMENT CONDITIONS",
+    "warunki zatrudnienia": "EMPLOYMENT CONDITIONS",
     "mile widziane": "NICE TO HAVE",
+    "nice to have": "NICE TO HAVE",
     "benefity": None,
     "co oferujemy": None,
     "to oferujemy": None,
@@ -137,27 +150,42 @@ ELDORADO_UI_NOISE = {
     "zapisz",
     "udostępnij",
     "aplikuj teraz",
+    "aplikuj szybko",
     "aplikuj",
+    "quick apply",
     "new",
+    "nowość",
     "·",
     "brak informacji o wynagrodzeniu",
     "0",
+    "/ mies.",
+    "/ mies",
+    "/ m-c",
+    "miesiąc",
+    "b2b (netto)",
+    "uop (brutto)",
+    "(netto)",
+    "(brutto)",
 }
 
+ROLE_WORDS = re.compile(
+    r"\b(?:engineer|specialist|developer|architect|consultant|administrator|manager|lead|tester|qa|devops|support|inżynier|specjalista|programista|architekt|administrator|kierownik|konsultant|analityk|analyst)\b",
+    re.I,
+)
+COMPANY_SUFFIXES = re.compile(
+    r"(?:\bsp\.?\s*z\s*o\.?\s*o\.?|\bspółka|\bs\.a\.?|\bsa\b|\bgmbh\b|\bltd\b|\binc\b|\bcorp\b|\bllc\b|\blab\b|\blabs\b|\bsoftware\b|\btechnologies\b|\bservices\b)",
+    re.I,
+)
 EMPLOYMENT_WORDS = re.compile(
-    r"\b(?:zdalnie|remote|hybrydowo|hybrid|stacjonarnie|office|b2b|uop|umowa o pracę|zlecenie|pełny etat|część etatu|inne|kraków|warszawa|wrocław|poznań|gdańsk|katowice|łódź|lublin|szczecin)\b",
+    r"\b(?:zdalnie|remote|hybrydowo|hybrid|stacjonarnie|office|b2b|uop|umowa o pracę|zlecenie|pełny etat|część etatu|full-time|part-time|inne|polska|poland|kraków|warszawa|wrocław|poznań|gdańsk|katowice|łódź|lublin|szczecin)\b",
     re.I,
 )
 SENIORITY_WORDS = re.compile(
     r"^(?:intern|stażysta|junior|mid|regular|senior|lead|principal|c-level)$",
     re.I,
 )
-
-
-COMPANY_SUFFIXES = re.compile(
-    r"(?:\bsp\.?\s*z\s*o\.?\s*o\.?|\bspółka|\bs\.a\.?|\bsa\b|\bgmbh\b|\bltd\b|\binc\b|\bcorp\b|\bllc\b)",
-    re.I,
-)
+SALARY_PATTERN = re.compile(r"\b\d[\d\s]*(?:-\s*\d[\d\s]*)?\s*(?:pln|zł|eur|usd|gbp)\b", re.I)
+NUMERIC_BADGE = re.compile(r"^\d+$")
 
 
 class EldoradoExtractor(BaseExtractor):
@@ -267,6 +295,7 @@ class EldoradoExtractor(BaseExtractor):
             for p in prelude
             if p.casefold() not in ELDORADO_UI_NOISE
             and not p.startswith("#")
+            and not NUMERIC_BADGE.match(p)
             and not p.casefold().startswith(("dodano", "źródło:"))
         ]
 
@@ -276,34 +305,72 @@ class EldoradoExtractor(BaseExtractor):
         for item in clean_prelude:
             if SENIORITY_WORDS.match(item):
                 emp_conditions.append(f"Poziom doświadczenia: {item}")
+            elif SALARY_PATTERN.search(item):
+                if not any(item in cond for cond in emp_conditions):
+                    emp_conditions.append(f"Wynagrodzenie: {item}")
             elif EMPLOYMENT_WORDS.search(item):
-                emp_conditions.append(item)
+                if item not in emp_conditions:
+                    emp_conditions.append(item)
             else:
                 candidate_names.append(item)
 
+        unique_names: list[str] = []
+        for name in candidate_names:
+            if name not in unique_names:
+                unique_names.append(name)
+        candidate_names = unique_names
+
         company = ""
         role = ""
-        for name in candidate_names:
-            if COMPANY_SUFFIXES.search(name):
-                company = name
+
+        # First, check if role/company can be extracted from an inline summary line
+        for line in raw_lines:
+            m = re.search(r"Oferta pracy na stanowisko (.+?) w firmie (.+?)(?:\s*\(|\.|$)", line, re.I)
+            if m:
+                role = role or m.group(1).strip()
+                company = company or m.group(2).strip()
                 break
-        for name in candidate_names:
-            if name != company and not role:
-                role = name
-                break
-        if not company and candidate_names:
-            company = candidate_names[1] if len(candidate_names) > 1 else candidate_names[0]
-        if not role and len(candidate_names) > 1:
-            role = candidate_names[0]
+
+        role_candidates = [n for n in candidate_names if ROLE_WORDS.search(n)]
+        company_candidates = [n for n in candidate_names if not ROLE_WORDS.search(n)]
+
+        if not company:
+            for name in company_candidates:
+                if COMPANY_SUFFIXES.search(name):
+                    company = name
+                    break
+            if not company and company_candidates:
+                company = company_candidates[0]
+
+        if not role:
+            if role_candidates:
+                role = role_candidates[0]
+            elif candidate_names:
+                role = next((n for n in candidate_names if n != company), candidate_names[0])
 
         remaining_tags = [item for item in candidate_names if item != company and item != role]
-        if remaining_tags and "PORTAL TECHNOLOGY TAGS" not in sections:
-            sections["PORTAL TECHNOLOGY TAGS"] = remaining_tags
+        if remaining_tags:
+            current_tags = sections.setdefault("PORTAL TECHNOLOGY TAGS", [])
+            for t in remaining_tags:
+                if t not in current_tags:
+                    current_tags.append(t)
 
         if emp_conditions:
-            sections["EMPLOYMENT CONDITIONS"] = emp_conditions
+            current_emp = sections.setdefault("EMPLOYMENT CONDITIONS", [])
+            for c in emp_conditions:
+                if c not in current_emp:
+                    current_emp.append(c)
 
-        if "OFFER DESCRIPTION" not in sections:
+        if "OFFER DESCRIPTION" in sections:
+            real_desc = [
+                line
+                for line in sections["OFFER DESCRIPTION"]
+                if not line.startswith("[UWAGA:") and not line.startswith("Oferta pracy na stanowisko")
+            ]
+            if real_desc:
+                sections["OFFER DESCRIPTION"] = real_desc
+
+        if "OFFER DESCRIPTION" not in sections or not sections["OFFER DESCRIPTION"]:
             if role or company or sections:
                 summary = f"Oferta pracy na stanowisko {role}" if role else "Oferta pracy"
                 if company:

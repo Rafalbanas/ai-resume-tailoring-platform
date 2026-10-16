@@ -560,3 +560,84 @@ async def test_eldorado_remote_mcp_extraction():
     assert "Forma zatrudnienia: b2b" in result.job_description
     assert "Data publikacji: 2026-10-15" in result.job_description
 
+
+def test_eldorado_andersen_lab_pasted_offer_with_kubernetes_and_docker():
+    from app.services.job_extractors.eldorado import EldoradoExtractor
+
+    text = """Andersen Lab
+Andersen Lab
+Quick Apply
+L2 Technical Support Engineer
+
+12 000 - 15 000 PLN
+/ mies.
+B2B (netto)
+Mid
+Zdalnie
+·
+Poland
+Full-time
+·
+B2B
+#447799
+·
+Dodano 16 dni temu
+·
+14
+Źródło: SOLID.Jobs
+
+Zapisz
+
+Udostępnij
+Aplikuj szybko
+Tech Stack / Keywords
+
+Linux
+Video streaming
+REST
+HTTP/HTTPS
+HLS
+Firma i stanowisko
+
+Andersen is a global software development company with over 18 years of experience supporting businesses worldwide in their digital transformation. Headquartered in Poland, it operates development centers across multiple countries. Andersen offers end-to-end IT services including custom software development, API integration, system architecture, legacy modernization, and long-term support.
+Wymagania
+
+Hands-on experience in L2 Technical Support, DevOps, or Web Systems Engineering troubleshooting production environments for 2+ years.
+Proven experience in video streaming/OTT/media domain including troubleshooting live streaming (RTMP ingest), file-based encoding/transcoding, and delivery workflows.
+Practical understanding of video streaming protocols including HLS and DASH, adaptive bitrate streaming, codecs, containers, and common playback error patterns.
+Strong skills in browser diagnostics utilizing Chrome DevTools.
+Deep understanding of REST API concepts, HTTP methods, headers, status codes, and hands-on API debugging with tools like Postman and curl.
+Strong Linux command-line skills.
+Practical experience analyzing service logs and checking pod/service health in Docker and Kubernetes (kubectl).
+Availability for off-hours on-call coverage (Mon–Fri 00:00–05:30 CET, Sat–Sun 24/7).
+Nice to have:
+
+English proficiency from Upper-Intermediate and above.
+Obowiązki
+
+Provide managed L2 technical support for a video technology platform.
+Ensure continuous availability and reliable service for enterprise customers.
+Diagnose and mitigate production incidents across video encoding workflows, web player integrations, and REST APIs.
+Support effective escalation to engineering teams.
+Conduct browser diagnostics using Chrome DevTools including inspecting Console, Network traces, CORS headers, HAR capture, and analyzing video segments, manifests, and buffering issues.
+Benefity
+
+Salary 12k–15k PLN net per month (B2B).
+Flexible working hours.
+Fully remote work option.
+"""
+    candidate = EldoradoExtractor().extract_text(text)
+    assert candidate.usable
+    assert candidate.role == "L2 Technical Support Engineer"
+    assert candidate.company == "Andersen Lab"
+    assert "REQUIREMENTS" in candidate.job_description
+    assert "Docker and Kubernetes" in candidate.job_description
+    assert "RESPONSIBILITIES" in candidate.job_description
+    assert "Provide managed L2 technical support" in candidate.job_description
+    assert "EMPLOYMENT CONDITIONS" in candidate.job_description
+    assert "Wynagrodzenie: 12 000 - 15 000 PLN" in candidate.job_description
+    assert "Poland" in candidate.job_description
+    assert "PORTAL TECHNOLOGY TAGS" in candidate.job_description
+    assert "HLS" in candidate.job_description
+
+
