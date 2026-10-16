@@ -155,6 +155,39 @@ The active router evaluates provider preferences as follows:
 
 ---
 
+## Technology Stack & Pinned Versions
+
+The platform's runtime environment and dependency versions are strictly pinned and automatically tracked:
+
+<!-- TECH_STACK:START -->
+| Component | Pinned Version | Category | Purpose |
+|---|---|---|---|
+| **Python** | `3.14` | Runtime | Container runtime & execution environment |
+| **FastAPI** | `0.143.0` | Backend | Asynchronous REST API framework & routing |
+| **Uvicorn** | `0.54.0` | Backend | High-performance ASGI production server |
+| **python-multipart** | `0.0.32` | Backend | Multipart form data & resume file upload streaming |
+| **Pydantic** | `2.14.1` | Core | Data validation, settings, and domain schemas |
+| **Pydantic Settings** | `2.15.0` | Core | Settings management and environment parsing |
+| **PyPDFium2** | `5.14.0` | Document Engine | PDF geometry, text layout & bounding box inspection |
+| **WeasyPrint** | `70.0` | Document Engine | Visual CSS / Paged Media PDF generation |
+| **pypdf** | `6.20.1` | Document Engine | PDF manipulation, stream extraction & structural checks |
+| **python-docx** | `1.2.0` | Document Engine | ATS-friendly Microsoft Word document generation |
+| **BeautifulSoup4** | `4.15.0` | Job Extraction | Resilient HTML parsing & job posting sanitization |
+| **Playwright** | `1.63.0` | Job Extraction | Headless Chromium browser automation & SSR fallback |
+| **HTTPX** | `0.28.1` | Networking | Async HTTP client for MCP, Gemini, and external APIs |
+| **Jinja2** | `3.1.6` | Templates | Jinja2 HTML resume template rendering engine |
+| **Pillow** | `12.3.0` | Media | Profile photo validation, scaling, and cropping |
+| **pillow-heif** | `1.8.1` | Media | HEIF / HEIC photo decoding for mobile camera uploads |
+| **Argon2-cffi** | `25.1.0` | Security | Argon2id password hashing & credential storage |
+| **itsdangerous** | `2.2.0` | Security | Cryptographic signing & HMAC summary review attestation |
+| **email-validator** | `2.3.0` | Validation | RFC-compliant email address validation |
+| **pytest** | `9.1.1` | Testing | Automated test runner and assertion framework |
+| **pytest-asyncio** | `1.4.0` | Testing | Asynchronous test execution for pytest |
+| **Ruff** | `0.17.0` | Tooling | Fast Python linter and code style enforcement |
+<!-- TECH_STACK:END -->
+
+---
+
 ## Repository Structure
 
 ```
@@ -208,7 +241,8 @@ ai-resume-tailoring-platform/
 ├── docs/                          # Comprehensive technical and operational documentation
 ├── scripts/
 │   ├── bootstrap_skills.py        # Script to bootstrap skills.json from master profile
-│   └── recording_demo.py          # Isolated runner for synthetic video demo recordings
+│   ├── recording_demo.py          # Isolated runner for synthetic video demo recordings
+│   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
 └── tests/                         # Comprehensive automated test suite (538 tests)
@@ -266,11 +300,11 @@ Docker Compose uses `network_mode: host` on Linux so that the container can reac
    docker compose exec cv-tailor python -m app.cli reset-password
    ```
 
-### Option B: Local Development (Python 3.14)
+### Option C: Local Development (Python <!-- PYTHON_VERSION:START -->3.14<!-- PYTHON_VERSION:END -->)
 
 1. **Set up virtual environment**:
    ```bash
-   python3.14 -m venv .venv
+   python<!-- PYTHON_VERSION:START -->3.14<!-- PYTHON_VERSION:END --> -m venv .venv
    source .venv/bin/activate
    pip install -r requirements-dev.txt
    python -m playwright install --with-deps chromium
