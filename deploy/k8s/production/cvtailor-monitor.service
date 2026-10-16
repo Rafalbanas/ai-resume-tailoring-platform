@@ -1,0 +1,9 @@
+[Unit]
+Description=CVTailor local health, resource and backup checks
+After=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cvtailor-operations monitor
+UMask=0077
+TimeoutStartSec=2min

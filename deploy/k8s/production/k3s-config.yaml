@@ -1,0 +1,20 @@
+# Single-node VPS. API access is restricted by the host firewall.
+node-name: cvtailor-prod
+write-kubeconfig-mode: "0600"
+secrets-encryption: true
+disable:
+  - traefik
+  - servicelb
+cluster-cidr: 10.52.0.0/16
+service-cidr: 10.53.0.0/16
+cluster-dns: 10.53.0.10
+kube-proxy-arg:
+  - proxy-mode=iptables
+kubelet-arg:
+  # The VPS runs inside an unprivileged Linux user namespace.
+  - feature-gates=KubeletInUserNamespace=true
+  - system-reserved=memory=1024Mi,cpu=100m
+  - kube-reserved=memory=512Mi,cpu=200m
+  - eviction-hard=memory.available<200Mi,nodefs.available<10%
+  - container-log-max-size=10Mi
+  - container-log-max-files=3

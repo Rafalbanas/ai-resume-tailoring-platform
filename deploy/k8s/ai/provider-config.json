@@ -1,0 +1,13 @@
+{
+  "AI_PROVIDER": "ollama",
+  "LLM_PROVIDER": "ollama",
+  "LLM_FALLBACK_PROVIDER": "gemini",
+  "OLLAMA_MODEL": "qwen3.5:9b",
+  "OLLAMA_MAX_CONCURRENCY": "1",
+  "OLLAMA_CONNECT_TIMEOUT_SECONDS": "10",
+  "OLLAMA_READ_TIMEOUT_SECONDS": "300",
+  "OLLAMA_TIMEOUT_SECONDS": "300",
+  "GEMINI_MODEL": "gemini-3.1-flash-lite",
+  "GEMINI_BASE_URL": "https://generativelanguage.googleapis.com",
+  "LLM_OPERATION_BUDGET_SECONDS": "900"
+}

@@ -26,3 +26,7 @@ data/*
 !data/skills.example.json
 audit/
 AUDIT_REPORT.md
+
+# Private Kubernetes runtime artifacts and deployment coordination
+.k8s-lab
+data/.deployment-admission.lock
