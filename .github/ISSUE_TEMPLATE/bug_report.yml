@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible application, extraction, export, or deployment problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. Use fictional data and redact screenshots/logs.
+        Report vulnerabilities or private-data exposure through Security → Advisories → Report a vulnerability.
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Commit SHA or image revision, if known; otherwise say unknown.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal example using fictional profile and offer data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS/browser, local or Docker/K3s deployment, Python version, and AI provider if relevant. No keys or private host details.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Optional. Remove CV content, personal data, cookies, tokens, and credentials first.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I checked that this public report contains no private data or credentials.
+          required: true
