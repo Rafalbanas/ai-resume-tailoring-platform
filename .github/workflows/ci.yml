@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.15"
+          python-version: "3.14"
           cache: pip
       - run: pip install -r requirements-dev.txt
       - name: Install Chromium for layout regression tests
@@ -36,7 +36,7 @@ jobs:
           from playwright.sync_api import sync_playwright
           from weasyprint import HTML
 
-          assert sys.version_info[:2] == (3, 15), sys.version
+          assert sys.version_info[:2] == (3, 14), sys.version
           assert app is not None
           pdf = HTML(string="<p>CV Tailor image check</p>").write_pdf()
           assert pdf.startswith(b"%PDF-")
@@ -51,5 +51,5 @@ jobs:
               page.set_content("<title>CV Tailor image check</title>")
               assert page.title() == "CV Tailor image check"
               browser.close()
-          print("Python 3.15, application imports, PDF/DOCX exports and Chromium OK")
+          print("Python 3.14, application imports, PDF/DOCX exports and Chromium OK")
           PY
