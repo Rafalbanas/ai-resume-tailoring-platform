@@ -3,6 +3,7 @@ import logging
 from app.core.config import Settings
 from app.models.job import JobExtraction
 from app.services.job_extractors.base import BaseExtractor, ExtractionCandidate
+from app.services.job_extractors.eldorado import EldoradoExtractor
 from app.services.job_extractors.fetcher import JobFetchError, SafeHttpFetcher
 from app.services.job_extractors.generic import GenericHtmlExtractor
 from app.services.job_extractors.jsonld import JsonLdExtractor
@@ -37,6 +38,7 @@ class JobExtractorService:
             NoFluffExtractor(),
             WorkdayExtractor(),
             PracujExtractor(),
+            EldoradoExtractor(),
         )
         self.generic = GenericHtmlExtractor()
 
@@ -78,6 +80,22 @@ class JobExtractorService:
 
     async def extract(self, url: str) -> JobExtraction:
         source = url
+        adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
+        if isinstance(adapter, EldoradoExtractor):
+            try:
+                candidate = await adapter.fetch_remote(
+                    url,
+                    guard=self.fetcher.guard,
+                    timeout=self.fetcher.timeout_seconds,
+                    transport=self.fetcher.transport,
+                )
+                if candidate and (candidate.usable or candidate.ambiguous):
+                    return self._result(candidate, source, "html")
+            except UnsafeUrlError:
+                return JobExtraction(source=url, extraction_method="manual_required")
+            except Exception:
+                logger.info("Eldorado remote extraction failed", extra={"stage": "job_fetch_eldorado"})
+
         try:
             page = await self.fetcher.fetch(url)
             source = page.url
