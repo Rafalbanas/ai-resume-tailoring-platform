@@ -10,6 +10,10 @@ updates:
       timezone: "Europe/Warsaw"
     open-pull-requests-limit: 5
     groups:
+      python-test-runner:
+        patterns:
+          - "pytest"
+          - "pytest-asyncio"
       python-minor-and-patch:
         patterns:
           - "*"
@@ -32,6 +36,12 @@ updates:
 
   - package-ecosystem: "docker"
     directory: "/"
+    # Runtime upgrades must be coordinated with the Python version tested in CI.
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     schedule:
       interval: "weekly"
       day: "monday"

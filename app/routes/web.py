@@ -131,7 +131,7 @@ async def index(request: Request, from_task: str | None = None):
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
 
     return request.app.state.templates.TemplateResponse(
-        "index.html", context(request, **form_data)
+        request=request, name="index.html", context=context(request, **form_data)
     )
 
 
@@ -154,8 +154,8 @@ async def analyze(
         job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description)
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
-            "index.html",
-            context(
+            request=request, name="index.html",
+            context=context(
                 request,
                 error="Check the form fields and paste a complete job description.",
                 company=company,
@@ -202,8 +202,8 @@ async def analyze(
         )
 
     response = request.app.state.templates.TemplateResponse(
-        "task_progress.html",
-        context(request, task=task),
+        request=request, name="task_progress.html",
+        context=context(request, task=task),
         status_code=202,
     )
     response.headers["Location"] = f"/tasks/{task.task_id}/view"
@@ -232,8 +232,8 @@ async def task_progress_view(request: Request, task_id: str):
     if task.status == TaskStatus.COMPLETED and task.result and task.result.get("redirect_url"):
         return RedirectResponse(url=task.result["redirect_url"], status_code=303)
     return request.app.state.templates.TemplateResponse(
-        "task_progress.html",
-        context(request, task=task),
+        request=request, name="task_progress.html",
+        context=context(request, task=task),
     )
 
 
@@ -297,8 +297,8 @@ async def analysis_view(request: Request, draft_id: str):
     except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=404, detail="Draft not found") from exc
     return request.app.state.templates.TemplateResponse(
-        "analysis.html",
-        context(
+        request=request, name="analysis.html",
+        context=context(
             request,
             job=job,
             analysis=response.analysis,
@@ -434,8 +434,8 @@ async def preview(request: Request, slug: str):
     pre_fit = request.app.state.storage.load_pre_fit_resume(slug)
     pre_fit_diff = compute_pre_fit_diff(pre_fit, resume)
     return request.app.state.templates.TemplateResponse(
-        "resume_preview.html",
-        context(
+        request=request, name="resume_preview.html",
+        context=context(
             request,
             slug=slug,
             metadata=metadata,
@@ -553,8 +553,8 @@ async def edit_resume(request: Request, slug: str):
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     return request.app.state.templates.TemplateResponse(
-        "resume_edit.html",
-        context(request, slug=slug, metadata=metadata, resume=resume,
+        request=request, name="resume_edit.html",
+        context=context(request, slug=slug, metadata=metadata, resume=resume,
                 existing_warnings=FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, resume, job).warnings),
     )
 
@@ -630,7 +630,7 @@ async def save_resume_edit(request: Request, slug: str):
         checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, edited, job)
         if checked.issues:
             return request.app.state.templates.TemplateResponse(
-                "resume_edit.html", context(request, slug=slug, metadata=metadata, resume=edited,
+                request=request, name="resume_edit.html", context=context(request, slug=slug, metadata=metadata, resume=edited,
                 edit_issues=checked.issues, existing_warnings=checked.warnings,
                 error="The fields below were not saved. Other saved content has not been overwritten."),
                 status_code=422,
@@ -648,8 +648,8 @@ async def save_resume_edit(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     except (ValidationError, ValueError) as exc:
         return request.app.state.templates.TemplateResponse(
-            "resume_edit.html",
-            context(
+            request=request, name="resume_edit.html",
+            context=context(
                 request,
                 slug=slug,
                 metadata=metadata,
@@ -686,7 +686,7 @@ async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, F
 async def history(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        "history.html", context(request, rows=request.app.state.storage.history())
+        request=request, name="history.html", context=context(request, rows=request.app.state.storage.history())
     )
 
 
@@ -715,7 +715,7 @@ async def clear_history(request: Request, csrf_token: Annotated[str, Form()]):
 async def references(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        "references.html", context(request, references=request.app.state.reference_library.list())
+        request=request, name="references.html", context=context(request, references=request.app.state.reference_library.list())
     )
 
 
@@ -739,8 +739,8 @@ async def upload_references(
             await upload.close()
     if errors:
         return request.app.state.templates.TemplateResponse(
-            "references.html",
-            context(request, references=request.app.state.reference_library.list(), errors=errors),
+            request=request, name="references.html",
+            context=context(request, references=request.app.state.reference_library.list(), errors=errors),
             status_code=422,
         )
     return RedirectResponse("/references", status_code=303)
@@ -764,14 +764,14 @@ async def skills(request: Request):
     groups: dict[str, list[VerifiedSkill]] = {}
     for skill in request.app.state.skills_bank.skills:
         groups.setdefault(skill.category, []).append(skill)
-    return request.app.state.templates.TemplateResponse("skills.html", context(request, groups=groups))
+    return request.app.state.templates.TemplateResponse(request=request, name="skills.html", context=context(request, groups=groups))
 
 
 @router.get("/skills/new", response_class=HTMLResponse)
 async def new_skill(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        "skill_form.html", context(request, skill=None, evidence_options=_evidence_options(request))
+        request=request, name="skill_form.html", context=context(request, skill=None, evidence_options=_evidence_options(request))
     )
 
 
@@ -782,7 +782,7 @@ async def edit_skill(request: Request, skill_id: str):
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
     return request.app.state.templates.TemplateResponse(
-        "skill_form.html", context(request, skill=skill, evidence_options=_evidence_options(request))
+        request=request, name="skill_form.html", context=context(request, skill=skill, evidence_options=_evidence_options(request))
     )
 
 
@@ -799,7 +799,7 @@ async def save_skill(request: Request):
         request.app.state.skills_bank.update(existing.id, skill) if existing else request.app.state.skills_bank.add(skill)
     except (ValueError, ValidationError, KeyError) as exc:
         return request.app.state.templates.TemplateResponse(
-            "skill_form.html", context(request, skill=existing, evidence_options=_evidence_options(request), error=str(exc)),
+            request=request, name="skill_form.html", context=context(request, skill=existing, evidence_options=_evidence_options(request), error=str(exc)),
             status_code=422,
         )
     return RedirectResponse("/skills", status_code=303)
@@ -836,7 +836,7 @@ async def skill_evidence(request: Request, skill_id: str):
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
     return request.app.state.templates.TemplateResponse(
-        "skill_evidence.html", context(request, skill=skill, evidence_options=_evidence_options(request))
+        request=request, name="skill_evidence.html", context=context(request, skill=skill, evidence_options=_evidence_options(request))
     )
 
 
@@ -859,7 +859,7 @@ async def add_skill_evidence(request: Request, skill_id: str):
         if not skill:
             raise HTTPException(status_code=404, detail="Skill not found") from exc
         return request.app.state.templates.TemplateResponse(
-            "skill_evidence.html", context(request, skill=skill, evidence_options=_evidence_options(request), error=str(exc)),
+            request=request, name="skill_evidence.html", context=context(request, skill=skill, evidence_options=_evidence_options(request), error=str(exc)),
             status_code=422,
         )
     return RedirectResponse(f"/skills/{skill_id}/evidence", status_code=303)
@@ -881,8 +881,8 @@ async def remove_skill_evidence(request: Request, skill_id: str, index: int, csr
 async def candidate_profile(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        "profile.html",
-        context(
+        request=request, name="profile.html",
+        context=context(
             request,
             has_photo=request.app.state.profile_photo.exists(),
             interests=request.app.state.profile.interests,
@@ -1001,8 +1001,8 @@ async def upload_profile_photo(
         )
     except ProfilePhotoError as exc:
         return request.app.state.templates.TemplateResponse(
-            "profile.html",
-            context(request, has_photo=request.app.state.profile_photo.exists(), error=str(exc)),
+            request=request, name="profile.html",
+            context=context(request, has_photo=request.app.state.profile_photo.exists(), error=str(exc)),
             status_code=422,
         )
     finally:
@@ -1022,7 +1022,7 @@ async def remove_profile_photo(request: Request, csrf_token: Annotated[str, Form
 @router.get("/account/password", response_class=HTMLResponse)
 async def password_form(request: Request):
     guard(request)
-    return request.app.state.templates.TemplateResponse("password.html", context(request))
+    return request.app.state.templates.TemplateResponse(request=request, name="password.html", context=context(request))
 
 
 @router.post("/account/password", response_class=HTMLResponse)
@@ -1038,22 +1038,22 @@ async def change_password(
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if new_password != repeat_password:
         return request.app.state.templates.TemplateResponse(
-            "password.html", context(request, error="The new passwords do not match."), status_code=422
+            request=request, name="password.html", context=context(request, error="The new passwords do not match."), status_code=422
         )
     try:
         changed = request.app.state.auth_store.change_password(current_password, new_password)
     except ValueError as exc:
         return request.app.state.templates.TemplateResponse(
-            "password.html", context(request, error=str(exc)), status_code=422
+            request=request, name="password.html", context=context(request, error=str(exc)), status_code=422
         )
     if not changed:
         return request.app.state.templates.TemplateResponse(
-            "password.html", context(request, error="The current password is incorrect."), status_code=403
+            request=request, name="password.html", context=context(request, error="The current password is incorrect."), status_code=403
         )
     request.app.state.sessions.revoke(request.session.get("id", ""))
     request.session.clear()
     logger.info("Password changed", extra={"stage": "password_change"})
-    return request.app.state.templates.TemplateResponse("password_changed.html", context(request))
+    return request.app.state.templates.TemplateResponse(request=request, name="password_changed.html", context=context(request))
 
 
 @router.get("/download/{slug}/{kind}")
@@ -1111,18 +1111,18 @@ async def compare_view(
                 job = JobRequest.model_validate(task.result["job"])
                 results = task.result["results"]
                 return request.app.state.templates.TemplateResponse(
-                    "compare.html",
-                    context(request, job=job, results=results, task_id=task_id, token_usage=task.token_usage),
+                    request=request, name="compare.html",
+                    context=context(request, job=job, results=results, task_id=task_id, token_usage=task.token_usage),
                 )
             if task.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
                 return request.app.state.templates.TemplateResponse(
-                    "task_progress.html",
-                    context(request, task=task),
+                    request=request, name="task_progress.html",
+                    context=context(request, task=task),
                 )
             if task.status == TaskStatus.FAILED:
                 return request.app.state.templates.TemplateResponse(
-                    "compare.html",
-                    context(request, error=task.error, job=None, results=None),
+                    request=request, name="compare.html",
+                    context=context(request, error=task.error, job=None, results=None),
                 )
 
     job = None
@@ -1132,8 +1132,8 @@ async def compare_view(
         except Exception:
             job = None
     return request.app.state.templates.TemplateResponse(
-        "compare.html",
-        context(request, draft_id=draft_id, job=job, results=None),
+        request=request, name="compare.html",
+        context=context(request, draft_id=draft_id, job=job, results=None),
     )
 
 
@@ -1155,8 +1155,8 @@ async def run_compare(
         job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description)
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
-            "compare.html",
-            context(request, error="Check form fields and provide a complete job description.", job=None, results=None),
+            request=request, name="compare.html",
+            context=context(request, error="Check form fields and provide a complete job description.", job=None, results=None),
             status_code=422,
         )
 
@@ -1190,8 +1190,8 @@ async def run_compare(
         )
 
     response = request.app.state.templates.TemplateResponse(
-        "task_progress.html",
-        context(request, task=task),
+        request=request, name="task_progress.html",
+        context=context(request, task=task),
         status_code=202,
     )
     response.headers["Location"] = f"/tasks/{task.task_id}/view"
@@ -1208,8 +1208,8 @@ async def diagnostics_view(request: Request):
     except Exception as exc:
         health_info = {"status": "error", "error": str(exc)}
     return request.app.state.templates.TemplateResponse(
-        "diagnostics.html",
-        context(request, runs=runs, health=health_info),
+        request=request, name="diagnostics.html",
+        context=context(request, runs=runs, health=health_info),
     )
 
 
@@ -1224,7 +1224,7 @@ async def clear_diagnostics(request: Request, csrf_token: Annotated[str, Form()]
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return request.app.state.templates.TemplateResponse("login.html", context(request))
+    return request.app.state.templates.TemplateResponse(request=request, name="login.html", context=context(request))
 
 
 @router.post("/login")
@@ -1232,7 +1232,7 @@ async def login(request: Request, username: Annotated[str, Form()], password: An
     request.app.state.login_limiter.check(request.client.host if request.client else "unknown")
     if len(password) > 256 or not request.app.state.auth_store.verify(username, password):
         return request.app.state.templates.TemplateResponse(
-            "login.html", context(request, error="Invalid username or password."), status_code=401)
+            request=request, name="login.html", context=context(request, error="Invalid username or password."), status_code=401)
     request.app.state.sessions.revoke(request.session.get("id", ""))
     token = request.app.state.sessions.create(request.app.state.auth_store.credential_version)
     request.session.clear()
