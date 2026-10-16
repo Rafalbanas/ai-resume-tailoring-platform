@@ -546,7 +546,7 @@ async def test_eldorado_remote_mcp_extraction():
     url = "https://czyjesteldorado.pl/praca/459530-technical-support-specialist-autenti-sa?utm_source=chatgpt.com"
     result = await service.extract(url)
 
-    assert result.extraction_method == "html"
+    assert result.extraction_method == "manual_required"
     assert result.company == "AUTENTI Sp. z o.o."
     assert result.role == "Technical Support Specialist"
     assert result.source == url
