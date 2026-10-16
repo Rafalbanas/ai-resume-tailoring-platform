@@ -10,6 +10,10 @@ updates:
       timezone: "Europe/Warsaw"
     open-pull-requests-limit: 5
     groups:
+      python-test-runner:
+        patterns:
+          - "pytest"
+          - "pytest-asyncio"
       python-minor-and-patch:
         patterns:
           - "*"
