@@ -359,3 +359,204 @@ async def test_workday_preserves_requirements_and_removes_corporate_boilerplate(
         "equal opportunity employer",
     ):
         assert noise not in result.job_description
+
+
+def test_eldorado_extract_job_id():
+    from app.services.job_extractors.eldorado import extract_job_id
+
+    assert extract_job_id("https://czyjesteldorado.pl/praca/459530-technical-support-specialist-autenti-sa?utm_source=chatgpt.com") == "459530"
+    assert extract_job_id("https://czyjesteldorado.pl/praca/459530") == "459530"
+    assert extract_job_id("https://czyjesteldorado.pl/oferta/12345") == "12345"
+    assert extract_job_id("https://czyjesteldorado.pl/job/987654") == "987654"
+    assert extract_job_id("https://czyjesteldorado.pl/?id=459530") == "459530"
+    assert extract_job_id("#459530") == "459530"
+    assert extract_job_id("https://czyjesteldorado.pl/") is None
+
+
+def test_eldorado_html_and_text_extraction():
+    from app.services.job_extractors.eldorado import EldoradoExtractor
+
+    html = """
+    <html><body>
+    <main>
+      <h1>Technical Support Specialist</h1>
+      <h2>AUTENTI Sp. z o.o.</h2>
+      <div class="badges">
+        <span class="badge">REST API</span>
+        <span class="badge">HTTP</span>
+        <span class="badge">JSON</span>
+      </div>
+      <article id="job-description">
+        Provide support for Autenti integration platform. Diagnose API requests and errors.
+      </article>
+    </main>
+    </body></html>
+    """
+    candidate = EldoradoExtractor().extract(html)
+    assert candidate.usable
+    assert candidate.role == "Technical Support Specialist"
+    assert candidate.company == "AUTENTI Sp. z o.o."
+    assert "PORTAL TECHNOLOGY TAGS" in candidate.job_description
+    assert "REST API" in candidate.job_description
+    assert "Diagnose API requests" in candidate.job_description
+
+    text = """Technical Support Specialist
+AUTENTI Sp. z o.o.
+REST API
+HTTP
+JSON"""
+    candidate_text = EldoradoExtractor().extract_text(text)
+    assert candidate_text.usable
+    assert candidate_text.role == "Technical Support Specialist"
+    assert candidate_text.company == "AUTENTI Sp. z o.o."
+    assert "REST API" in candidate_text.job_description
+
+
+def test_eldorado_full_pasted_offer_extraction():
+    from app.services.job_extractors.eldorado import EldoradoExtractor
+
+    full_pasted = """to jest opis AUTENTI Sp. z o.o.
+AUTENTI Sp. z o.o.
+New
+Technical Support Specialist
+
+Brak informacji o wynagrodzeniu
+Mid
+Zdalnie
+·
+Kraków
+Inne
+·
+B2B
+#459530
+·
+Dodano wczoraj
+·
+0
+Źródło: justjoin.it
+
+Zapisz
+
+Udostępnij
+Aplikuj teraz
+Tech Stack / Keywords
+
+REST API
+HTTP
+JSON
+Firma i stanowisko
+
+Autenti to europejska platforma usług zaufania, która łączy ludzi i firmy w przestrzeni cyfrowej, zapewniając szybkość, wygodę i bezpieczeństwo.
+Wymagania
+
+Doświadczenie we wsparciu technicznym aplikacji lub systemów IT, obejmujące samodzielną diagnozę i rozwiązywanie zgłoszeń.
+Umiejętność analizowania logów i danych systemowych, odtwarzania błędów oraz ustalania przyczyn problemów.
+Praktyczna znajomość podstaw REST API, HTTP i JSON oraz narzędzi do testowania zapytań, takich jak Postman.
+Obowiązki
+
+Rozwiązywać bardziej złożone zgłoszenia techniczne przekazywane przez pierwszą linię wsparcia.
+Analizować logi, dane systemowe i przebieg procesów, aby ustalać przyczyny problemów.
+Benefity
+
+Współpraca na zasadzie kontraktu B2B.
+Inne informacje
+
+Informujemy, że administratorem danych jest AUTENTI sp. z o.o.
+"""
+    candidate = EldoradoExtractor().extract_text(full_pasted)
+    assert candidate.usable
+    assert candidate.role == "Technical Support Specialist"
+    assert candidate.company == "AUTENTI Sp. z o.o."
+    assert "PORTAL TECHNOLOGY TAGS" in candidate.job_description
+    assert "REST API" in candidate.job_description
+    assert "REQUIREMENTS" in candidate.job_description
+    assert "Doświadczenie we wsparciu technicznym" in candidate.job_description
+    assert "RESPONSIBILITIES" in candidate.job_description
+    assert "Rozwiązywać bardziej złożone zgłoszenia" in candidate.job_description
+    assert "EMPLOYMENT CONDITIONS" in candidate.job_description
+    assert "Kraków" in candidate.job_description
+    assert "Zdalnie" in candidate.job_description
+    assert "B2B" in candidate.job_description
+    assert "Benefity" not in candidate.job_description
+    assert "administratorem danych jest" not in candidate.job_description
+
+
+@pytest.mark.asyncio
+async def test_eldorado_remote_mcp_extraction():
+    import json
+
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/_mcp":
+            body = json.loads(request.content.decode("utf-8"))
+            if body.get("method") == "initialize":
+                return httpx.Response(
+                    200,
+                    headers={"mcp-session-id": "mock-mcp-session-777", "content-type": "application/json"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": body.get("id"),
+                        "result": {
+                            "protocolVersion": "2024-11-05",
+                            "serverInfo": {"name": "czyjesteldorado", "version": "1.0.0"},
+                        },
+                    },
+                )
+            if body.get("method") == "tools/call" and body.get("params", {}).get("name") == "search_jobs":
+                phrase = body.get("params", {}).get("arguments", {}).get("phrase")
+                if phrase == "#459530":
+                    return httpx.Response(
+                        200,
+                        headers={"content-type": "application/json"},
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": body.get("id"),
+                            "result": {
+                                "structuredContent": {
+                                    "jobs": [
+                                        {
+                                            "title": "Technical Support Specialist",
+                                            "keywords": ["REST API", "HTTP", "JSON"],
+                                            "company": "AUTENTI Sp. z o.o.",
+                                            "cities": ["Kraków"],
+                                            "work_modes": ["remote"],
+                                            "contract_types": ["b2b"],
+                                            "workload_types": ["other"],
+                                            "seniority": "mid",
+                                            "salary_from": None,
+                                            "salary_to": None,
+                                            "url": "https://czyjesteldorado.pl/praca/459530-technical-support-specialist-autenti-sa?utm_source=mcp",
+                                            "posted_at": "2026-10-15T13:18:36+00:00",
+                                        }
+                                    ],
+                                    "shown_results": 1,
+                                    "total_results": 1,
+                                }
+                            },
+                        },
+                    )
+        return httpx.Response(404)
+
+    settings = Settings(_env_file=None, job_fetch_playwright_enabled=False)
+    service = JobExtractorService(settings)
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler)
+    )
+
+    url = "https://czyjesteldorado.pl/praca/459530-technical-support-specialist-autenti-sa?utm_source=chatgpt.com"
+    result = await service.extract(url)
+
+    assert result.extraction_method == "html"
+    assert result.company == "AUTENTI Sp. z o.o."
+    assert result.role == "Technical Support Specialist"
+    assert result.source == url
+    assert "PORTAL TECHNOLOGY TAGS" in result.job_description
+    assert "REST API" in result.job_description
+    assert "HTTP" in result.job_description
+    assert "JSON" in result.job_description
+    assert "EMPLOYMENT CONDITIONS" in result.job_description
+    assert "Lokalizacja: Kraków" in result.job_description
+    assert "Tryb pracy: remote" in result.job_description
+    assert "Forma zatrudnienia: b2b" in result.job_description
+    assert "Data publikacji: 2026-10-15" in result.job_description
+
