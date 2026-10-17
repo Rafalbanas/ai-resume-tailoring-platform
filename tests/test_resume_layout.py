@@ -29,6 +29,8 @@ def test_layout_persistence_exports_content_isolation(monkeypatch,resume_payload
         calls,ai=setup_exports(monkeypatch)
         response=sample_workflow_response('mock','fixture')
         resume=TailoredResume.model_validate(resume_payload)
+        resume.professional_summary = app.state.profile.summary_facts[0]
+        resume.summary_source_fact_ids = ['summary:0']
         first,folder=app.state.storage.save_application(job(),response.analysis,resume,[],template_name='ats_classic')
         second,_=app.state.storage.save_application(job(),response.analysis,resume,[],template_name='ats_classic')
         before=(folder/'resume.json').read_bytes()

@@ -127,7 +127,8 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 - **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), SQLite-backed login rate limiting shared by workers (5 attempts per 5 minutes per IP, 100 per instance), and server-revocable SQLite sessions (`data/sessions.sqlite3`). Multiple devices can sign in concurrently; **Sign out everywhere** revokes all sessions of that account. Sessions have an absolute eight-hour lifetime by default (`SESSION_TTL_SECONDS=28800`).
 - **CSRF & Cookie Protection**: Browser-session-bound double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
 - **Shared login**: Private and demo credentials can use the same `/login`, with server-side session checks routing every request to its isolated runtime and data directory. [Setup and migration](docs/recording-demo.md).
-- **Processing isolation & budgets**: PDF/DOCX/photo work runs in bounded child processes outside the event loop. Owner/demo production workers have separate containers without account mounts or AI keys; shared concurrency, persistent AI budgets, task/storage quotas and early body limits protect resources. [Limits and migration](docs/processing-security.md).
+- **Processing isolation & budgets**: PDF/DOCX/photo work runs in bounded child processes outside the event loop. Production isolation requires deploying the separate owner/demo workers without account mounts or AI keys; shared concurrency, persistent AI budgets, task/storage quotas and early body limits protect resources. [Limits, live inspection and migration](docs/processing-security.md).
+- **Summary export review**: Model-approved natural summaries require explicit user confirmation of the displayed text and profile sources before export. Confirmation is bound to the exact summary, facts, account and document; changes invalidate it. Deterministic source-composed summaries need no extra confirmation. [Audit evidence and limitations](docs/security-audit-2026-10-17-followup.md).
 - **Diagnostics & History**: `/diagnostics` dashboard for health metrics, active model status, and build metadata; `/compare` view for side-by-side CV comparison; atomic file staging and version backups under `data/generated/`.
 
 ---
@@ -247,7 +248,7 @@ ai-resume-tailoring-platform/
 │   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (717 tests)
+└── tests/                         # Comprehensive automated test suite (748 tests)
 ```
 
 ---
@@ -310,7 +311,11 @@ Docker Compose uses `network_mode: host` on Linux so that the container can reac
    source .venv/bin/activate
    pip install -r requirements-dev.txt
    python -m playwright install --with-deps chromium
+   python scripts/check_environment.py --dev
+   python -m pip check
    ```
+
+   The checker rejects a Python version or installed package version that differs from the Docker image and pinned requirements. Recreate an old virtual environment with Python 3.14 before treating its failures as application defects. The same check runs in CI and the built image. Linux native libraries (including `libseccomp2` and `libharfbuzz-subset0`) are required; use the Docker image when the host cannot match this runtime.
 
 2. **Configure local environment**:
    ```bash
@@ -438,13 +443,13 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (717 tests)
+# Run complete test suite (748 tests)
 pytest -q
 ```
 
 ### Test Coverage Highlights
 
-- **Truth Lock & Fact Validation**: Guarantees zero unverified facts, strict source sentence resolution, candidate title preservation, and skill level preservation across all pipeline stages.
+- **Truth Lock & Fact Validation**: Checks source citations, candidate identity and skill levels. Natural summary review also uses a model and does not guarantee factual correctness; non-source summaries require explicit user confirmation before web export.
 - **LLM-First Interpretation Regressions**: Validates prompt contracts across frozen public job listings, handling of ambiguous AND/OR logic, and distinction of negated constraints.
 - **Layout & PDF Geometry Integrity**: Programmatic validation of WeasyPrint rendering, text box bounds, column constraints, glyph overlap detection, and single GDPR consent clause placement.
 - **DOCX Validation**: Verification of paragraph hierarchies, standard styles, native XML hyperlink relationships, and LibreOffice rendering compatibility.

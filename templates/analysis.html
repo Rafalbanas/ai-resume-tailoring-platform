@@ -168,6 +168,7 @@
   <a class="secondary button" href="{{ app_root_path|default('') }}/compare?draft_id={{ draft_id }}">Compare models</a>
   <form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if summary_review %}{% include '_summary_review.html' %}{% endif %}
     <label>Resume layout<select name="template_name"><option value="ats_classic">ATS Classic</option><option value="modern_sidebar">Modern Sidebar</option></select></label>
     <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Generate tailored CV</button>
   </form>

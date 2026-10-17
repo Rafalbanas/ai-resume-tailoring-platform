@@ -51,3 +51,41 @@ def test_review_statuses_wrap_and_limited_keeps_downloads(width):
                 )
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize('width,zoom', [(360, 1), (768, 1), (1280, 1), (1280, 2)])
+def test_summary_confirmation_is_accessible_and_wraps(width, zoom):
+    env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(['html']))
+    review = {'text': 'I automate Python workflows for support teams.', 'sources': [
+        SimpleNamespace(text='Automates repeatable support workflows with Python.', owner_name='Profile')],
+        'required': True, 'confirmed': False, 'source_text': False, 'model_reviewed': True, 'token': 'synthetic-token'}
+    if width == 360:
+        review['text'] += '<script>window.injected=true</script><input type="checkbox" name="summary_confirmed" checked>'
+    html = env.get_template('resume_preview.html').render(
+        request=SimpleNamespace(state=SimpleNamespace(authenticated=False)),
+        metadata={'company': 'Synthetic', 'role': 'Python support', 'match_level': 'MEDIUM', 'recommendation': 'REVIEW'},
+        slug='synthetic', asset_version='test', resume_html='<p>CV preview</p>', photo_available=False,
+        csrf_token='synthetic', pre_fit_diff=None, summary_review=review)
+    html = html.replace('</head>', '<style>' + Path('static/app.css').read_text() + '</style></head>')
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={'width': width, 'height': 1000})
+            page.route('**/*', lambda route: route.fulfill(status=200, body=''))
+            page.set_content(html)
+            page.evaluate('(zoom) => document.body.style.zoom = zoom', zoom)
+            form = page.locator('form[action$="/summary/confirm"]')
+            assert form.locator('input[name=summary_confirmed]').count() == 1
+            assert page.evaluate('window.injected') is None
+            assert not form.evaluate('(form) => form.checkValidity()')
+            checkbox = page.get_by_role('checkbox', name='I reviewed this summary and confirm that its claims are accurate.')
+            checkbox.focus()
+            checkbox.press('Space')
+            assert checkbox.is_checked()
+            assert form.evaluate('(form) => form.checkValidity()')
+            assert page.get_by_text('Reviewed by AI. Your confirmation is still required.').is_visible()
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            if width == 1280 and zoom == 1:
+                page.screenshot(path='/tmp/cvtailor-summary-confirmation.png', full_page=True)
+        finally:
+            browser.close()

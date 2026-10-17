@@ -22,14 +22,21 @@
     {% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %}
     <button class="secondary button" id="preview-photo-options-btn" type="button">{% if photo_available %}Photo options{% else %}Add photo{% endif %}</button>
     {% endif %}
-    <a class="secondary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/docx">Download DOCX</a>
-    <a class="primary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/pdf">Download PDF</a>
+    <a class="secondary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/docx{% endif %}">Download DOCX</a>
+    <a class="primary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/pdf{% endif %}">Download PDF</a>
     <form action="{{ app_root_path|default('') }}/history/{{ slug }}/delete" method="post" data-confirm="Delete this generated CV?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="danger" type="submit">Delete</button>
     </form>
   </div>
 </div>
+{% if summary_review %}
+<form action="{{ app_root_path|default('') }}/preview/{{ slug }}/summary/confirm" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% include '_summary_review.html' %}
+  {% if summary_review.required %}<button class="primary" type="submit">Confirm summary for download</button>{% endif %}
+</form>
+{% endif %}
 <form action="{{ app_root_path|default('') }}/preview/{{ slug }}/layout" method="post" class="job-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Resume layout<select name="template_name"><option value="modern_sidebar"{% if metadata.template_name|default('modern_sidebar') == 'modern_sidebar' %} selected{% endif %}>Modern Sidebar</option><option value="ats_classic"{% if metadata.template_name|default('modern_sidebar') == 'ats_classic' %} selected{% endif %}>ATS Classic</option></select></label>

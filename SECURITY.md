@@ -13,11 +13,16 @@ from a request parameter. This is an application authorization boundary, not an
 OS sandbox for mutually untrusted workloads. A browser context has one active
 account; shared-origin XSS and server compromise remain security concerns.
 
-Production document parsers and browser rendering use separate owner/demo processing
+Production document parsers and browser rendering must use separate owner/demo processing
 services without account volumes or model credentials. Native children have kernel
 socket restrictions, resource/time limits and bounded JSON input/output. Local CLI
 subprocess mode shares the host filesystem; configure the isolated services for
 untrusted input. See [processing budgets and deployment migration](docs/processing-security.md).
+
+Model semantic approval is not proof that a natural summary is accurate. Web exports
+require user confirmation for non-source summaries, bound to the summary and profile.
+Controlled false-verdict tests and the live deployment inspection scope are documented
+in the [security follow-up](docs/security-audit-2026-10-17-followup.md).
 
 ## Report a vulnerability privately
 

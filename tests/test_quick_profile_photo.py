@@ -36,6 +36,7 @@ def quick_photo_app(tmp_path, profile, resume_payload, monkeypatch):
     app.include_router(web_routes.router)
     storage = Storage(tmp_path / "data")
     app.state.resource_budget = ResourceBudget(storage.data_dir)
+    app.state.auth_store = SimpleNamespace(username='synthetic-photo-tests')
     store = ProfilePhotoStore(tmp_path / "data" / "profile_photo")
     from starlette.templating import Jinja2Templates
 

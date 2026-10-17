@@ -1,6 +1,6 @@
 # Bounded and isolated processing
 
-The web process admits requests and selects the authenticated account. PDF/DOCX extraction, document export, preview rasterization and photo decoding run in disposable processes, not the web event loop. Production uses **independent processing services for owner and demo**. Neither receives account PVCs, `.env`, AI keys, login credentials, session databases or a Kubernetes service account token. A job receives only its required profile/document snapshot in a temporary directory, which is removed after the child exits.
+The web process admits requests and selects the authenticated account. PDF/DOCX extraction, document export, preview rasterization and photo decoding run in disposable processes, not the web event loop. Production must deploy **independent processing services for owner and demo**. Neither receives account PVCs, `.env`, AI keys, login credentials, session databases or a Kubernetes service account token. A job receives only its required profile/document snapshot in a temporary directory, which is removed after the child exits.
 
 ## Enforced budgets
 
@@ -69,6 +69,10 @@ For rollback, restore the previous application and processor image digests toget
 ## AI boundary
 
 No new tools or server secrets are exposed to the model. Existing prompt-injection tests now also cover processing-service secrets. Real model HTTP calls are serialized and charged before sending; oversized or compressed responses fail before JSON parsing. Prompt/schema compliance is not used to enforce time, memory, response or call limits. This hardens availability and costs; it does not promise universal model-level jailbreak resistance or make LLM semantic review a proof of factual correctness.
+
+Natural summaries approved by a model require the account user's explicit review of their text and source facts before web export. A separate confirmation binds the text, citations, professional profile and document/account context; changes invalidate it. Deterministically composed source summaries have a different server signature and need no additional confirmation. Saved natural summaries without confirmation remain viewable and can be confirmed before download; existing files are not rewritten. See the [follow-up evidence and scope limits](security-audit-2026-10-17-followup.md).
+
+Use `python3 scripts/audit_processing_deployment.py` for a read-only live configuration report. It exits nonzero when required worker isolation is missing. It never reads Kubernetes Secrets and does not establish that the CNI actually enforces declared policies.
 
 ## References
 

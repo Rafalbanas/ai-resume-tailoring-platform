@@ -49,7 +49,7 @@ def runtimes(app):
 
 
 @pytest.mark.parametrize('account', ['owner', 'demo'])
-def test_same_url_selects_only_authenticated_accounts_data(shared_app, account):
+def test_same_url_selects_only_authenticated_accounts_data(shared_app, account, synthetic_download):
     with TestClient(shared_app) as client:
         assert sign_in(client, account).status_code == 303
         page = client.get('/profile')
@@ -59,9 +59,7 @@ def test_same_url_selects_only_authenticated_accounts_data(shared_app, account):
         assert ('Demo — fictional data' in page.text) == (account == 'demo')
         owner, demo = runtimes(shared_app)
         for app, content in ((owner, b'%PDF private canary'), (demo, b'%PDF demo canary')):
-            folder = app.state.storage.generated_dir / 'same-id'
-            folder.mkdir()
-            (folder / 'resume.pdf').write_bytes(content)
+            synthetic_download(app, 'same-id', content)
         expected = b'%PDF demo canary' if account == 'demo' else b'%PDF private canary'
         for query in ('', '?account=owner', '?account=demo', '?data_dir=../data', '?user=rafal'):
             response = client.get('/download/same-id/pdf' + query, headers={'X-Account': 'owner', 'X-Tenant': 'owner'})

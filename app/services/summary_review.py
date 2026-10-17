@@ -43,8 +43,20 @@ def sign_summary(resume, profile, key):
 
 
 def valid_summary_attestation(resume, profile, key):
-    return bool(key and resume.summary_attestation and hmac.compare_digest(
-        resume.summary_attestation, sign_summary(resume, profile, key)))
+    value = resume.summary_attestation
+    return bool(key and isinstance(value, str) and value and value.isascii() and hmac.compare_digest(
+        value, sign_summary(resume, profile, key)))
+
+
+def sign_source_summary(resume, profile, key):
+    message = 'summary-source-v1:' + sign_summary(resume, profile, key)
+    return 'source-v1:' + hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def valid_source_summary(resume, profile, key):
+    value = resume.summary_attestation
+    return bool(key and isinstance(value, str) and value and value.isascii() and hmac.compare_digest(
+        value, sign_source_summary(resume, profile, key)))
 
 
 async def review_summary(provider, resume, profile):

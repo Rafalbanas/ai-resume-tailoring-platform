@@ -15,7 +15,7 @@ def sign_in(client):
                                      'csrf_token': client.cookies.get('csrf_token')}, follow_redirects=False)
 
 
-def test_session_lifecycle():
+def test_session_lifecycle(synthetic_download):
     with TestClient(app) as client:
         assert client.get('/', follow_redirects=False).status_code == 303
         assert client.get('/health').json() == {'status': 'ok'}
@@ -29,9 +29,7 @@ def test_session_lifecycle():
         assert result.status_code == 303
         assert 'HttpOnly' in result.headers['set-cookie'] and 'SameSite=strict' in result.headers['set-cookie']
         assert client.get('/').status_code == 200
-        folder = app.state.storage.generated_dir / 'synthetic-download'
-        folder.mkdir()
-        (folder / 'resume.pdf').write_bytes(b'%PDF synthetic test')
+        synthetic_download(app, 'synthetic-download', b'%PDF synthetic test')
         assert client.get('/download/synthetic-download/pdf').status_code == 200
         old = client.cookies.get('session')
         assert client.post('/logout').status_code == 403
