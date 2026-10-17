@@ -118,7 +118,7 @@ async def instance_lifespan(app: FastAPI):
     )
     app.state.provider.settings_path = settings.data_dir / "ai_settings.json"
     app.state.provider.load_settings()
-    task_manager = TaskManager(settings.data_dir, budget_seconds=settings.llm_operation_budget_seconds, max_pending=settings.max_pending_tasks)
+    task_manager = TaskManager(settings.data_dir, budget_seconds=settings.llm_operation_budget_seconds, max_pending=settings.max_pending_tasks, auto_delete_history=settings.auto_delete_history)
     await task_manager.recover_on_startup()
     task_manager.start_worker(app.state)
     app.state.task_manager = task_manager

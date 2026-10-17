@@ -127,6 +127,7 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 - **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), SQLite-backed login rate limiting shared by workers (5 attempts per 5 minutes per IP, 100 per instance), and server-revocable SQLite sessions (`data/sessions.sqlite3`). Multiple devices can sign in concurrently; **Sign out everywhere** revokes all sessions of that account. Sessions have an absolute eight-hour lifetime by default (`SESSION_TTL_SECONDS=28800`).
 - **CSRF & Cookie Protection**: Browser-session-bound double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
 - **Shared login**: Private and demo credentials can use the same `/login`, with server-side session checks routing every request to its isolated runtime and data directory. [Setup and migration](docs/recording-demo.md).
+- **History retention**: Automatic cleanup of analysis tasks and unsaved drafts is disabled by default (`AUTO_DELETE_HISTORY=false`). Set it to `true` to keep the latest 100 task records; saved CV history is never automatically deleted. Storage limits reject new work rather than deleting old CVs.
 - **Processing isolation & budgets**: PDF/DOCX/photo work runs in bounded child processes outside the event loop. Production isolation requires deploying the separate owner/demo workers without account mounts or AI keys; shared concurrency, persistent AI budgets, task/storage quotas and early body limits protect resources. [Limits, live inspection and migration](docs/processing-security.md).
 - **Summary export review**: Model-approved natural summaries require explicit user confirmation of the displayed text and profile sources before export. Confirmation is bound to the exact summary, facts, account and document; changes invalidate it. Deterministic source-composed summaries need no extra confirmation. [Audit evidence and limitations](docs/security-audit-2026-10-17-followup.md).
 - **Diagnostics & History**: `/diagnostics` dashboard for health metrics, active model status, and build metadata; `/compare` view for side-by-side CV comparison; atomic file staging and version backups under `data/generated/`.
@@ -248,7 +249,7 @@ ai-resume-tailoring-platform/
 │   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (763 tests)
+└── tests/                         # Comprehensive automated test suite (767 tests)
 ```
 
 ---
@@ -443,7 +444,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (763 tests)
+# Run complete test suite (767 tests)
 pytest -q
 ```
 

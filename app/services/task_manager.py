@@ -65,11 +65,12 @@ def compute_idempotency_key(kind: str, **kwargs) -> str:
 class TaskManager:
     """Manages background task execution, persistence, idempotency, and recovery."""
 
-    def __init__(self, data_dir: Path, budget_seconds: float = 900.0, max_pending: int = 4):
+    def __init__(self, data_dir: Path, budget_seconds: float = 900.0, max_pending: int = 4, auto_delete_history: bool = False):
         self.tasks_dir = data_dir / "tasks"
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.budget_seconds = budget_seconds
         self.max_pending = max_pending
+        self.auto_delete_history = auto_delete_history
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_pending)
         self._worker_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
@@ -147,10 +148,11 @@ class TaskManager:
                     continue
                 if task.status in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
                     active += 1
-                else:
+                elif self.auto_delete_history:
                     completed.append((task.created_at, task.task_id, (task.result or {}).get('draft_id')))
             if active >= self.max_pending or self._queue.full():
                 raise HTTPException(429, 'The task queue is full. Wait for an existing task to finish.')
+            # Cleanup is opt-in; otherwise keep every finished task and draft.
             # Retain only compact metadata while scanning; never hold every
             # historical model payload in memory at once.
             completed.sort()
