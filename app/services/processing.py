@@ -1,6 +1,7 @@
 """Bounded, secret-free RPC for document processing; never deserialize pickle."""
 import base64
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -18,6 +19,7 @@ SLOTS = threading.BoundedSemaphore(1)
 ENDPOINT = ContextVar("processing_endpoint", default=None)
 DEADLINE = ContextVar("processing_deadline", default=None)
 MAX_RESULT = 24 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 class ProcessingError(ValueError):
@@ -97,6 +99,8 @@ def local_process(request, *, timeout=60):
                 reap_container_children()
             output = folder / 'output.json'
             if child.returncode or not output.is_file() or output.stat().st_size > MAX_RESULT:
+                # Only status metadata: native stderr may include private input.
+                logger.warning('Processing child exited without a valid result (exit=%s)', child.returncode)
                 raise ProcessingError('Document processing exceeded its resource limits.')
             return json.loads(output.read_text(encoding='utf-8'))
     finally:
