@@ -396,6 +396,7 @@ def test_native_child_environment_excludes_application_secrets(monkeypatch):
     import app.services.processing as processing
     original = subprocess.Popen
     secret = 'synthetic-parent-secret-never-forward'
+    monkeypatch.setenv('MALLOC_ARENA_MAX', '9999')
     for name in ('GEMINI_API_KEY', 'CSRF_SECRET', 'PROCESSING_TOKEN', 'DEMO_PROCESSING_TOKEN', 'APP_PASSWORD'):
         monkeypatch.setenv(name, secret)
     environments = []
@@ -405,6 +406,7 @@ def test_native_child_environment_excludes_application_secrets(monkeypatch):
     monkeypatch.setattr(processing.subprocess, 'Popen', capture)
     assert local_process({'operation': 'check', 'payload': {}}, timeout=10) == {'ok': True, 'result': {'protocol': 1, 'network_blocked': True}}
     assert len(environments) == 1
+    assert environments[0]['MALLOC_ARENA_MAX'] == '2'
     assert secret not in json.dumps(environments)
     assert not {'GEMINI_API_KEY', 'CSRF_SECRET', 'PROCESSING_TOKEN', 'DEMO_PROCESSING_TOKEN', 'APP_PASSWORD'} & set(environments[0])
 

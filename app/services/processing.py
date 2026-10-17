@@ -35,8 +35,12 @@ def decoded(value):
 
 
 def clean_environment():
-    return {key: value for key, value in os.environ.items()
-            if key in {'PATH', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'FONTCONFIG_PATH', 'PLAYWRIGHT_BROWSERS_PATH'}}
+    env = {key: value for key, value in os.environ.items()
+           if key in {'PATH', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'FONTCONFIG_PATH', 'PLAYWRIGHT_BROWSERS_PATH'}}
+    # glibc's per-thread arenas reserve large virtual mappings. Pango starts
+    # fontconfig threads; bound arenas so these fit the child's address-space cap.
+    env['MALLOC_ARENA_MAX'] = '2'
+    return env
 
 
 def process(operation, payload, *, timeout=60):
