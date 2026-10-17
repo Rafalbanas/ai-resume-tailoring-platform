@@ -248,7 +248,7 @@ ai-resume-tailoring-platform/
 │   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (759 tests)
+└── tests/                         # Comprehensive automated test suite (763 tests)
 ```
 
 ---
@@ -443,7 +443,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (759 tests)
+# Run complete test suite (763 tests)
 pytest -q
 ```
 
