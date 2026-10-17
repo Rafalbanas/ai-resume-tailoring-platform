@@ -409,6 +409,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const submitLabel = document.getElementById("submit-label");
   const status = document.getElementById("fetch-status");
   let fetching = false;
+  let submitting = false;
+
+  async function jobRequest(url, options, timeout) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, {...options, signal: controller.signal});
+      if (!response.ok) {
+        const error = new Error("Request rejected");
+        error.status = response.status;
+        throw error;
+      }
+      return {status: response.status, data: await response.json()};
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   function setStatus(message, kind = "") {
     status.textContent = message;
@@ -433,14 +450,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Fetching the job offer…");
     try {
       const csrfToken = form.querySelector('[name="csrf_token"]').value;
-      const response = await fetch(cvAppUrl("/api/extract-job-url"), {
+      const {data: result} = await jobRequest(cvAppUrl("/api/extract-job-url"), {
         method: "POST",
         credentials: "same-origin",
         headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
         body: JSON.stringify({url}),
-      });
-      if (!response.ok) throw new Error("request failed");
-      const result = await response.json();
+      }, 60000);
       if (result.extraction_method === "manual_required" || !result.job_description) {
         if (result.company || result.role) {
           if (companyInput.value === beforeFetch[0] && !beforeFetch[0].trim()) companyInput.value = result.company || "";
@@ -479,13 +494,11 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchButton.disabled = true;
     setStatus("Cleaning the copied offer…");
     try {
-      const response = await fetch(cvAppUrl("/api/clean-job-text"), {
+      const {data: result} = await jobRequest(cvAppUrl("/api/clean-job-text"), {
         method: "POST", credentials: "same-origin",
         headers: {"Content-Type": "application/json", "X-CSRF-Token": form.querySelector('[name="csrf_token"]').value},
         body: JSON.stringify({text: original[2], url: urlInput.value.trim()}),
-      });
-      if (!response.ok) throw new Error("request failed");
-      const result = await response.json();
+      }, 15000);
       if (result.extraction_method === "manual_required" || !result.job_description) {
         setStatus("Not enough offer text found. Your text was kept; paste the full offer or edit it manually.", "error");
         return;
@@ -509,36 +522,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
   fetchButton.addEventListener("click", fetchJob);
   form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (fetching) {
+      setStatus("Wait for the offer to finish loading or cleaning before analysis.");
+      return;
+    }
     if (!fieldsAreComplete() && urlInput.value.trim()) {
-      event.preventDefault();
       const ready = await fetchJob();
       if (ready) form.requestSubmit();
       return;
     }
     if (!fieldsAreComplete()) {
-      event.preventDefault();
       setStatus("Enter company, role, and at least 30 characters of the job description.", "error");
       return;
     }
-    event.preventDefault();
-    submitLabel.textContent = "Uruchamianie zadania…";
+    submitting = true;
+    submitLabel.textContent = "Starting analysis…";
     submitButton.disabled = true;
+    setStatus("Starting analysis…");
     try {
       const formData = new FormData(form);
-      const res = await fetch(cvAppUrl("/analyze"), {
+      const {status: responseStatus, data} = await jobRequest(cvAppUrl("/analyze"), {
         method: "POST",
         headers: { "Accept": "application/json" },
         body: formData,
-      });
-      if (res.status === 202) {
-        const data = await res.json();
-        window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
-        return;
-      }
-      // Native navigation gives validation pages their own CSP nonce.
-      form.submit();
+      }, 20000);
+      if (responseStatus !== 202) throw new Error("Unexpected response");
+      window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
     } catch (err) {
-      form.submit();
+      if (err.status === 401 || err.status === 403) {
+        setStatus("Your session expired or the request was rejected. Save your offer text, then refresh and sign in again.", "error");
+      } else if (err.status === 429) {
+        setStatus("Too many requests or queued analyses. Wait for current work to finish, then retry. Your text was kept.", "error");
+      } else if (err.status === 422) {
+        setStatus("Check company, role and the complete job description. Your text was kept.", "error");
+      } else {
+        setStatus("Could not confirm that analysis started. Your text was kept. Check History before retrying to avoid starting it twice.", "error");
+      }
+    } finally {
+      submitting = false;
+      submitButton.disabled = false;
+      submitLabel.textContent = "Analyze job";
     }
   });
 
