@@ -4,6 +4,24 @@ from app.models.candidate import CandidateProfile
 
 
 @pytest.fixture
+def synthetic_download():
+    """A complete source-backed saved document for auth/download isolation tests."""
+    from app.models.job import JobAnalysis, JobRequest
+    from app.models.resume import TailoredResume
+    def seed(runtime, slug, content):
+        job = JobRequest(company='Synthetic', role='Support', job_description='Requirements\nPython support and automation.')
+        analysis = JobAnalysis(company=job.company, role=job.role, strong_matches=[], partial_matches=[],
+            missing_requirements=[], recommendation='REVIEW', match_level='LOW')
+        resume = TailoredResume(headline='Support', professional_summary=runtime.state.profile.summary_facts[0],
+            summary_source_fact_ids=['summary:0'], core_skills=[], experience=[])
+        _, folder = runtime.state.storage.save_application(job, analysis, resume, [])
+        target = runtime.state.storage.generated_dir / slug
+        folder.rename(target)
+        (target / 'resume.pdf').write_bytes(content)
+    return seed
+
+
+@pytest.fixture
 def profile() -> CandidateProfile:
     return CandidateProfile.model_validate(
         {

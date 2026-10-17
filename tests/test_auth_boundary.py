@@ -320,16 +320,14 @@ def test_injection_does_not_authenticate(instances, payload):
 
 
 @pytest.mark.parametrize('direction', ['private-demo', 'demo-private'])
-def test_artifacts_and_reset_stay_in_their_own_instance(instances, direction):
+def test_artifacts_and_reset_stay_in_their_own_instance(instances, direction, synthetic_download):
     private, demo = instances
     with TestClient(private, base_url='https://private.example.test') as owner, \
             TestClient(demo, base_url='https://demo.example.test') as guest:
         assert login(owner).status_code == 303
         assert login(guest, 'demo-tests', 'different-demo-password').status_code == 303
         for app, client, content in ((private, owner, b'%PDF synthetic private'), (demo, guest, b'%PDF synthetic demo')):
-            folder = app.state.storage.generated_dir / 'same-id'
-            folder.mkdir()
-            (folder / 'resume.pdf').write_bytes(content)
+            synthetic_download(app, 'same-id', content)
             assert client.get('/download/same-id/pdf').content == content
         changed, revoked, unaffected = (private, owner, guest) if direction == 'private-demo' else (demo, guest, owner)
         changed.state.auth_store.reset_password('replacement-test-password')
