@@ -99,7 +99,7 @@
   </p>
 </noscript>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const taskId = "{{ task.task_id }}";
   const initialStatus = "{{ task.status }}";

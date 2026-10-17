@@ -44,3 +44,22 @@ def test_change_password_requires_current_password(tmp_path):
 def test_password_policy():
     with pytest.raises(PasswordPolicyError):
         validate_password("too-short")
+
+
+def test_unicode_owner_name_can_authenticate(tmp_path):
+    store = AuthStore(tmp_path / 'auth.json', 'żółw', 'initial-password-123')
+    store.initialize()
+    assert store.verify('żółw', 'initial-password-123')
+    assert not store.verify('żółw-inny', 'initial-password-123')
+
+
+def test_rehash_returns_the_version_that_was_written(tmp_path):
+    from argon2 import PasswordHasher
+    store = AuthStore(tmp_path / 'auth.json', 'test-user', 'initial-password-123')
+    store.hasher = PasswordHasher(time_cost=1)
+    store.initialize()
+    previous = store.credential_version
+    store.hasher = PasswordHasher(time_cost=2)
+    verified = store.verify_with_version('test-user', 'initial-password-123')
+    assert verified == store.credential_version
+    assert verified != previous

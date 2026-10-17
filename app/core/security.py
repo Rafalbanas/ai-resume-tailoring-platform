@@ -15,6 +15,8 @@ class FixedWindowLimiter:
 
     def check(self, key: str) -> None:
         now = time.monotonic()
+        for stale in [key for key, hits in self.hits.items() if not hits or hits[-1] <= now - self.window_seconds]:
+            del self.hits[stale]
         bucket = self.hits[key]
         while bucket and bucket[0] < now - self.window_seconds:
             bucket.popleft()
@@ -35,7 +37,9 @@ def new_csrf_token(secret: str) -> str:
 
 
 def validate_csrf(token: str, cookie: str, secret: str) -> None:
-    if not token or not cookie or not secrets.compare_digest(token, cookie):
+    if (not isinstance(token, str) or not isinstance(cookie, str) or not token or not cookie
+            or len(token) > 128 or len(cookie) > 128 or not token.isascii() or not cookie.isascii()
+            or not secrets.compare_digest(token, cookie)):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
     try:
         nonce, signature = token.rsplit(".", 1)

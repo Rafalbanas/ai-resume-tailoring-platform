@@ -29,12 +29,14 @@ class SessionStore:
         return token
 
     def valid(self, token, credential):
-        if not token:
+        if not isinstance(token, str) or len(token) != 43 or not token.isascii():
             return False
         with self.connect() as db:
             row = db.execute('SELECT expires, credential FROM sessions WHERE digest = ?', (self.digest(token),)).fetchone()
         return bool(row and row[0] > time.time() and secrets.compare_digest(row[1], credential))
 
     def revoke(self, token):
+        if not isinstance(token, str) or len(token) != 43:
+            return
         with self.connect() as db:
             db.execute('DELETE FROM sessions WHERE digest = ?', (self.digest(token),))

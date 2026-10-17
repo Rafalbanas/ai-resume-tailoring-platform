@@ -24,7 +24,7 @@
     {% endif %}
     <a class="secondary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/docx">Download DOCX</a>
     <a class="primary button" href="{{ app_root_path|default('') }}/download/{{ slug }}/pdf">Download PDF</a>
-    <form action="{{ app_root_path|default('') }}/history/{{ slug }}/delete" method="post" onsubmit="return confirm('Delete this generated CV?')">
+    <form action="{{ app_root_path|default('') }}/history/{{ slug }}/delete" method="post" data-confirm="Delete this generated CV?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="danger" type="submit">Delete</button>
     </form>

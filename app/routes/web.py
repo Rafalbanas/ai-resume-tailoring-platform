@@ -1,14 +1,16 @@
 import json
 import logging
 import re
+import secrets
 import time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
-from app.core.security import require_session, validate_csrf
+from app.core.security import new_csrf_token, require_session, validate_csrf
 from app.models.candidate import Interest
 from app.models.job import JobExtraction, JobRequest, JobTextRequest, JobUrlRequest
 from app.models.resume import TailoredResume
@@ -33,6 +35,7 @@ logger = logging.getLogger(__name__)
 def context(request: Request, **values):
     return {
         "request": request,
+        "account_username": request.app.state.auth_store.username if getattr(request.state, "authenticated", False) else "",
         "app_root_path": request.scope.get("root_path", ""),
         "engine_primary": getattr(getattr(request.app.state, "settings", None), "active_llm_provider", "unknown"),
         "engine_fallback": "gemini" if request.app.state.provider.fallback_enabled else "none",
@@ -1034,6 +1037,9 @@ async def change_password(
     csrf_token: Annotated[str, Form()],
 ):
     guard(request)
+    form = await request.form()
+    if any(len(form.getlist(field)) != 1 for field in ("current_password", "new_password", "repeat_password", "csrf_token")):
+        raise HTTPException(400, "Duplicate or missing authentication fields")
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if new_password != repeat_password:
@@ -1041,7 +1047,10 @@ async def change_password(
             request=request, name="password.html", context=context(request, error="The new passwords do not match."), status_code=422
         )
     try:
-        changed = request.app.state.auth_store.change_password(current_password, new_password)
+        if request.app.state.auth_slots.locked():
+            raise HTTPException(429, "Authentication is busy. Try again shortly.")
+        async with request.app.state.auth_slots:
+            changed = await run_in_threadpool(request.app.state.auth_store.change_password, current_password, new_password)
     except ValueError as exc:
         return request.app.state.templates.TemplateResponse(
             request=request, name="password.html", context=context(request, error=str(exc)), status_code=422
@@ -1229,14 +1238,30 @@ async def login_page(request: Request):
 
 @router.post("/login")
 async def login(request: Request, username: Annotated[str, Form()], password: Annotated[str, Form()]):
-    request.app.state.login_limiter.check(request.client.host if request.client else "unknown")
-    if len(password) > 256 or not request.app.state.auth_store.verify(username, password):
+    form = await request.form()
+    if any(len(form.getlist(field)) != 1 for field in ("username", "password", "csrf_token")):
+        raise HTTPException(400, "Duplicate or missing authentication fields")
+    if len(username) > 150 or len(password) > 256:
+        raise HTTPException(422, "Authentication fields are too long")
+    if request.app.state.auth_slots.locked():
+        raise HTTPException(429, "Authentication is busy. Try again shortly.")
+    accounts = getattr(request.app.state, "accounts", {"owner": request.app})
+    account, target = "owner", request.app
+    for account_name, candidate in accounts.items():
+        if secrets.compare_digest(username.encode(), candidate.state.auth_store.username.encode()):
+            account, target = account_name, candidate
+    async with request.app.state.auth_slots:
+        credential = await run_in_threadpool(target.state.auth_store.verify_with_version, username, password)
+    if credential is None:
         return request.app.state.templates.TemplateResponse(
             request=request, name="login.html", context=context(request, error="Invalid username or password."), status_code=401)
-    request.app.state.sessions.revoke(request.session.get("id", ""))
-    token = request.app.state.sessions.create(request.app.state.auth_store.credential_version)
+    for candidate in accounts.values():
+        candidate.state.sessions.revoke(request.session.get("id", ""))
+    token = target.state.sessions.create(credential)
     request.session.clear()
     request.session["id"] = token
+    request.session["account"] = account
+    request.session["csrf_token"] = new_csrf_token(target.state.settings.csrf_secret)
     return RedirectResponse("/", status_code=303)
 
 

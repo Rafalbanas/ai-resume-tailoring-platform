@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +10,10 @@ class Settings(BaseSettings):
 
     app_root_path: str = ""
     demo_mode: bool = False
+    private_base_url: str = ""
+    demo_data_dir: Path | None = None
+    demo_csrf_secret_file: Path | None = None
+    _shared_account: bool = PrivateAttr(default=False)
     session_ttl_seconds: int = Field(default=28800, ge=1)
     app_username: str | None = None
     app_password: str | None = None
@@ -54,11 +58,11 @@ class Settings(BaseSettings):
 
     @property
     def csrf_cookie_name(self) -> str:
-        return "demo_csrf_token" if self.demo_mode else "csrf_token"
+        return "demo_csrf_token" if self.demo_mode and not self._shared_account else "csrf_token"
 
     @property
     def session_cookie_name(self) -> str:
-        return "demo_session" if self.demo_mode else "session"
+        return "demo_session" if self.demo_mode and not self._shared_account else "session"
 
     @property
     def active_llm_provider(self) -> str:

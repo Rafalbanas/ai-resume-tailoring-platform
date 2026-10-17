@@ -12,7 +12,7 @@
     <p><small>Preview crop uses a square frame. The stored image is normalized to 600×600.</small></p>
     <button class="primary" type="submit">{{ 'Replace photo' if has_photo else 'Upload photo' }}</button>
   </form>
-  {% if has_photo %}<form action="{{ app_root_path|default('') }}/profile/photo/remove" method="post" onsubmit="return confirm('Remove the profile photo?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}
+  {% if has_photo %}<form action="{{ app_root_path|default('') }}/profile/photo/remove" method="post" data-confirm="Remove the profile photo?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Remove photo</button></form>{% endif %}
 </section>
 
 <div class="page-head" style="margin-top: 2.5rem;">
@@ -51,7 +51,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="secondary" type="submit">{{ 'Disable' if item.enabled else 'Enable' }}</button>
             </form>
-            <form action="{{ app_root_path|default('') }}/profile/interests/{{ item.id }}/delete" method="post" style="display:inline; margin:0;" onsubmit="return confirm('Delete this interest?')">
+            <form action="{{ app_root_path|default('') }}/profile/interests/{{ item.id }}/delete" method="post" style="display:inline; margin:0;" data-confirm="Delete this interest?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="danger" type="submit">Delete</button>
             </form>

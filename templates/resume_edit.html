@@ -48,7 +48,7 @@
     <button class="primary" type="submit">Save changes</button>
   </div>
 </form>
-<form class="reset-form" action="{{ app_root_path|default('') }}/reset/{{ slug }}" method="post" onsubmit="return confirm('Reset to generated version?')">
+<form class="reset-form" action="{{ app_root_path|default('') }}/reset/{{ slug }}" method="post" data-confirm="Reset to generated version?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button class="secondary" type="submit">Reset to generated version</button>
 </form>

@@ -6,8 +6,12 @@ Security fixes are developed against the current `main` branch. Older commits
 are not maintained as separate security release lines. Review changes and back
 up your private application data before upgrading a deployment.
 
-CVTailor is intended for single-owner self-hosting. Its login and session
-controls do not provide multi-tenant isolation.
+CVTailor is intended for owner-managed self-hosting. An optional demo account
+can share `/login` while using separate credentials, sessions, storage and task
+runtimes. The server selects the runtime from the authenticated session, never
+from a request parameter. This is an application authorization boundary, not an
+OS sandbox for mutually untrusted workloads. A browser context has one active
+account; shared-origin XSS and server compromise remain security concerns.
 
 ## Report a vulnerability privately
 
