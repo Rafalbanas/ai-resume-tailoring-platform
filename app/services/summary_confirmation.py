@@ -20,13 +20,13 @@ def summary_review(resume, profile, key, context, receipt=''):
     exact = (catalog.supports_paraphrase(resume.professional_summary, resume.summary_source_fact_ids)
              or valid_source_summary(resume, profile, key))
     token = confirmation_token(resume, profile, key, context)
-    confirmed = isinstance(receipt, str) and secrets.compare_digest(receipt.encode(), token.encode())
+    confirmed = isinstance(receipt, str) and receipt.isascii() and secrets.compare_digest(receipt, token)
     return {'text': resume.professional_summary, 'sources': sources,
             'model_reviewed': valid_summary_attestation(resume, profile, key),
             'source_text': exact, 'confirmed': confirmed, 'required': not (exact or confirmed), 'token': token}
 
 
 def require_confirmation(review, checked, supplied):
-    if review['required'] and (checked != 'on' or not isinstance(supplied, str)
-            or not secrets.compare_digest(supplied.encode(), review['token'].encode())):
+    if review['required'] and (checked != 'on' or not isinstance(supplied, str) or not supplied.isascii()
+            or not secrets.compare_digest(supplied, review['token'])):
         raise HTTPException(409, 'Review the professional summary and its sources, then explicitly confirm it before exporting.')

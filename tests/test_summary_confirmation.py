@@ -28,7 +28,7 @@ ATTACKS = [
 ]
 
 
-@pytest.mark.parametrize('value', ['👍', 'source-v1:ą', ['untrusted']])
+@pytest.mark.parametrize('value', ['\ud800', 'source-v1:ą', ['untrusted']])
 def test_untrusted_attestation_never_crashes_review(profile, resume_payload, value):
     from app.services.summary_review import valid_source_summary
     resume = TailoredResume.model_validate(resume_payload)
