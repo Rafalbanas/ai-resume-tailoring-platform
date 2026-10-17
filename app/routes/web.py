@@ -1268,7 +1268,7 @@ async def login(request: Request, username: Annotated[str, Form()], password: An
 @router.post("/logout")
 async def logout(request: Request):
     guard(request)
-    request.app.state.sessions.revoke(request.session.get("id", ""))
+    request.app.state.sessions.revoke_all()
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
 
