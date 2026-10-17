@@ -1,9 +1,12 @@
 import asyncio
+import fcntl
 import hashlib
+import json
 import logging
 import os
 import re
 import time
+from contextlib import contextmanager
 from copy import copy
 from datetime import datetime, timezone
 from enum import Enum
@@ -11,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.job import JobRequest
@@ -61,11 +65,12 @@ def compute_idempotency_key(kind: str, **kwargs) -> str:
 class TaskManager:
     """Manages background task execution, persistence, idempotency, and recovery."""
 
-    def __init__(self, data_dir: Path, budget_seconds: float = 900.0):
+    def __init__(self, data_dir: Path, budget_seconds: float = 900.0, max_pending: int = 4):
         self.tasks_dir = data_dir / "tasks"
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.budget_seconds = budget_seconds
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        self.max_pending = max_pending
+        self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_pending)
         self._worker_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
 
@@ -75,10 +80,13 @@ class TaskManager:
     def _save_task(self, task: TaskRecord) -> None:
         path = self._task_path(task.task_id)
         temp_path = path.with_suffix(".tmp")
+        serialized = task.model_dump_json(indent=2)
+        if len(serialized.encode()) > 8 * 1024 * 1024:
+            raise ValueError('Task result exceeds the storage limit')
         descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             os.fchmod(handle.fileno(), 0o600)
-            handle.write(task.model_dump_json(indent=2))
+            handle.write(serialized)
         temp_path.replace(path)
 
     def get_task(self, task_id: str) -> TaskRecord | None:
@@ -127,7 +135,46 @@ class TaskManager:
                 continue
         return None
 
+    @contextmanager
+    def _admission(self):
+        descriptor = os.open(self.tasks_dir / '.admission.lock', os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            active, completed = 0, []
+            for path in self.tasks_dir.glob('*.json'):
+                task = self.get_task(path.stem)
+                if task is None:
+                    continue
+                if task.status in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
+                    active += 1
+                else:
+                    completed.append((task.created_at, task.task_id, (task.result or {}).get('draft_id')))
+            if active >= self.max_pending or self._queue.full():
+                raise HTTPException(429, 'The task queue is full. Wait for an existing task to finish.')
+            # Retain only compact metadata while scanning; never hold every
+            # historical model payload in memory at once.
+            completed.sort()
+            stale = completed[:max(0, len(completed) - (99 - active))]
+            linked = set()
+            if stale:
+                for path in (self.tasks_dir.parent / 'generated').glob('*/metadata.json'):
+                    try:
+                        linked.add(json.loads(path.read_text()).get('draft_id'))
+                    except (ValueError, OSError):
+                        pass
+            for _, task_id, draft in stale:
+                if isinstance(draft, str) and re.fullmatch(r'[a-f0-9]{32}', draft) and draft not in linked:
+                    (self.tasks_dir.parent / '.drafts' / (draft + '.json')).unlink(missing_ok=True)
+                self._task_path(task_id).unlink(missing_ok=True)
+            yield
+        finally:
+            os.close(descriptor)
+
     def create_task(self, kind: TaskKind, payload: dict[str, Any], idempotency_key: str) -> TaskRecord:
+        with self._admission():
+            return self._create_task(kind, payload, idempotency_key)
+
+    def _create_task(self, kind: TaskKind, payload: dict[str, Any], idempotency_key: str) -> TaskRecord:
         task_id = uuid4().hex
         task = TaskRecord(
             task_id=task_id,

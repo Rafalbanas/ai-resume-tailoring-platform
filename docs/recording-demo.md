@@ -50,3 +50,5 @@ This repository prepares the configuration; it does not apply changes to live wo
 6. Install the updated deployment wrapper and monitor script alongside the Kubernetes change. CI's ordinary image rollout does not automatically apply new ConfigMap keys, mounts or Nginx locations. For rollback, stop the combined pod before restoring separate workers and the old routing/configuration; retain both PVCs and secrets.
 
 Standalone recording mode is retained for compatibility and tests; when separately exposed, it must use an independent hostname. It is not the shared-login deployment described here.
+
+Shared deployments now also use independent owner/demo processing services. See [processing isolation and migration](processing-security.md) for the required one-time deployment steps and resource budgets. The services receive neither account directories nor AI keys. Concurrent account sessions and account-wide logout are unchanged.

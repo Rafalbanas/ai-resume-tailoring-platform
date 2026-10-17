@@ -104,6 +104,8 @@ def deploy(revision, digest):
     pull_and_validate(image, revision, token)
     previous = object_get('deployment', 'cvtailor')
     previous_image = previous['spec']['template']['spec']['containers'][0]['image']
+    processors = {item['metadata']['name']: item['spec']['template']['spec']['containers'][0]['image']
+                  for item in object_get('deployments')['items'] if item['metadata']['name'] in {'cvtailor-processing-owner', 'cvtailor-processing-demo'}}
     previous_environment = previous['spec']['template']['spec']['containers'][0].get('env', [])
     previous_revision = previous['metadata'].get('annotations', {}).get('cvtailor.dev/revision', '')
     if previous_image == image and previous_revision == revision:
@@ -128,6 +130,12 @@ def deploy(revision, digest):
             kubeconfig.chmod(0o600)
             cli = ['k3s', 'kubectl', '--kubeconfig', str(kubeconfig), '-n', NAMESPACE]
 
+            def update_processors(images):
+                for name, processor_image in images.items():
+                    # Fixed isolated deployments only; images are validated digests.
+                    admin('set', 'image', 'deployment/' + name, 'processor=' + processor_image)
+                    admin('rollout', 'status', 'deployment/' + name, '--timeout=240s')
+
             def release(target_image, target_revision, environment):
                 patch = {'metadata': {'annotations': {'cvtailor.dev/revision': target_revision}}, 'spec': {'template': {'spec': {
                     'imagePullSecrets': [{'name': 'cvtailor-ghcr'}], 'containers': [{'name': 'app', 'image': target_image,
@@ -145,12 +153,14 @@ def deploy(revision, digest):
                 assert ready[0]['status']['containerStatuses'][0]['imageID'] in valid_ids, 'Running image differs from validated image'
 
             try:
+                update_processors({name: image for name in processors})
                 environment = [entry for entry in previous_environment if entry['name'] not in {'APP_BUILD_SHA', 'APP_BUILD_TIMESTAMP'}]
                 environment.extend([{'name': 'APP_BUILD_SHA', 'value': revision},
                                     {'name': 'APP_BUILD_TIMESTAMP', 'value': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}])
                 release(image, revision, environment)
             except BaseException:
                 print('Deployment failed; restoring previous pinned image.', file=sys.stderr, flush=True)
+                update_processors(processors)
                 release(previous_image, previous_revision, previous_environment)
                 print('Previous image restored.', file=sys.stderr, flush=True)
                 raise

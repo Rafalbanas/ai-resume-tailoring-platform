@@ -92,6 +92,9 @@ class ReferenceCVLibrary:
                 raise ReferenceCVError("Upload is not a valid DOCX archive.") from exc
         elif not content.lstrip().startswith(b"%PDF-"):
             raise ReferenceCVError("Upload is not a valid PDF document.")
+        current = [p for p in self.directory.iterdir() if p.is_file() and p.suffix.lower() in ALLOWED_SUFFIXES]
+        if len(current) >= 20 or sum(p.stat().st_size for p in current) + len(content) > 100_000_000:
+            raise ReferenceCVError('Reference library quota exceeded. Remove an existing document first.')
         stored_name = f"{uuid4().hex}_{safe_name}"
         path = self.directory / stored_name
         path.write_bytes(content)
@@ -99,7 +102,7 @@ class ReferenceCVLibrary:
             path.chmod(0o600)
         except OSError:
             pass
-        record = self._ingest(path, hashlib.sha256(content).hexdigest(), original_filename=filename)
+        record = self._ingest(path, hashlib.sha256(content).hexdigest(), original_filename=filename[:255])
         self._items.append(record)
         self._write_index()
         return dict(record)
@@ -210,13 +213,35 @@ class ReferenceCVLibrary:
 
     @staticmethod
     def _extract_text(path: Path) -> str:
+        from app.services.processing import encoded, process
+        return process('reference', {'suffix': path.suffix.lower(), 'content': encoded(path.read_bytes())}, timeout=20)
+
+    @staticmethod
+    def _extract_text_local(path: Path) -> str:
         if path.suffix.lower() == ".pdf":
             reader = PdfReader(path)
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            if len(reader.pages) > 30:
+                raise ReferenceCVError('Reference document exceeds 30 pages.')
+            result, size, expanded = [], 0, 0
+            for page in reader.pages:
+                content = page.get_contents()
+                if content:
+                    expanded += len(content.get_data())
+                if expanded > 8_000_000:
+                    raise ReferenceCVError('PDF expanded content exceeds the processing limit.')
+                text = page.extract_text() or ''
+                size += len(text)
+                if size > 250_000:
+                    raise ReferenceCVError('Reference text exceeds the processing limit.')
+                result.append(text)
+            return '\n'.join(result)
         document = Document(path)
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
         cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
-        return "\n".join(paragraphs + cells)
+        result = "\n".join(paragraphs + cells)
+        if len(result) > 250_000:
+            raise ReferenceCVError('Reference text exceeds the processing limit.')
+        return result
 
     @staticmethod
     def _parse(text: str, filename: str) -> dict:

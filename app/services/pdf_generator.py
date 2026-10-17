@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import json
 import re
 from contextlib import closing
 from copy import deepcopy
@@ -28,11 +30,21 @@ class PDFGenerator:
         static_dir: Path,
         data_dir: Path = Path("data"),
         photo_store: ProfilePhotoStore | None = None,
+        *, isolated: bool = True,
     ):
+        self.isolated = isolated
+        self._preview_cache = {}
         self.env = Environment(loader=FileSystemLoader(templates_dir), autoescape=select_autoescape(["html"]))
         self.css_path = static_dir / "resume.css"
         self.data_dir = data_dir
         self.photo_store = photo_store or ProfilePhotoStore(data_dir / "profile_photo")
+
+    def _processing_payload(self, resume, profile, guide=None, **options):
+        from app.services.processing import encoded
+        path = self.photo_store.jpg_path if self.photo_store.jpg_path.is_file() else self.photo_store.path
+        return {'resume': resume.model_dump(mode='json'), 'profile': profile.model_dump(mode='json'),
+                'guide': guide or {}, 'options': options,
+                'photo': encoded(path.read_bytes()) if path.is_file() and path.stat().st_size <= self.photo_store.max_bytes else ''}
 
     def render_html(
         self,
@@ -102,6 +114,20 @@ class PDFGenerator:
         Raster pages retain precise pagination; accessible text and clickable links
         come from the same PDF. The export itself remains searchable vector text.
         """
+        if self.isolated:
+            contacts(profile)
+            from app.services.processing import process
+            payload = self._processing_payload(resume, profile, layout_guide, template_name=template_name,
+                photo_enabled=photo_enabled, interactive_photo=interactive_photo)
+            key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            if key not in self._preview_cache:
+                result = process('preview', payload)
+                if len(result.encode()) > 8 * 1024 * 1024:
+                    raise ValueError('Preview exceeds the size limit.')
+                if len(self._preview_cache) >= 2:
+                    del self._preview_cache[next(iter(self._preview_cache))]
+                self._preview_cache[key] = result
+            return self._preview_cache[key]
         markup = self.render_html(resume, profile, layout_guide, template_name=template_name,
                                   photo_enabled=photo_enabled)
         document = self._render_document(markup)
@@ -109,6 +135,8 @@ class PDFGenerator:
         pdf = document.write_pdf(pdf_tags=True)
         validate_pdf_output(pdf, profile)
         reader = PdfReader(BytesIO(pdf))
+        if len(reader.pages) > 30:
+            raise ValueError('CV exceeds the 30-page processing limit.')
         pages = []
         with closing(pypdfium2.PdfDocument(pdf)) as raster:
             for index, source in enumerate(reader.pages):
@@ -164,6 +192,12 @@ class PDFGenerator:
         template_name: str = "modern_sidebar",
         photo_enabled: bool | None = None,
     ) -> None:
+        if self.isolated:
+            contacts(profile)
+            from app.services.processing import decoded, process
+            output.write_bytes(decoded(process('pdf', self._processing_payload(resume, profile, layout_guide,
+                template_name=template_name, photo_enabled=photo_enabled))))
+            return
         document = self._render_document(self.render_html(
             resume, profile, layout_guide, template_name=template_name, photo_enabled=photo_enabled
         ))
@@ -345,6 +379,9 @@ class PDFGenerator:
         return bool(metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"])
 
     def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> dict[str, float | bool]:
+        if self.isolated:
+            from app.services.processing import process
+            return process('metrics', self._processing_payload(resume, profile, guide))
         document = self._render_document(self.render_html(resume, profile, guide))
         if not document.pages:
             return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}

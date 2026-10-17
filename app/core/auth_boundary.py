@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
+from app.core import body_deadline
+
 
 def origin(url):
     parsed = urlsplit(url)
@@ -16,6 +18,12 @@ def origin(url):
 def validate_auth_settings(settings, shared_account=False):
     if not settings.csrf_secret.strip() or settings.csrf_secret == 'change-this-csrf-secret':
         raise RuntimeError('Configure a non-default CSRF_SECRET before starting the application')
+    if settings.processing_required and not settings.processing_url:
+        raise RuntimeError('An isolated processing service is required for this deployment')
+    if settings.processing_url and len(settings.processing_token) < 32:
+        raise RuntimeError('A PROCESSING_TOKEN of at least 32 characters is required')
+    if settings.demo_data_dir is not None and settings.processing_url and (not settings.demo_processing_url or not settings.demo_processing_token or settings.demo_processing_url == settings.processing_url or settings.demo_processing_token == settings.processing_token or len(settings.demo_processing_token) < 32):
+        raise RuntimeError('Shared accounts require independent processing services and tokens')
     own = origin(settings.base_url)
     if settings.demo_mode and not shared_account:
         if not settings.private_base_url or origin(settings.private_base_url)[1] == own[1]:
@@ -69,6 +77,7 @@ class AuthBoundaryMiddleware:
                 if length is not None and (int(length) < 0 or int(length) > limit):
                     raise HTTPException(413, 'Authentication request is too large')
                 body = bytearray()
+                receive = body_deadline.deadline_receive(receive, body_deadline.AUTH_BODY_SECONDS)
                 while True:
                     message = await receive()
                     if message['type'] == 'http.disconnect':

@@ -13,6 +13,7 @@ from app.models.resume import TailoredResume
 from app.services.docx_generator import generate_docx
 from app.services.pdf_generator import PDFGenerator
 from app.services.profile_photo import ProfilePhotoStore
+from app.services.resource_budget import ResourceBudget
 from app.services.storage import Storage
 
 
@@ -34,6 +35,7 @@ def quick_photo_app(tmp_path, profile, resume_payload, monkeypatch):
     app = FastAPI()
     app.include_router(web_routes.router)
     storage = Storage(tmp_path / "data")
+    app.state.resource_budget = ResourceBudget(storage.data_dir)
     store = ProfilePhotoStore(tmp_path / "data" / "profile_photo")
     from starlette.templating import Jinja2Templates
 

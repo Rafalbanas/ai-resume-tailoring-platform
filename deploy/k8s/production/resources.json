@@ -67,7 +67,10 @@
         "CVTAILOR_PORT": "18000",
         "PYTHONPATH": "/app",
         "DEMO_DATA_DIR": "/app/demo-data",
-        "DEMO_CSRF_SECRET_FILE": "/run/cvtailor-demo/csrf-secret"
+        "DEMO_CSRF_SECRET_FILE": "/run/cvtailor-demo/csrf-secret",
+        "PROCESSING_REQUIRED": "true",
+        "PROCESSING_URL": "http://cvtailor-processing-owner:8080",
+        "DEMO_PROCESSING_URL": "http://cvtailor-processing-demo:8080"
       }
     },
     {
@@ -261,6 +264,26 @@
                     "name": "demo-secret",
                     "mountPath": "/run/cvtailor-demo",
                     "readOnly": true
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "PROCESSING_TOKEN",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "cvtailor-processing",
+                        "key": "owner"
+                      }
+                    }
+                  },
+                  {
+                    "name": "DEMO_PROCESSING_TOKEN",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "cvtailor-processing",
+                        "key": "demo"
+                      }
+                    }
                   }
                 ]
               }

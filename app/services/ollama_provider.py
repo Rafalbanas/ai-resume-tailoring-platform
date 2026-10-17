@@ -94,6 +94,7 @@ class OllamaProvider(AIProvider):
         _completion_budget: int | None = None,
         _schema: dict | None = None,
     ) -> ModelT:
+        from app.services.bounded_http import bounded_post, model_call
         schema = _schema or response_model.model_json_schema()
         if response_model is JobAnalysis and self.skills_bank:
             properties = schema["properties"]
@@ -173,14 +174,14 @@ class OllamaProvider(AIProvider):
         if self._run_metrics.get() is not None:
             self._run_metrics.get().append(metrics)
         try:
-            async with self.semaphore:
+            async with model_call(self), self.semaphore:
                 async with httpx.AsyncClient(
                     base_url=self.base_url,
                     timeout=self.timeout,
                     follow_redirects=False,
                     transport=self.transport,
                 ) as client:
-                    response = await client.post("/api/chat", json=request)
+                    response = await bounded_post(client, "/api/chat", json=request)
                     response.raise_for_status()
                     envelope = response.json()
         except httpx.TimeoutException as exc:
@@ -449,6 +450,7 @@ class OllamaProvider(AIProvider):
             self._run_metrics.reset(token)
 
     async def health(self) -> dict[str, str]:
+        from app.services.bounded_http import bounded_get
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
@@ -456,7 +458,7 @@ class OllamaProvider(AIProvider):
                 follow_redirects=False,
                 transport=self.transport,
             ) as client:
-                response = await client.get("/api/tags")
+                response = await bounded_get(client, "/api/tags")
                 response.raise_for_status()
                 data = response.json()
         except (httpx.HTTPError, ValueError) as exc:

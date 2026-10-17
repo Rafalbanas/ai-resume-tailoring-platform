@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 0
     llm_operation_budget_seconds: float = 720.0
+    processing_required: bool = False
+    processing_url: str = ""
+    processing_token: str = ""
+    demo_processing_url: str = ""
+    demo_processing_token: str = ""
+    max_pending_tasks: int = Field(default=4, ge=1, le=20)
+    ai_daily_call_limit: int = Field(default=300, ge=1, le=10000)
+    demo_ai_daily_call_limit: int = Field(default=60, ge=1, le=10000)
+    storage_quota_bytes: int = Field(default=536870912, ge=33554432)
+    demo_storage_quota_bytes: int = Field(default=134217728, ge=33554432)
     reference_cv_max_bytes: int = 10_000_000
     profile_photo_max_bytes: int = 10_000_000
     max_job_description_chars: int = 30_000

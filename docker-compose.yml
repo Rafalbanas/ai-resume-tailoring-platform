@@ -7,6 +7,14 @@ services:
     environment:
       APP_BUILD_SHA: ${APP_BUILD_SHA:-development}
       APP_BUILD_TIMESTAMP: ${APP_BUILD_TIMESTAMP:-unknown}
+      PROCESSING_REQUIRED: "true"
+      PROCESSING_URL: http://127.0.0.1:18002
+      PROCESSING_TOKEN: ${PROCESSING_TOKEN:?Set a random PROCESSING_TOKEN in .env}
+      DEMO_PROCESSING_URL: http://127.0.0.1:18003
+      DEMO_PROCESSING_TOKEN: ${DEMO_PROCESSING_TOKEN:-}
+    depends_on:
+      processor-owner:
+        condition: service_healthy
     # Linux VPS: host networking lets the container reach Ollama on host loopback.
     # Uvicorn remains bound to loopback, so the configured port is not exposed publicly.
     network_mode: host
@@ -17,3 +25,52 @@ services:
       - ./data:/app/data
     security_opt:
       - no-new-privileges:true
+
+  processor-owner:
+    build: .
+    restart: unless-stopped
+    entrypoint: []
+    command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
+    user: "10001:10001"
+    environment:
+      PROCESSING_TOKEN: ${PROCESSING_TOKEN:?Set a random PROCESSING_TOKEN in .env}
+      HOME: /tmp
+      PROCESSING_CONTAINER_ISOLATED: "1"
+    ports: ["127.0.0.1:18002:8080"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  processor-demo:
+    profiles: [demo]
+    build: .
+    restart: unless-stopped
+    entrypoint: []
+    command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
+    user: "10001:10001"
+    environment:
+      PROCESSING_TOKEN: ${DEMO_PROCESSING_TOKEN:-}
+      HOME: /tmp
+      PROCESSING_CONTAINER_ISOLATED: "1"
+    ports: ["127.0.0.1:18003:8080"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6

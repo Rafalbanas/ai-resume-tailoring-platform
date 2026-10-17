@@ -27,7 +27,7 @@ def add_link(paragraph, text: str, target: str) -> None:
     paragraph._p.append(link)
 
 
-def generate_docx(
+def _generate_docx_local(
     resume: TailoredResume,
     profile: CandidateProfile,
     output: Path,
@@ -150,3 +150,14 @@ def generate_docx(
     for run in consent.runs:
         run.font.size = Pt(9)
     document.save(output)
+
+
+def generate_docx(resume, profile, output, *, photo_path=None, photo_enabled=None, template_name="modern_sidebar"):
+    contacts(profile)
+    from app.services.processing import decoded, encoded, process
+    if photo_path and photo_path.with_name('current.jpg').is_file():
+        photo_path = photo_path.with_name('current.jpg')
+    photo = encoded(photo_path.read_bytes()) if photo_path and photo_path.is_file() and photo_path.stat().st_size <= 10_000_000 else ''
+    result = process('docx', {'resume': resume.model_dump(mode='json'), 'profile': profile.model_dump(mode='json'),
+        'photo': photo, 'options': {'photo_enabled': photo_enabled, 'template_name': template_name}})
+    output.write_bytes(decoded(result))
