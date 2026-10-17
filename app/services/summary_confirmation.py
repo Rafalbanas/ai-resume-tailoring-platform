@@ -1,12 +1,18 @@
 """A model verdict and the account user's confirmation are distinct decisions."""
 import hashlib
 import hmac
+import json
 import secrets
 
 from fastapi import HTTPException
 
 from app.services.fact_catalog import FactCatalog
 from app.services.summary_review import sign_summary, valid_source_summary, valid_summary_attestation
+
+
+def account_context(username, kind, identity):
+    # Do not rely on operators choosing distinct CSRF secrets for every account.
+    return json.dumps([username, kind, identity], separators=(',', ':'))
 
 
 def confirmation_token(resume, profile, key, context):

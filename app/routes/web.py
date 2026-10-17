@@ -26,7 +26,7 @@ from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 from app.services.resume_export import prepare_resume
 from app.services.storage import compute_pre_fit_diff
-from app.services.summary_confirmation import confirmation_token, require_confirmation, summary_review
+from app.services.summary_confirmation import account_context, confirmation_token, require_confirmation, summary_review
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 from app.services.ui_language import ui_text
 
@@ -309,7 +309,8 @@ async def analysis_view(request: Request, draft_id: str):
         raise HTTPException(status_code=404, detail="Draft not found") from exc
     checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis,
         review_key=request.app.state.settings.csrf_secret).validate(response.resume, job).resume
-    review = summary_review(checked, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
+    review = summary_review(checked, request.app.state.profile, request.app.state.settings.csrf_secret,
+        account_context(request.app.state.auth_store.username, 'draft', draft_id))
     return request.app.state.templates.TemplateResponse(
         request=request, name="analysis.html",
         context=context(
@@ -372,7 +373,8 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     started = time.perf_counter()
     validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
     result = validator.validate(response.resume, job)
-    review = summary_review(result.resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
+    review = summary_review(result.resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+        account_context(request.app.state.auth_store.username, 'draft', draft_id))
     require_confirmation(review, summary_confirmed, summary_token)
     try:
         prepare_resume(result.resume, request.app.state.profile)
@@ -388,7 +390,8 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings = result.warnings
-    final_review = summary_review(fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
+    final_review = summary_review(fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+        account_context(request.app.state.auth_store.username, 'draft', draft_id))
     require_confirmation(final_review, summary_confirmed, summary_token)
     photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
@@ -427,7 +430,8 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     request.app.state.storage.mark_export_checked(slug)
     if final_review['required']:
         request.app.state.storage.confirm_summary(slug, confirmation_token(
-            fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'saved:' + slug))
+            fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+            account_context(request.app.state.auth_store.username, 'saved', slug)))
     logger.info(
         "Resume generated",
         extra={
@@ -466,7 +470,7 @@ async def preview(request: Request, slug: str):
             photo_available=request.app.state.profile_photo.exists(),
             pre_fit_diff=pre_fit_diff,
             summary_review=summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
-                'saved:' + slug, metadata.get('summary_confirmation', '')),
+                account_context(request.app.state.auth_store.username, 'saved', slug), metadata.get('summary_confirmation', '')),
         ),
     )
 
@@ -1100,7 +1104,8 @@ async def confirm_saved_summary(request: Request, slug: str,
         _, resume, _, _ = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, ValueError) as exc:
         raise HTTPException(404, 'Resume not found') from exc
-    review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'saved:' + slug)
+    review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+        account_context(request.app.state.auth_store.username, 'saved', slug))
     require_confirmation(review, summary_confirmed, summary_token)
     request.app.state.storage.confirm_summary(slug, review['token'])
     return RedirectResponse(f'/preview/{slug}', status_code=303)
@@ -1118,7 +1123,7 @@ async def download(request: Request, slug: str, kind: str):
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
     review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
-        'saved:' + slug, metadata.get('summary_confirmation', ''))
+        account_context(request.app.state.auth_store.username, 'saved', slug), metadata.get('summary_confirmation', ''))
     if review['required'] and 'text/html' in request.headers.get('accept', ''):
         return RedirectResponse(f'/preview/{slug}#summary-review', status_code=303)
     require_confirmation(review, '', '')

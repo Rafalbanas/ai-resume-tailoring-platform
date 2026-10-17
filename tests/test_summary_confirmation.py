@@ -17,7 +17,7 @@ from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.fact_validator import FactValidator
 from app.services.gemini_provider import GeminiProvider
 from app.services.ollama_provider import OllamaProvider
-from app.services.summary_confirmation import confirmation_token, summary_review
+from app.services.summary_confirmation import account_context, confirmation_token, summary_review
 from app.services.summary_review import sign_summary, valid_summary_attestation
 
 ATTACKS = [
@@ -157,9 +157,10 @@ async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidat
 @pytest.mark.parametrize('change', ['text', 'sources', 'profile', 'account', 'document'])
 def test_confirmation_binds_text_sources_profile_account_and_document(profile, resume_payload, change):
     resume = TailoredResume.model_validate(resume_payload)
-    receipt = confirmation_token(resume, profile, 'owner-secret', 'saved:first')
-    assert not summary_review(resume, profile, 'owner-secret', 'saved:first', receipt)['required']
-    key, context = 'owner-secret', 'saved:first'
+    context = account_context('owner', 'saved', 'first')
+    receipt = confirmation_token(resume, profile, 'shared-secret', context)
+    assert not summary_review(resume, profile, 'shared-secret', context, receipt)['required']
+    key = 'shared-secret'
     if change == 'text':
         resume.professional_summary += ' Changed.'
     elif change == 'sources':
@@ -167,9 +168,9 @@ def test_confirmation_binds_text_sources_profile_account_and_document(profile, r
     elif change == 'profile':
         profile.summary_facts.append('Changed professional facts.')
     elif change == 'account':
-        key = 'demo-secret'
+        context = account_context('demo', 'saved', 'first')
     else:
-        context = 'saved:second'
+        context = account_context('owner', 'saved', 'second')
     assert summary_review(resume, profile, key, context, receipt)['required']
 
 
@@ -186,7 +187,8 @@ async def test_legacy_download_requires_confirmation_with_csrf_and_no_model_call
         slug, folder = app.state.storage.save_application(job, analysis(), resume, [])
         (folder / 'resume.pdf').write_bytes(b'%PDF-synthetic-legacy-artifact')
         assert (await client.get(f'/download/{slug}/pdf')).status_code == 409
-        receipt = confirmation_token(resume, app.state.profile, app.state.settings.csrf_secret, 'saved:' + slug)
+        receipt = confirmation_token(resume, app.state.profile, app.state.settings.csrf_secret,
+            account_context(app.state.auth_store.username, 'saved', slug))
         path = f'/preview/{slug}/summary/confirm'
         assert (await client.post(path, data={'summary_confirmed': 'on', 'summary_token': receipt})).status_code == 403
         assert (await client.post(path, data=csrf(client) | {'summary_token': receipt})).status_code == 409
