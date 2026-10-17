@@ -21,11 +21,11 @@ The web process admits requests and selects the authenticated account. PDF/DOCX 
 | Durable AI request budget | 300 owner / 60 demo calls per UTC day, including retries and semantic review; does not reset on restart |
 | AI response | 2 MiB uncompressed; compressed responses rejected; Gemini output capped at 8192 tokens; total exchange limited by the configured read timeout (300 seconds if disabled) |
 | Task admission | 4 queued/running tasks per account, checked under a cross-process file lock |
-| Task retention | Latest 100 task records; active work is never pruned |
+| Task retention | Automatic cleanup disabled by default (`AUTO_DELETE_HISTORY=false`); opt-in retains the latest 100 task records and never prunes active work |
 | Account storage | 512 MiB owner / 128 MiB demo admission quota; 64 MiB reserved for bounded in-flight output; 10,000 file/directory entries |
 | Preview cache | 2 entries per account, up to 8 MiB each, keyed by the resume, profile, layout and photo |
 
-`MAX_PENDING_TASKS`, `AI_DAILY_CALL_LIMIT`, `DEMO_AI_DAILY_CALL_LIMIT`, `STORAGE_QUOTA_BYTES` and `DEMO_STORAGE_QUOTA_BYTES` configure account budgets. The daily request budget is not a currency meter; provider pricing and hidden work in an operator-modified n8n workflow remain outside this application. No generated CV is automatically deleted. Old task records and orphan analysis drafts associated with pruned tasks are removed; drafts linked to saved CVs remain. Cleanup and logout work even when storage admission is exhausted.
+`MAX_PENDING_TASKS`, `AI_DAILY_CALL_LIMIT`, `DEMO_AI_DAILY_CALL_LIMIT`, `STORAGE_QUOTA_BYTES` and `DEMO_STORAGE_QUOTA_BYTES` configure account budgets. The daily request budget is not a currency meter; provider pricing and hidden work in an operator-modified n8n workflow remain outside this application. No generated CV is automatically deleted. Task records and analysis drafts have no automatic expiry by default. Setting `AUTO_DELETE_HISTORY=true` enables cleanup when admitting a new task: old completed task records and their unsaved analysis drafts are removed to keep 100 task records. Drafts linked to saved CVs remain. This setting applies to both shared accounts and does not delete generated CV history. Disabling it stops future cleanup; it does not restore files previously deleted. Cleanup and logout work even when storage admission is exhausted.
 
 The storage quota is an admission limit with bounded output headroom, not a filesystem quota. Existing data over the quota stays intact and may be downloaded or deleted. Snapshots and backups outside the account directory are managed by deployment operations.
 

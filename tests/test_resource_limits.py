@@ -242,8 +242,9 @@ def test_queue_limit_cannot_be_bypassed_by_a_second_manager(tmp_path):
     assert len(list(manager.tasks_dir.glob('*.json'))) == 2
 
 
-def test_task_retention_preserves_live_work_and_saved_cv_drafts(tmp_path):
-    manager = TaskManager(tmp_path)
+@pytest.mark.parametrize('cleanup', [False, True])
+def test_task_retention_preserves_live_work_and_saved_cv_drafts(tmp_path, cleanup):
+    manager = TaskManager(tmp_path, auto_delete_history=True) if cleanup else TaskManager(tmp_path)
     (tmp_path / '.drafts').mkdir()
     folder = tmp_path / 'generated' / 'saved'
     folder.mkdir(parents=True)
@@ -259,10 +260,30 @@ def test_task_retention_preserves_live_work_and_saved_cv_drafts(tmp_path):
         task.result = {'draft_id': linked if index == 0 else orphan if index == 1 else ''}
         manager._save_task(task)
     new = manager.create_task(TaskKind.TAILOR, {}, 'active')
-    assert len(list(manager.tasks_dir.glob('*.json'))) == 100
+    assert len(list(manager.tasks_dir.glob('*.json'))) == (100 if cleanup else 103)
     assert manager.get_task(new.task_id).status == TaskStatus.QUEUED
     assert (tmp_path / '.drafts' / (linked + '.json')).exists()
-    assert not (tmp_path / '.drafts' / (orphan + '.json')).exists()
+    assert (tmp_path / '.drafts' / (orphan + '.json')).exists() is (not cleanup)
+    assert json.loads((folder / 'metadata.json').read_text()) == {'draft_id': linked}
+
+
+def test_history_cleanup_is_disabled_by_default_and_can_be_enabled(monkeypatch):
+    from app.core.config import Settings
+    monkeypatch.delenv('AUTO_DELETE_HISTORY', raising=False)
+    assert Settings(_env_file=None).auto_delete_history is False
+    monkeypatch.setenv('AUTO_DELETE_HISTORY', 'true')
+    assert Settings(_env_file=None).auto_delete_history is True
+    monkeypatch.setenv('AUTO_DELETE_HISTORY', 'false')
+    assert Settings(_env_file=None).auto_delete_history is False
+
+
+@pytest.mark.parametrize('cleanup', [False, True])
+async def test_history_cleanup_setting_reaches_account_runtime(cleanup):
+    from app.main import get_settings
+    settings = get_settings().model_copy(update={'auto_delete_history': cleanup})
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        assert app.state.task_manager.auto_delete_history is cleanup
 
 
 async def login(client):

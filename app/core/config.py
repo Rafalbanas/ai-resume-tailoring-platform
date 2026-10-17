@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     processing_token: str = ""
     demo_processing_url: str = ""
     demo_processing_token: str = ""
+    auto_delete_history: bool = False
     max_pending_tasks: int = Field(default=4, ge=1, le=20)
     ai_daily_call_limit: int = Field(default=300, ge=1, le=10000)
     demo_ai_daily_call_limit: int = Field(default=60, ge=1, le=10000)
