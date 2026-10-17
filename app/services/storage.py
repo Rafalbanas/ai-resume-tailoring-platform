@@ -1,6 +1,8 @@
 import json
+import os
 import re
 import shutil
+import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,6 +112,20 @@ class Storage:
         metadata = json.loads(path.read_text())
         metadata['document_status'] = 'layout_and_exports_checked'
         path.write_text(json.dumps(metadata, indent=2))
+
+    def confirm_summary(self, slug: str, token: str) -> None:
+        folder = self.application_folder(slug)
+        path = folder / 'metadata.json'
+        metadata = json.loads(path.read_text())
+        metadata['summary_confirmation'] = token
+        metadata['summary_confirmed_at'] = datetime.now(timezone.utc).isoformat()
+        fd, temporary = tempfile.mkstemp(dir=folder, prefix='.summary-confirmation-')
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(metadata, stream, indent=2)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
     def application_folder(self, slug: str) -> Path:
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,240}", slug):

@@ -1,0 +1,17 @@
+<section class="card" id="summary-review" aria-labelledby="summary-review-title">
+  <h2 id="summary-review-title">Professional summary review</h2>
+  <p>{% if summary_review.confirmed %}Confirmed by you for this summary and profile.
+    {% elif summary_review.source_text %}Built from profile facts.
+    {% elif summary_review.model_reviewed %}Reviewed by AI. Your confirmation is still required.
+    {% else %}Your confirmation is required.{% endif %}</p>
+  <blockquote>{{ summary_review.text }}</blockquote>
+  <details{% if summary_review.required %} open{% endif %}><summary>Source facts</summary>
+    <ul>{% for source in summary_review.sources %}<li>{{ source.text }}{% if source.owner_name %} <small>— {{ source.owner_name }}</small>{% endif %}</li>
+      {% else %}<li>No valid source citations. Check your profile before confirming.</li>{% endfor %}</ul>
+  </details>
+  {% if summary_review.required %}
+  <p>Check experience, dates, skill levels and limitations against your profile. AI review does not guarantee accuracy.</p>
+  <input type="hidden" name="summary_token" value="{{ summary_review.token }}">
+  <label class="toggle-label"><input type="checkbox" name="summary_confirmed" required> I reviewed this summary and confirm that its claims are accurate.</label>
+  {% endif %}
+</section>

@@ -26,6 +26,7 @@ from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 from app.services.resume_export import prepare_resume
 from app.services.storage import compute_pre_fit_diff
+from app.services.summary_confirmation import confirmation_token, require_confirmation, summary_review
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 from app.services.ui_language import ui_text
 
@@ -306,6 +307,9 @@ async def analysis_view(request: Request, draft_id: str):
         job, response = request.app.state.storage.load_draft(draft_id)
     except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=404, detail="Draft not found") from exc
+    checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis,
+        review_key=request.app.state.settings.csrf_secret).validate(response.resume, job).resume
+    review = summary_review(checked, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
     return request.app.state.templates.TemplateResponse(
         request=request, name="analysis.html",
         context=context(
@@ -315,6 +319,7 @@ async def analysis_view(request: Request, draft_id: str):
             token_usage=response.token_usage,
             evidence_questions=evidence_questions(response.analysis),
             draft_id=draft_id,
+            summary_review=review,
             provider_used=getattr(response, "provider_used", "unknown"),
             model_used=getattr(response, "model_used", "unknown"),
             fallback_used=getattr(response, "fallback_used", False),
@@ -353,7 +358,8 @@ async def save_analysis_evidence(request: Request, draft_id: str):
 
 @router.post("/generate/{draft_id}")
 async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()],
-                   template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic"):
+                   template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic",
+                   summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = ''):
     guard(request)
     limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
@@ -366,6 +372,8 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     started = time.perf_counter()
     validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
     result = validator.validate(response.resume, job)
+    review = summary_review(result.resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
+    require_confirmation(review, summary_confirmed, summary_token)
     try:
         prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:
@@ -380,6 +388,8 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings = result.warnings
+    final_review = summary_review(fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'draft:' + draft_id)
+    require_confirmation(final_review, summary_confirmed, summary_token)
     photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
     slug, folder = request.app.state.storage.save_application(
         job,
@@ -415,6 +425,9 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         template_name=template_name,
     )
     request.app.state.storage.mark_export_checked(slug)
+    if final_review['required']:
+        request.app.state.storage.confirm_summary(slug, confirmation_token(
+            fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'saved:' + slug))
     logger.info(
         "Resume generated",
         extra={
@@ -452,6 +465,8 @@ async def preview(request: Request, slug: str):
             resume_html=resume_html,
             photo_available=request.app.state.profile_photo.exists(),
             pre_fit_diff=pre_fit_diff,
+            summary_review=summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+                'saved:' + slug, metadata.get('summary_confirmation', '')),
         ),
     )
 
@@ -1077,6 +1092,20 @@ async def change_password(
     return request.app.state.templates.TemplateResponse(request=request, name="password_changed.html", context=context(request))
 
 
+@router.post('/preview/{slug}/summary/confirm')
+async def confirm_saved_summary(request: Request, slug: str,
+                                summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = ''):
+    guard(request)
+    try:
+        _, resume, _, _ = request.app.state.storage.load_application(slug)
+    except (OSError, ValidationError, ValueError) as exc:
+        raise HTTPException(404, 'Resume not found') from exc
+    review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret, 'saved:' + slug)
+    require_confirmation(review, summary_confirmed, summary_token)
+    request.app.state.storage.confirm_summary(slug, review['token'])
+    return RedirectResponse(f'/preview/{slug}', status_code=303)
+
+
 @router.get("/download/{slug}/{kind}")
 async def download(request: Request, slug: str, kind: str):
     guard(request)
@@ -1085,8 +1114,14 @@ async def download(request: Request, slug: str, kind: str):
         raise HTTPException(status_code=404)
     try:
         path = request.app.state.storage.artifact(slug, filename)
-    except FileNotFoundError as exc:
+        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+    except (OSError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
+    review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
+        'saved:' + slug, metadata.get('summary_confirmation', ''))
+    if review['required'] and 'text/html' in request.headers.get('accept', ''):
+        return RedirectResponse(f'/preview/{slug}#summary-review', status_code=303)
+    require_confirmation(review, '', '')
     media_type = (
         "application/pdf"
         if kind == "pdf"

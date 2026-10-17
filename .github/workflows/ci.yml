@@ -14,6 +14,8 @@ jobs:
           python-version: "3.14"
           cache: pip
       - run: pip install -r requirements-dev.txt
+      - name: Verify pinned environment
+        run: python scripts/check_environment.py --dev && python -m pip check
       - name: Install Chromium for layout regression tests
         run: python -m playwright install --with-deps chromium
       - name: Install native document and sandbox dependencies used by the image
@@ -40,8 +42,10 @@ jobs:
           from docx import Document
           from playwright.sync_api import sync_playwright
           from weasyprint import HTML
+          from scripts.check_environment import check
 
           assert sys.version_info[:2] == (3, 14), sys.version
+          assert not check(), check()
           assert app is not None
           assert process('check', {}, timeout=10) == {'protocol': 1, 'network_blocked': True}
           pdf = HTML(string="<p>CV Tailor image check</p>").write_pdf()

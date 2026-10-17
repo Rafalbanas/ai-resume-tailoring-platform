@@ -157,7 +157,7 @@ class FactValidator:
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
         from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues, unfinished
-        from app.services.summary_review import sign_summary, valid_summary_attestation
+        from app.services.summary_review import sign_source_summary, sign_summary, valid_summary_attestation
         reviewed = valid_summary_attestation(draft, self.profile, self.review_key)
         if reviewed:
             model_ids = [e.source_id for e in summary_entries]
@@ -174,6 +174,11 @@ class FactValidator:
         draft.professional_summary = deduplicate_text(draft.professional_summary)
         if reviewed:
             draft.summary_attestation = sign_summary(draft, self.profile, self.review_key)
+        elif self.review_key:
+            # Only the deterministic path reaches here without a model approval:
+            # exact source text or the source-sentence builder above. Preserve
+            # its provenance separately from a semantic model verdict.
+            draft.summary_attestation = sign_source_summary(draft, self.profile, self.review_key)
         clean_experience: list[ResumeExperience] = []
         for exp in draft.experience:
             bullets = []
