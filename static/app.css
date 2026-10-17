@@ -520,3 +520,4 @@ ins {
 .preview-head>.actions .button,.preview-head>.actions button{white-space:normal;text-align:center}
 .requirement-components{display:grid;gap:.5rem;margin:.6rem 0;padding-left:1.2rem}
 @media(max-width:760px){.review-statuses{width:100%}.preview-head>.actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.account-label{max-width:12rem;overflow-wrap:anywhere;font-size:.85rem;color:#d9e4ec}

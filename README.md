@@ -124,8 +124,9 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 
 ### 8. Security & Privacy
 - **SSRF Defense**: IP address validation, IP pinning, DNS rebinding mitigation, RFC 1918/3927 blocking, and strict redirect limits.
-- **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), fixed-window login rate limiting (5 attempts per 5 minutes per IP), and server-revocable SQLite sessions (`data/sessions.sqlite3`).
-- **CSRF & Cookie Protection**: Double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
+- **Authentication**: Argon2id password hashing in `data/auth.json` (file mode `0600`), SQLite-backed login rate limiting shared by workers (5 attempts per 5 minutes per IP, 100 per instance), and server-revocable SQLite sessions (`data/sessions.sqlite3`).
+- **CSRF & Cookie Protection**: Browser-session-bound double-submit CSRF token validation and signed cookies (`HttpOnly`, `SameSite=Strict`, `Secure` under HTTPS).
+- **Shared login**: Private and demo credentials can use the same `/login`, with server-side session checks routing every request to its isolated runtime and data directory. [Setup and migration](docs/recording-demo.md).
 - **Diagnostics & History**: `/diagnostics` dashboard for health metrics, active model status, and build metadata; `/compare` view for side-by-side CV comparison; atomic file staging and version backups under `data/generated/`.
 
 ---
@@ -245,7 +246,7 @@ ai-resume-tailoring-platform/
 │   └── sync_readme.py             # Automatic synchronization of README versions & test counts
 ├── static/                        # CSS stylesheets, JavaScript helpers, and favicon
 ├── templates/                     # Jinja2 HTML templates for mobile-first web interface
-└── tests/                         # Comprehensive automated test suite (538 tests)
+└── tests/                         # Comprehensive automated test suite (665 tests)
 ```
 
 ---
@@ -336,8 +337,10 @@ All configurable environment variables correspond to `.env.example`:
 |---|---|---|
 | `APP_USERNAME` | — | Initial username for first-run credential bootstrap |
 | `APP_PASSWORD` | — | Initial password for first-run bootstrap (migrated to Argon2id hash in `data/auth.json`) |
-| `CSRF_SECRET` | — | Secret key used for signing double-submit CSRF tokens and summary attestations |
+| `CSRF_SECRET` | — | Required non-default secret for browser-bound CSRF tokens, instance-scoped sessions and summary attestations |
 | `BASE_URL` | `https://cv.example.com` | Public base URL; enables `Secure` flag on cookies when using HTTPS |
+| `DEMO_DATA_DIR` | unset | Optional separate demo account directory served at the same `/login` |
+| `DEMO_CSRF_SECRET_FILE` | demo `csrf.secret` | Independent demo signing secret file |
 | `DATA_DIR` | `/app/data` (Docker) or `data` | Directory for master profile, skills bank, auth, and generated resumes |
 | `CV_TAILOR_PORT` | `8000` | Loopback port bound by Uvicorn under Docker host networking |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Maximum requests per minute per IP for mutating endpoints |
@@ -434,7 +437,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (538 tests)
+# Run complete test suite (665 tests)
 pytest -q
 ```
 

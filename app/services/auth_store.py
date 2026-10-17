@@ -1,9 +1,11 @@
+import fcntl
 import hashlib
 import json
 import os
 import secrets
 import tempfile
 import threading
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,9 +36,30 @@ class AuthStore:
         self.initial_password = initial_password
         self.hasher = PasswordHasher()
         self._lock = threading.RLock()
+        self._local = threading.local()
+
+    @contextmanager
+    def _locked(self):
+        # Atomic replacement of auth.json needs a stable lock file across processes.
+        with self._lock:
+            if getattr(self._local, "locked", False):
+                yield
+                return
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(self.path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                if os.geteuid() == 0:
+                    owner = (self.path if self.path.exists() else self.path.parent).stat()
+                    os.fchown(fd, owner.st_uid, owner.st_gid)
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                self._local.locked = True
+                yield
+            finally:
+                self._local.locked = False
+                os.close(fd)
 
     def initialize(self) -> None:
-        with self._lock:
+        with self._locked():
             if self.path.exists():
                 self._load()
                 os.chmod(self.path, 0o600)
@@ -55,19 +78,26 @@ class AuthStore:
         return self._load()["username"]
 
     def verify(self, username: str, password: str) -> bool:
-        with self._lock:
+        return self.verify_with_version(username, password) is not None
+
+    def verify_with_version(self, username: str, password: str) -> str | None:
+        if len(username) > 150 or len(password) > MAX_PASSWORD_LENGTH:
+            return None
+        with self._locked():
             record = self._load()
+            version = self.credential_version
             try:
                 password_valid = self.hasher.verify(record["password_hash"], password)
             except (VerifyMismatchError, VerificationError, InvalidHashError):
                 password_valid = False
-            username_valid = secrets.compare_digest(username, record["username"])
+            username_valid = secrets.compare_digest(username.encode("utf-8"), record["username"].encode("utf-8"))
             if password_valid and username_valid and self.hasher.check_needs_rehash(record["password_hash"]):
                 self._write(record["username"], self.hasher.hash(password))
-            return password_valid and username_valid
+                version = self.credential_version
+            return version if password_valid and username_valid else None
 
     def change_password(self, current_password: str, new_password: str) -> bool:
-        with self._lock:
+        with self._locked():
             record = self._load()
             if not self.verify(record["username"], current_password):
                 return False
@@ -76,7 +106,7 @@ class AuthStore:
 
     def reset_password(self, new_password: str) -> None:
         validate_password(new_password)
-        with self._lock:
+        with self._locked():
             record = self._load()
             self._write(record["username"], self.hasher.hash(new_password))
 

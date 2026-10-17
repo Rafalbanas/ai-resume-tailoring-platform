@@ -31,7 +31,7 @@
         "APP_ROOT_PATH": "",
         "DEMO_MODE": "false",
         "SESSION_TTL_SECONDS": "28800",
-        "BASE_URL": "http://localhost:8000",
+        "BASE_URL": "https://cv.banas.dev",
         "APP_BUILD_SHA": "4ab82e71cb7a00a04114fbb49eb0f18536f61841",
         "APP_BUILD_TIMESTAMP": "2026-10-15T10:20:18Z",
         "DATA_DIR": "/app/data",
@@ -65,7 +65,9 @@
         "JOB_FETCH_MAX_REDIRECTS": "3",
         "JOB_FETCH_PLAYWRIGHT_ENABLED": "true",
         "CVTAILOR_PORT": "18000",
-        "PYTHONPATH": "/app"
+        "PYTHONPATH": "/app",
+        "DEMO_DATA_DIR": "/app/demo-data",
+        "DEMO_CSRF_SECRET_FILE": "/run/cvtailor-demo/csrf-secret"
       }
     },
     {
@@ -203,12 +205,12 @@
                 },
                 "resources": {
                   "requests": {
-                    "cpu": "100m",
-                    "memory": "256Mi"
+                    "cpu": "200m",
+                    "memory": "448Mi"
                   },
                   "limits": {
-                    "cpu": "1",
-                    "memory": "1Gi"
+                    "cpu": "2",
+                    "memory": "1792Mi"
                   }
                 },
                 "startupProbe": {
@@ -250,6 +252,15 @@
                     "name": "runtime",
                     "mountPath": "/opt/cvtailor",
                     "readOnly": true
+                  },
+                  {
+                    "name": "demo-data",
+                    "mountPath": "/app/demo-data"
+                  },
+                  {
+                    "name": "demo-secret",
+                    "mountPath": "/run/cvtailor-demo",
+                    "readOnly": true
                   }
                 ]
               }
@@ -266,6 +277,24 @@
                 "configMap": {
                   "name": "cvtailor-runtime-code"
                 }
+              },
+              {
+                "name": "demo-data",
+                "persistentVolumeClaim": {
+                  "claimName": "cvtailor-demo-data"
+                }
+              },
+              {
+                "name": "demo-secret",
+                "secret": {
+                  "secretName": "cvtailor-demo-runtime",
+                  "items": [
+                    {
+                      "key": "CSRF_SECRET",
+                      "path": "csrf-secret"
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -280,10 +309,10 @@
         "namespace": "cvtailor-prod"
       },
       "data": {
-        "APP_ROOT_PATH": "/demo",
+        "APP_ROOT_PATH": "",
         "DEMO_MODE": "true",
         "SESSION_TTL_SECONDS": "28800",
-        "BASE_URL": "https://cv.banas.dev/demo",
+        "BASE_URL": "https://cv.banas.dev",
         "APP_BUILD_SHA": "development",
         "APP_BUILD_TIMESTAMP": "unknown",
         "DATA_DIR": "/app/data",
@@ -386,7 +415,7 @@
         "namespace": "cvtailor-prod"
       },
       "spec": {
-        "replicas": 1,
+        "replicas": 0,
         "strategy": {
           "type": "Recreate"
         },

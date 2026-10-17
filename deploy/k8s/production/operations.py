@@ -147,9 +147,11 @@ def monitor():
     old = json.loads(old_file.read_text()) if old_file.exists() else {}
     pods = kubernetes('get', 'pods', '-o', 'json')['items']
     restarts = {}
+    deployments = kubernetes('get', 'deployments', '-o', 'json')['items']
+    desired = {item['metadata']['name']: item['spec'].get('replicas', 1) for item in deployments}
     for app in ['cvtailor', 'cvtailor-demo']:
         active = [pod for pod in pods if pod['metadata'].get('labels', {}).get('app') == app and not pod['metadata'].get('deletionTimestamp')]
-        if len(active) != 1 or not all(any(c['type'] == 'Ready' and c['status'] == 'True' for c in pod['status'].get('conditions', [])) for pod in active):
+        if len(active) != desired.get(app, 1) or not all(any(c['type'] == 'Ready' and c['status'] == 'True' for c in pod['status'].get('conditions', [])) for pod in active):
             issues.append(app + ': pod not ready')
         for pod in active:
             for container in pod['status'].get('containerStatuses', []):
@@ -176,7 +178,7 @@ def monitor():
         space = shutil.disk_usage(path)
         if space.free / space.total < 0.15:
             issues.append('Disk free below 15%: ' + path)
-    for path in ['/health', '/demo/health']:
+    for path in ['/health']:
         try:
             with urllib.request.urlopen('https://cv.banas.dev' + path, timeout=15) as response:
                 assert response.status == 200

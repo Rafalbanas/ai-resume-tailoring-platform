@@ -52,7 +52,7 @@ def drain(timeout=900):
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Inflight requests did not finish; deployment refused') from None
                 time.sleep(1)
-        while any(json.loads(path.read_text()).get('status') in {'queued', 'running'} for path in (DATA / 'tasks').glob('*.json')):
+        while any(json.loads(path.read_text()).get('status') in {'queued', 'running'} for directory in (DATA, DATA.parent / 'demo') for path in (directory / 'tasks').glob('*.json')):
             if time.monotonic() >= deadline:
                 raise TimeoutError('Active analyses did not finish; deployment refused')
             time.sleep(2)

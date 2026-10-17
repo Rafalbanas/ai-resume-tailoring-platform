@@ -62,21 +62,14 @@ def run():
     import app.core.config as config
     from app.core.config import Settings
     settings = Settings()
-    settings.data_dir = DEMO
-    settings.app_username = settings.app_password = None
-    settings.demo_mode = True
-    settings.profile_mode = 'sample'
-    settings.app_root_path = '/demo'
-    settings.base_url = 'https://cv.banas.dev/demo'
-    settings.csrf_secret = (DEMO / 'csrf.secret').read_text()
-    settings.llm_provider = 'ollama'
-    settings.llm_fallback_provider = 'gemini'
+    settings.demo_data_dir = DEMO
+    settings.demo_csrf_secret_file = DEMO / 'csrf.secret'
     config.get_settings = lambda: settings
     import app.main
     app.main.get_settings = lambda: settings
     import uvicorn
     (DEMO / "server.pid").write_text(str(os.getpid()))
-    uvicorn.run(app.main.app, host='127.0.0.1', port=18001, root_path=settings.app_root_path,
+    uvicorn.run(app.main.app, host='127.0.0.1', port=int(os.environ.get('CV_TAILOR_PORT', '8000')), root_path=settings.app_root_path,
                 proxy_headers=True, forwarded_allow_ips='127.0.0.1')
 
 

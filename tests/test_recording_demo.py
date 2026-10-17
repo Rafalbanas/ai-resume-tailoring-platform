@@ -168,8 +168,9 @@ def test_demo_prefix_and_cookie_isolation(monkeypatch):
     settings = main_module.get_settings()
     settings.demo_mode = True
     settings.app_root_path = '/demo'
-    settings.base_url = 'https://cv.banas.dev/demo'
-    with TestClient(app, base_url='https://cv.banas.dev', root_path='/demo') as client:
+    settings.base_url = 'https://demo.cv.banas.dev/demo'
+    settings.private_base_url = 'https://cv.banas.dev'
+    with TestClient(app, base_url='https://demo.cv.banas.dev', root_path='/demo') as client:
         client.cookies.set('session', 'private-session')
         client.cookies.set('csrf_token', 'private-csrf')
         page = client.get('/demo/login')
@@ -187,7 +188,7 @@ def test_demo_prefix_and_cookie_isolation(monkeypatch):
         page = client.get('/demo/')
         assert page.status_code == 200 and 'action="/demo/logout"' in page.text
         assert 'Demo — fictional data' in page.text
-        assert client.post('/demo/logout', data={'csrf_token': token}, follow_redirects=False).headers['location'] == '/demo/login'
+        assert client.post('/demo/logout', data={'csrf_token': client.cookies.get('demo_csrf_token')}, follow_redirects=False).headers['location'] == '/demo/login'
         assert client.cookies.get('session') == 'private-session'
         assert client.cookies.get('csrf_token') == 'private-csrf'
         assert client.get('/demo/download/test/pdf', follow_redirects=False).status_code == 401

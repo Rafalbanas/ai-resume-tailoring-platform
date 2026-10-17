@@ -17,6 +17,7 @@ htmlcov/
 *.swp
 *password*.txt
 *credentials*.json
+data/auth.lock
 data/auth.json
 data/.auth-*.json
 data/master_profile.json

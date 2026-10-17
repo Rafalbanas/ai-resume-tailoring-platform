@@ -1,3 +1,8 @@
+document.addEventListener("submit", (event) => {
+  const message = event.target.dataset.confirm;
+  if (message && !window.confirm(message)) event.preventDefault();
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   const resumePreview = document.getElementById("resume-preview");
   const previewEnlarge = document.getElementById("preview-enlarge");
@@ -530,10 +535,8 @@ document.addEventListener("DOMContentLoaded", () => {
         window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
         return;
       }
-      const html = await res.text();
-      document.open();
-      document.write(html);
-      document.close();
+      // Native navigation gives validation pages their own CSP nonce.
+      form.submit();
     } catch (err) {
       form.submit();
     }
@@ -566,10 +569,8 @@ document.addEventListener("DOMContentLoaded", () => {
           window.location.href = cvAppUrl(data.view_url || `/tasks/${data.task_id}/view`);
           return;
         }
-        const html = await res.text();
-        document.open();
-        document.write(html);
-        document.close();
+        // Native navigation gives validation pages their own CSP nonce.
+        compareForm.submit();
       } catch (err) {
         compareForm.submit();
       }
