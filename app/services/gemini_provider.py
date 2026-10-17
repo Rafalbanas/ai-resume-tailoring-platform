@@ -155,11 +155,13 @@ class GeminiProvider(AIProvider):
         if not self.api_key:
             raise GeminiAuthError("Gemini API key is not configured. Set GEMINI_API_KEY in your environment.")
 
+        from app.services.bounded_http import bounded_post, model_call
         schema = response_model.model_json_schema()
         gemini_schema = to_gemini_schema(schema)
 
         generation_config: dict[str, Any] = {
             "temperature": 0.0,
+            "maxOutputTokens": 8192,
             "responseMimeType": "application/json",
             "responseSchema": gemini_schema,
         }
@@ -194,12 +196,12 @@ class GeminiProvider(AIProvider):
             usage_id = new_call(self.name, self.model)
             usage_reported = False
             try:
-                async with httpx.AsyncClient(
+                async with model_call(self), httpx.AsyncClient(
                     timeout=self.timeout,
                     follow_redirects=False,
                     transport=self.transport,
                 ) as client:
-                    response = await client.post(url, json=request_body, headers=headers)
+                    response = await bounded_post(client, url, json=request_body, headers=headers)
 
                 if response.status_code in (401, 403):
                     logger.error("Gemini authentication failed (status %s)", response.status_code)

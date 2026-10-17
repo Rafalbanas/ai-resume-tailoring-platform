@@ -10,12 +10,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.account_routing import AccountRoutingMiddleware
 from app.core.auth_boundary import AuthBoundaryMiddleware, validate_auth_settings
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
+from app.core.request_limits import RequestSizeMiddleware
 from app.core.security import FixedWindowLimiter, new_csrf_token, validate_csrf
 from app.routes.web import router
 from app.services.auth_store import AuthStore
@@ -28,10 +31,12 @@ from app.services.mock_provider import MockAIProvider
 from app.services.n8n_provider import N8NGeminiProvider
 from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
+from app.services.processing import ENDPOINT, process
 from app.services.profile_loader import load_master_profile
 from app.services.profile_photo import ProfilePhotoStore
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.resilient_provider import ResilientAIProvider
+from app.services.resource_budget import ResourceBudget
 from app.services.session_store import SessionStore
 from app.services.skills_bank import SkillsBank
 from app.services.storage import Storage
@@ -46,11 +51,20 @@ async def instance_lifespan(app: FastAPI):
     settings = getattr(app.state, "settings_override", None) or get_settings()
     validate_auth_settings(settings, shared_account=getattr(app.state, "shared_account", False))
     configure_logging()
+    if settings.processing_url:
+        processing_token = ENDPOINT.set((settings.processing_url, settings.processing_token))
+        try:
+            check = await run_in_threadpool(process, 'check', {}, timeout=10)
+            if check != {'protocol': 1, 'network_blocked': True}:
+                raise RuntimeError('The processing service did not pass its sandbox check')
+        finally:
+            ENDPOINT.reset(processing_token)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     profile, profile_status = load_master_profile(settings)
     auth_store = AuthStore(settings.auth_file_path, settings.app_username, settings.app_password)
     auth_store.initialize()
     app.state.settings = settings
+    app.state.resource_budget = ResourceBudget(settings.data_dir, daily_calls=settings.ai_daily_call_limit, disk_bytes=settings.storage_quota_bytes)
     app.state.profile = profile
     app.state.profile_status = profile_status
     app.state.skills_bank = SkillsBank(settings.skills_path, profile, settings.profile_mode)
@@ -61,7 +75,11 @@ async def instance_lifespan(app: FastAPI):
     app.state.auth_slots = asyncio.Semaphore(2)
     app.state.storage = Storage(settings.data_dir)
     app.state.reference_library = ReferenceCVLibrary(settings.reference_cvs_path, settings.reference_cv_max_bytes)
-    app.state.reference_library.refresh()
+    processing_token = ENDPOINT.set((settings.processing_url, settings.processing_token))
+    try:
+        await run_in_threadpool(app.state.reference_library.refresh)
+    finally:
+        ENDPOINT.reset(processing_token)
     app.state.profile_photo = ProfilePhotoStore(settings.profile_photo_path, settings.profile_photo_max_bytes)
     app.state.job_extractor = JobExtractorService(settings)
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -84,6 +102,8 @@ async def instance_lifespan(app: FastAPI):
     if settings.n8n_webhook_url and settings.n8n_webhook_secret:
         providers["n8n"] = N8NGeminiProvider(settings, app.state.skills_bank)
     app.state.providers = providers
+    for provider in providers.values():
+        provider.resource_budget = app.state.resource_budget
     primary = settings.active_llm_provider
     if primary == "auto":
         primary = "ollama"
@@ -98,7 +118,7 @@ async def instance_lifespan(app: FastAPI):
     )
     app.state.provider.settings_path = settings.data_dir / "ai_settings.json"
     app.state.provider.load_settings()
-    task_manager = TaskManager(settings.data_dir, budget_seconds=settings.llm_operation_budget_seconds)
+    task_manager = TaskManager(settings.data_dir, budget_seconds=settings.llm_operation_budget_seconds, max_pending=settings.max_pending_tasks)
     await task_manager.recover_on_startup()
     task_manager.start_worker(app.state)
     app.state.task_manager = task_manager
@@ -121,7 +141,7 @@ async def lifespan(app: FastAPI):
         if private_dir == demo_dir or private_dir in demo_dir.parents or demo_dir in private_dir.parents:
             raise RuntimeError("Private and demo data directories must be separate and non-overlapping")
         for relative in ("auth.json", "auth.lock", "master_profile.json", "skills.json", "sessions.sqlite3",
-                         "ai_settings.json", "generated", ".drafts", "reference_cvs", "tasks", "profile_photo", ".diagnostics"):
+                         "ai_settings.json", "resource_usage.sqlite3", "generated", ".drafts", "reference_cvs", "tasks", "profile_photo", ".diagnostics"):
             candidate, private_file = demo_dir / relative, private_dir / relative
             if not candidate.resolve().is_relative_to(demo_dir):
                 raise RuntimeError("Demo runtime files must remain inside the demo data directory")
@@ -132,6 +152,10 @@ async def lifespan(app: FastAPI):
             "data_dir": demo_dir, "demo_data_dir": None, "demo_mode": True,
             "profile_mode": "sample", "app_username": None, "app_password": None,
             "csrf_secret": secret_file.read_text().strip(),
+            "ai_daily_call_limit": settings.demo_ai_daily_call_limit,
+            "storage_quota_bytes": settings.demo_storage_quota_bytes,
+            "processing_url": settings.demo_processing_url,
+            "processing_token": settings.demo_processing_token,
         })
         demo_settings._shared_account = True
         demo = create_app(demo_settings, shared_account=True)
@@ -140,6 +164,8 @@ async def lifespan(app: FastAPI):
                 raise RuntimeError("Private and demo login names must be different")
             if demo.state.sessions.path.samefile(app.state.sessions.path):
                 raise RuntimeError("Private and demo session databases must be different files")
+            demo.state.resource_budget.ai_slots = app.state.resource_budget.ai_slots
+            demo.state.resource_budget.body_slots = app.state.resource_budget.body_slots
             demo.state.auth_slots = app.state.auth_slots
             demo.state.login_limiter = app.state.login_limiter
             app.state.accounts = {"owner": app, "demo": demo}
@@ -151,6 +177,7 @@ async def lifespan(app: FastAPI):
 
 async def request_context(request: Request, call_next):
     settings = request.app.state.settings
+    processing_token = ENDPOINT.set((settings.processing_url, settings.processing_token))
     request_id = uuid4().hex
     token = request_id_var.set(request_id)
     csrf = request.session.get("csrf_token", "")
@@ -161,6 +188,8 @@ async def request_context(request: Request, call_next):
         request.session["csrf_token"] = csrf
     request.state.csrf_token = csrf
     request.state.csp_nonce = secrets.token_urlsafe(18)
+    admitted_body = False
+    admitted_mutation = False
     try:
         path = request.url.path
         root_path = request.scope.get("root_path", "")
@@ -177,19 +206,47 @@ async def request_context(request: Request, call_next):
         else:
             try:
                 if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                    if path.rstrip('/') not in {'/login', '/logout', '/account/password'}:
+                        request.app.state.limiter.check(request.client.host if request.client else 'unknown')
+                        request.state.rate_checked = True
+                    slots = request.app.state.resource_budget.body_slots
+                    if path != '/logout':
+                        if slots.locked():
+                            raise HTTPException(429, 'Too many concurrent uploads or forms')
+                        await slots.acquire()
+                        admitted_body = True
+                    if not public and path != '/logout':
+                        mutations = request.app.state.resource_budget.mutation_slots
+                        if mutations.locked():
+                            raise HTTPException(429, 'An account update is already in progress')
+                        await mutations.acquire()
+                        admitted_mutation = True
+                    # Deletions must stay available when an account is over quota.
+                    if path not in {'/login', '/logout', '/account/password'} and not path.endswith(('/delete', '/remove', '/clear')):
+                        await run_in_threadpool(request.app.state.resource_budget.check_disk)
                     submitted = request.headers.get("X-CSRF-Token", "")
+                    if submitted:
+                        validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ''), settings.csrf_secret)
+                        if not secrets.compare_digest(submitted, request.session.get('csrf_token', '')):
+                            raise HTTPException(403, 'Invalid CSRF token')
                     if not submitted and "form" in request.headers.get("content-type", ""):
                         await request.body()
-                        submitted = str((await request.form()).get("csrf_token", ""))
+                        async with request.form(max_files=20, max_fields=200, max_part_size=262144) as form:
+                            submitted = str(form.get('csrf_token', ''))
                     validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ""), settings.csrf_secret)
                     if not secrets.compare_digest(submitted, request.session.get("csrf_token", "")):
                         raise HTTPException(403, "Invalid CSRF token")
                 response = await call_next(request)
-            except HTTPException as exc:
+            except StarletteHTTPException as exc:
                 response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
     finally:
+        if admitted_mutation:
+            request.app.state.resource_budget.mutation_slots.release()
+        if admitted_body:
+            request.app.state.resource_budget.body_slots.release()
         request_id_var.reset(token)
+        ENDPOINT.reset(processing_token)
     location = response.headers.get("Location", "")
     root_path = request.scope.get("root_path", "")
     if root_path and location.startswith("/") and not location.startswith("//"):
@@ -250,6 +307,7 @@ def create_app(settings=None, shared_account=False):
     if not shared_account:
         application.add_middleware(AccountRoutingMiddleware)
         application.add_middleware(ConfiguredSessionMiddleware, settings=settings)
+        application.add_middleware(RequestSizeMiddleware)
         application.add_middleware(AuthBoundaryMiddleware)
     return application
 

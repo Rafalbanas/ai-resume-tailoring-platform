@@ -46,7 +46,34 @@ class ProfilePhotoStore:
     def exists(self) -> bool:
         return self.webp_path.is_file() or self.jpg_path.is_file() or self.legacy_path.is_file()
 
-    def save(
+    def save(self, filename, content_type, content, crop_x=50.0, crop_y=50.0, crop_zoom=1.0):
+        from app.services.processing import ProcessingError, decoded, encoded, process
+        # Validate cheap properties before spawning a decoder.
+        suffix = Path(filename).suffix.casefold()
+        if suffix and suffix not in self.ALLOWED_EXTENSIONS:
+            raise ProfilePhotoError("Upload a JPG, JPEG, PNG, WEBP, or HEIC image.")
+        if not content or len(content) > self.max_bytes:
+            raise ProfilePhotoError(f"The profile photo must be smaller than {self.max_bytes // 1_000_000} MB.")
+        try:
+            result = process('photo', {'filename': filename, 'mime': content_type, 'content': encoded(content),
+                'crop_x': crop_x, 'crop_y': crop_y, 'crop_zoom': crop_zoom})
+        except ProcessingError as exc:
+            message = 'HEIC/HEIF image conversion failed.' if suffix in {'.heic', '.heif'} else 'Could not read this image.'
+            raise ProfilePhotoError(message) from exc
+        self.directory.mkdir(parents=True, exist_ok=True)
+        for path, kind in ((self.webp_path, 'webp'), (self.jpg_path, 'jpg')):
+            fd, temporary = tempfile.mkstemp(dir=self.directory)
+            try:
+                with os.fdopen(fd, 'wb') as handle:
+                    handle.write(decoded(result[kind]))
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        self.legacy_path.unlink(missing_ok=True)
+        return self.path
+
+    def _save_local(
         self,
         filename: str,
         content_type: str,

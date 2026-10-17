@@ -24,6 +24,7 @@ class N8NGeminiProvider(AIProvider):
         self.skills_bank = skills_bank
 
     async def tailor(self, job: JobRequest, profile: CandidateProfile) -> WorkflowResponse:
+        from app.services.bounded_http import bounded_post, model_call
         payload = {
             "job": job.model_dump(mode="json"),
             "master_profile": profile.model_dump(mode="json"),
@@ -36,8 +37,8 @@ class N8NGeminiProvider(AIProvider):
         }
         headers = {"X-Webhook-Secret": self.secret, "Content-Type": "application/json"}
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-                response = await client.post(self.url, json=payload, headers=headers)
+            async with model_call(self), httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+                response = await bounded_post(client, self.url, json=payload, headers=headers)
                 response.raise_for_status()
             data = response.json()
             if isinstance(data, list) and len(data) == 1:

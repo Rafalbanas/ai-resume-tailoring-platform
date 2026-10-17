@@ -20,6 +20,7 @@ from app.services.artifact_transaction import commit_artifacts, staged_artifacts
 from app.services.evidence_gaps import evidence_questions
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
+from app.services.processing import cpu_work
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
@@ -47,6 +48,12 @@ def context(request: Request, **values):
         "asset_version": getattr(getattr(request.app.state, "settings", None), "app_build_sha", ""),
         **values,
     }
+
+
+def limit_request(request):
+    if not getattr(request.state, 'rate_checked', False):
+        request.app.state.limiter.check(request.client.host if request.client else 'unknown')
+        request.state.rate_checked = True
 
 
 def guard(request: Request) -> None:
@@ -85,7 +92,7 @@ def _skill_from_form(form, existing: VerifiedSkill | None = None) -> VerifiedSki
 @router.post("/api/extract-job-url", response_model=JobExtraction)
 async def extract_job_url(request: Request, payload: JobUrlRequest):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(
         request.headers.get("X-CSRF-Token", ""),
         request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
@@ -102,7 +109,7 @@ async def extract_job_url(request: Request, payload: JobUrlRequest):
 @router.post("/api/clean-job-text", response_model=JobExtraction)
 async def clean_job_text(request: Request, payload: JobTextRequest):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(request.headers.get("X-CSRF-Token", ""),
                   request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
                   request.app.state.settings.csrf_secret)
@@ -149,7 +156,7 @@ async def analyze(
     llm_provider: Annotated[str, Form()] = "auto",
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if len(job_description) > request.app.state.settings.max_job_description_chars:
         raise HTTPException(status_code=413, detail="Job description is too long")
@@ -180,7 +187,7 @@ async def analyze(
         llm_provider=llm_provider.strip(),
     )
 
-    task = request.app.state.task_manager.find_active_by_idempotency_key(key)
+    task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, key)
     if not task:
         task = request.app.state.task_manager.create_task(
             kind=TaskKind.TAILOR,
@@ -247,7 +254,7 @@ async def retry_task(
     csrf_token: Annotated[str, Form()] = "",
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     if csrf_token:
         validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
 
@@ -260,7 +267,7 @@ async def retry_task(
         return RedirectResponse(url=f"/tasks/{task.task_id}/view", status_code=303)
 
     # Check for another active task sharing the same idempotency key
-    active_task = request.app.state.task_manager.find_active_by_idempotency_key(task.idempotency_key)
+    active_task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, task.idempotency_key)
     if active_task:
         return RedirectResponse(url=f"/tasks/{active_task.task_id}/view", status_code=303)
 
@@ -348,7 +355,7 @@ async def save_analysis_evidence(request: Request, draft_id: str):
 async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()],
                    template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic"):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         job, response = request.app.state.storage.load_draft(draft_id)
@@ -365,7 +372,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     layout_guide = {}
     try:
-        fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
+        fitted_resume, layout_warnings = await cpu_work(request, request.app.state.pdf_generator.fit_resume,
             result.resume, request.app.state.profile, layout_guide, template_name=template_name,
             job_text=f"{job.role}\n{job.job_description}",
             one_page=template_name == "modern_sidebar", fact_validator=validator,
@@ -391,7 +398,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         fallback_used=getattr(response, "fallback_used", False),
         fallback_reason=getattr(response, "fallback_reason", None),
     )
-    request.app.state.pdf_generator.generate(
+    await cpu_work(request, request.app.state.pdf_generator.generate,
         fitted_resume,
         request.app.state.profile,
         folder / "resume.pdf",
@@ -399,7 +406,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         template_name=template_name,
         photo_enabled=photo_enabled,
     )
-    request.app.state.docx_generator(
+    await cpu_work(request, request.app.state.docx_generator,
         fitted_resume,
         request.app.state.profile,
         folder / "resume.docx",
@@ -426,7 +433,7 @@ async def preview(request: Request, slug: str):
         _, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
-    resume_html = request.app.state.pdf_generator.render_preview(
+    resume_html = await cpu_work(request, request.app.state.pdf_generator.render_preview,
         resume,
         request.app.state.profile,
         metadata.get("layout_guide"),
@@ -483,6 +490,16 @@ def _validate_ajax_csrf(request: Request) -> None:
     )
 
 
+def _save_and_refresh_photo(request, slug, filename, mime, content, *, crop_x, crop_y, crop_zoom):
+    request.app.state.profile_photo.save(filename, mime, content, crop_x=crop_x, crop_y=crop_y, crop_zoom=crop_zoom)
+    return _refresh_photo_artifacts(request, slug, photo_enabled=True)
+
+
+def _remove_and_refresh_photo(request, slug):
+    request.app.state.profile_photo.remove()
+    return _refresh_photo_artifacts(request, slug, photo_enabled=False)
+
+
 @router.post("/preview/{slug}/photo")
 async def upload_preview_photo(
     request: Request,
@@ -493,24 +510,20 @@ async def upload_preview_photo(
     crop_zoom: Annotated[float, Form()] = 1.0,
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     _validate_ajax_csrf(request)
     try:
         request.app.state.storage.application_folder(slug)
         content = await photo.read(request.app.state.settings.profile_photo_max_bytes + 1)
-        request.app.state.profile_photo.save(
-            photo.filename or "photo",
-            photo.content_type or "",
-            content,
-            crop_x=crop_x,
-            crop_y=crop_y,
-            crop_zoom=crop_zoom,
-        )
-        enabled = _refresh_photo_artifacts(request, slug, photo_enabled=True)
+        enabled = await cpu_work(request, _save_and_refresh_photo, request, slug,
+            photo.filename or "photo", photo.content_type or "", content,
+            crop_x=crop_x, crop_y=crop_y, crop_zoom=crop_zoom)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     except ProfilePhotoError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Unexpected error uploading profile photo")
         return JSONResponse({"ok": False, "error": "Could not read this image."}, status_code=422)
@@ -522,29 +535,28 @@ async def upload_preview_photo(
 @router.post("/preview/{slug}/photo/use")
 async def use_preview_photo(request: Request, slug: str):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     _validate_ajax_csrf(request)
     if not request.app.state.profile_photo.exists():
         return JSONResponse({"ok": False, "error": "No saved profile photo is available."}, status_code=404)
-    return {"ok": True, "photo_enabled": _refresh_photo_artifacts(request, slug, photo_enabled=True)}
+    return {"ok": True, "photo_enabled": await cpu_work(request, _refresh_photo_artifacts, request, slug, photo_enabled=True)}
 
 
 @router.post("/preview/{slug}/photo/hide")
 async def hide_preview_photo(request: Request, slug: str):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     _validate_ajax_csrf(request)
-    _refresh_photo_artifacts(request, slug, photo_enabled=False)
+    await cpu_work(request, _refresh_photo_artifacts, request, slug, photo_enabled=False)
     return {"ok": True, "photo_enabled": False}
 
 
 @router.post("/preview/{slug}/photo/remove")
 async def remove_preview_photo(request: Request, slug: str):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     _validate_ajax_csrf(request)
-    request.app.state.profile_photo.remove()
-    _refresh_photo_artifacts(request, slug, photo_enabled=False)
+    await cpu_work(request, _remove_and_refresh_photo, request, slug)
     return {"ok": True, "photo_enabled": False}
 
 
@@ -607,7 +619,7 @@ def _regenerate_artifacts(
 @router.post("/edit/{slug}")
 async def save_resume_edit(request: Request, slug: str):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     form = await request.form()
     validate_csrf(
         str(form.get("csrf_token", "")),
@@ -628,7 +640,7 @@ async def save_resume_edit(request: Request, slug: str):
             # Presentation changes preserve the exact saved content, including legacy CVs.
             if template_name == "ats_classic":
                 photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
-            _refresh_photo_artifacts(request, slug, photo_enabled=photo_enabled, template_name=template_name)
+            await cpu_work(request, _refresh_photo_artifacts, request, slug, photo_enabled=photo_enabled, template_name=template_name)
             return RedirectResponse(f"/preview/{slug}", status_code=303)
         checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, edited, job)
         if checked.issues:
@@ -638,7 +650,7 @@ async def save_resume_edit(request: Request, slug: str):
                 error="The fields below were not saved. Other saved content has not been overwritten."),
                 status_code=422,
             )
-        _regenerate_artifacts(
+        await cpu_work(request, _regenerate_artifacts,
             request,
             slug,
             job,
@@ -668,11 +680,11 @@ async def save_resume_edit(request: Request, slug: str):
 @router.post("/reset/{slug}")
 async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         job, _, generated, metadata = request.app.state.storage.load_application(slug)
-        _regenerate_artifacts(
+        await cpu_work(request, _regenerate_artifacts,
             request,
             slug,
             job,
@@ -696,7 +708,7 @@ async def history(request: Request):
 @router.post("/history/{slug}/delete")
 async def delete_history_item(request: Request, slug: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         request.app.state.storage.delete_application(slug)
@@ -708,7 +720,7 @@ async def delete_history_item(request: Request, slug: str, csrf_token: Annotated
 @router.post("/history/clear")
 async def clear_history(request: Request, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     request.app.state.storage.clear_history()
     return RedirectResponse("/history", status_code=303)
@@ -729,13 +741,13 @@ async def upload_references(
     csrf_token: Annotated[str, Form()],
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     errors = []
     for upload in files[:20]:
         try:
             content = await upload.read(request.app.state.settings.reference_cv_max_bytes + 1)
-            request.app.state.reference_library.upload(upload.filename or "reference", content)
+            await cpu_work(request, request.app.state.reference_library.upload, upload.filename or "reference", content)
         except ValueError as exc:
             errors.append(f"{upload.filename}: {exc}")
         finally:
@@ -752,7 +764,7 @@ async def upload_references(
 @router.post("/references/{reference_id}/remove")
 async def remove_reference(request: Request, reference_id: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         request.app.state.reference_library.remove(reference_id)
@@ -792,7 +804,7 @@ async def edit_skill(request: Request, skill_id: str):
 @router.post("/skills/save", response_class=HTMLResponse)
 async def save_skill(request: Request):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     form = await request.form()
     validate_csrf(str(form.get("csrf_token", "")), request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     existing_id = str(form.get("existing_id", "")).strip()
@@ -811,7 +823,7 @@ async def save_skill(request: Request):
 @router.post("/skills/{skill_id}/toggle")
 async def toggle_skill(request: Request, skill_id: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         request.app.state.skills_bank.toggle(skill_id)
@@ -823,7 +835,7 @@ async def toggle_skill(request: Request, skill_id: str, csrf_token: Annotated[st
 @router.post("/skills/{skill_id}/delete")
 async def delete_skill(request: Request, skill_id: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         request.app.state.skills_bank.delete(skill_id)
@@ -846,7 +858,7 @@ async def skill_evidence(request: Request, skill_id: str):
 @router.post("/skills/{skill_id}/evidence")
 async def add_skill_evidence(request: Request, skill_id: str):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     form = await request.form()
     validate_csrf(str(form.get("csrf_token", "")), request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
@@ -871,7 +883,7 @@ async def add_skill_evidence(request: Request, skill_id: str):
 @router.post("/skills/{skill_id}/evidence/{index}/remove")
 async def remove_skill_evidence(request: Request, skill_id: str, index: int, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         request.app.state.skills_bank.remove_evidence(skill_id, index)
@@ -903,7 +915,7 @@ async def add_interest(
     enabled: Annotated[str | None, Form()] = None,
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     name = name.strip()
     if not name:
@@ -932,7 +944,7 @@ async def add_interest(
 @router.post("/profile/interests/{interest_id}/toggle")
 async def toggle_interest(request: Request, interest_id: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     profile = request.app.state.profile
     updated_interests = []
@@ -956,7 +968,7 @@ async def toggle_interest(request: Request, interest_id: str, csrf_token: Annota
 @router.post("/profile/interests/{interest_id}/delete")
 async def delete_interest(request: Request, interest_id: str, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     profile = request.app.state.profile
     updated_interests = [item for item in profile.interests if item.id != interest_id]
@@ -991,11 +1003,11 @@ async def upload_profile_photo(
     crop_y: Annotated[int, Form()] = 50,
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         content = await photo.read(request.app.state.settings.profile_photo_max_bytes + 1)
-        request.app.state.profile_photo.save(
+        await cpu_work(request, request.app.state.profile_photo.save,
             photo.filename or "photo",
             photo.content_type or "",
             content,
@@ -1016,7 +1028,7 @@ async def upload_profile_photo(
 @router.post("/profile/photo/remove")
 async def remove_profile_photo(request: Request, csrf_token: Annotated[str, Form()]):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     request.app.state.profile_photo.remove()
     return RedirectResponse("/profile", status_code=303)
@@ -1040,7 +1052,7 @@ async def change_password(
     form = await request.form()
     if any(len(form.getlist(field)) != 1 for field in ("current_password", "new_password", "repeat_password", "csrf_token")):
         raise HTTPException(400, "Duplicate or missing authentication fields")
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if new_password != repeat_password:
         return request.app.state.templates.TemplateResponse(
@@ -1156,7 +1168,7 @@ async def run_compare(
     job_url: Annotated[str, Form()] = "",
 ):
     guard(request)
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if len(job_description) > request.app.state.settings.max_job_description_chars:
         raise HTTPException(status_code=413, detail="Job description is too long")
@@ -1177,7 +1189,7 @@ async def run_compare(
         job_description=job_description.strip(),
     )
 
-    task = request.app.state.task_manager.find_active_by_idempotency_key(key)
+    task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, key)
     if not task:
         task = request.app.state.task_manager.create_task(
             kind=TaskKind.COMPARE,
@@ -1289,5 +1301,5 @@ async def change_resume_layout(request: Request, slug: str,
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     photo = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
-    _refresh_photo_artifacts(request, slug, photo_enabled=photo, template_name=template_name)
+    await cpu_work(request, _refresh_photo_artifacts, request, slug, photo_enabled=photo, template_name=template_name)
     return RedirectResponse(f"/preview/{slug}", status_code=303)

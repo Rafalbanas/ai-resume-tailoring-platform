@@ -311,3 +311,29 @@ async def test_logout_revokes_all_devices_only_for_active_account(shared_app, ac
         await sign_in(clients[0], account)
         assert (await clients[0].get('/profile')).status_code == 200
         assert (await clients[1].get('/profile')).status_code == 303
+
+
+async def test_demo_cannot_occupy_the_owners_reserved_native_processing_capacity(shared_app, monkeypatch):
+    import threading
+    entered, release = threading.Event(), threading.Event()
+    async with shared_app.router.lifespan_context(shared_app):
+        owner_app, demo_app = runtimes(shared_app)
+        def parked(*args, **kwargs):
+            entered.set()
+            assert release.wait(3)
+        monkeypatch.setattr(demo_app.state.profile_photo, 'save', parked)
+        monkeypatch.setattr(owner_app.state.profile_photo, 'save', lambda *args, **kwargs: None)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=shared_app), base_url='http://testserver') as owner, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=shared_app), base_url='http://testserver') as demo:
+            for client, username, password in ((owner, 'audit-tests', 'isolated-test-password'), (demo, 'demo-tests', 'different-demo-password')):
+                await client.get('/login')
+                assert (await client.post('/login', data={'username': username, 'password': password, 'csrf_token': client.cookies.get('csrf_token')})).status_code == 303
+            pending = asyncio.create_task(demo.post('/profile/photo', data={'csrf_token': demo.cookies.get('csrf_token')}, files={'photo': ('synthetic.jpg', b'synthetic', 'image/jpeg')}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                response = await asyncio.wait_for(owner.post('/profile/photo', data={'csrf_token': owner.cookies.get('csrf_token')}, files={'photo': ('synthetic.jpg', b'synthetic', 'image/jpeg')}), 1)
+                assert response.status_code == 303
+                assert (await owner.get('/health')).status_code == 200
+            finally:
+                release.set()
+            assert (await pending).status_code == 303

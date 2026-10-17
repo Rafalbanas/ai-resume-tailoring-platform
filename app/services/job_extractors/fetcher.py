@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -33,11 +34,19 @@ class SafeHttpFetcher:
         self.transport = transport
 
     async def fetch(self, url: str, *, html_only: bool = True) -> FetchedPage:
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                return await self._fetch(url, html_only=html_only)
+        except TimeoutError as exc:
+            raise JobFetchError('Job fetch exceeded its deadline') from exc
+
+    async def _fetch(self, url: str, *, html_only: bool = True) -> FetchedPage:
         current_url = url
         timeout = httpx.Timeout(self.timeout_seconds, connect=min(self.timeout_seconds, 5.0))
         headers = {
             "User-Agent": "CVTailor/1.0 (+single user-requested job extraction)",
             "Accept": "text/html,application/xhtml+xml",
+            "Accept-Encoding": "identity",
         }
         try:
             async with httpx.AsyncClient(
@@ -50,7 +59,8 @@ class SafeHttpFetcher:
                 for redirect_number in range(self.max_redirects + 1):
                     addresses = await self.guard.resolve_public(current_url)
                     original = httpx.URL(current_url)
-                    pinned = original.copy_with(host=addresses[0])
+                    address = next((value for value in addresses if ":" not in value), addresses[0])
+                    pinned = original.copy_with(host=address)
                     # Connect to the already validated address; retain Host and
                     # certificate verification/SNI for the original hostname.
                     async with client.stream("GET", pinned,
@@ -63,6 +73,8 @@ class SafeHttpFetcher:
                             current_url = urljoin(current_url, location)
                             continue
                         response.raise_for_status()
+                        if response.headers.get('content-encoding', 'identity').lower() not in {'', 'identity'}:
+                            raise JobFetchError('Compressed job responses are not accepted')
                         content_type = response.headers.get("content-type", "").lower()
                         if html_only and content_type and not any(value in content_type for value in ("text/html", "application/xhtml+xml")):
                             raise JobFetchError("URL did not return HTML")

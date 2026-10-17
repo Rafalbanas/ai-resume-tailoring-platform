@@ -47,3 +47,6 @@ data/test_*_result.json
 # Private Kubernetes runtime artifacts and deployment coordination
 .k8s-lab
 data/.deployment-admission.lock
+
+# Persistent per-account AI budgets
+data/resource_usage.sqlite3*

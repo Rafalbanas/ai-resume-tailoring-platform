@@ -13,6 +13,12 @@ from a request parameter. This is an application authorization boundary, not an
 OS sandbox for mutually untrusted workloads. A browser context has one active
 account; shared-origin XSS and server compromise remain security concerns.
 
+Production document parsers and browser rendering use separate owner/demo processing
+services without account volumes or model credentials. Native children have kernel
+socket restrictions, resource/time limits and bounded JSON input/output. Local CLI
+subprocess mode shares the host filesystem; configure the isolated services for
+untrusted input. See [processing budgets and deployment migration](docs/processing-security.md).
+
 ## Report a vulnerability privately
 
 Use [GitHub's private vulnerability reporting form](https://github.com/Rafalbanas/ai-resume-tailoring-platform/security/advisories/new)

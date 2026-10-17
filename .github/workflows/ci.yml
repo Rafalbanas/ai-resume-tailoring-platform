@@ -34,12 +34,14 @@ jobs:
           import sys
           from io import BytesIO
           from app.main import app
+          from app.services.processing import process
           from docx import Document
           from playwright.sync_api import sync_playwright
           from weasyprint import HTML
 
           assert sys.version_info[:2] == (3, 14), sys.version
           assert app is not None
+          assert process('check', {}, timeout=10) == {'protocol': 1, 'network_blocked': True}
           pdf = HTML(string="<p>CV Tailor image check</p>").write_pdf()
           assert pdf.startswith(b"%PDF-")
           document = Document()

@@ -430,6 +430,7 @@ class EldoradoExtractor(BaseExtractor):
             logger.info("Could not extract job ID from Eldorado URL: %s", url)
             return None
 
+        from app.services.bounded_http import bounded_post
         await guard.validate(self.mcp_endpoint)
 
         headers = {
@@ -439,7 +440,7 @@ class EldoradoExtractor(BaseExtractor):
         }
         client_timeout = httpx.Timeout(timeout, connect=min(timeout, 5.0))
 
-        async with httpx.AsyncClient(timeout=client_timeout, headers=headers, transport=transport) as client:
+        async with httpx.AsyncClient(timeout=client_timeout, headers=headers, transport=transport, trust_env=False) as client:
             init_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -450,7 +451,7 @@ class EldoradoExtractor(BaseExtractor):
                     "clientInfo": {"name": "cv-tailor", "version": "1.0.0"},
                 },
             }
-            init_resp = await client.post(self.mcp_endpoint, json=init_payload)
+            init_resp = await bounded_post(client, self.mcp_endpoint, json=init_payload)
             init_resp.raise_for_status()
             session_id = init_resp.headers.get("mcp-session-id")
             if not session_id:
@@ -466,8 +467,8 @@ class EldoradoExtractor(BaseExtractor):
                     "arguments": {"phrase": f"#{job_id}"},
                 },
             }
-            call_resp = await client.post(
-                self.mcp_endpoint,
+            call_resp = await bounded_post(
+                client, self.mcp_endpoint,
                 json=call_payload,
                 headers={"mcp-session-id": session_id},
             )

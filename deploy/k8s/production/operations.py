@@ -73,6 +73,8 @@ def backup():
                 for suffix in ['', '-wal', '-shm', '-journal']:
                     (target / ('sessions.sqlite3' + suffix)).unlink(missing_ok=True)
                 sql_copy(DATA / mode / 'sessions.sqlite3', target / 'sessions.sqlite3')
+                if (DATA / mode / 'resource_usage.sqlite3').exists():
+                    sql_copy(DATA / mode / 'resource_usage.sqlite3', target / 'resource_usage.sqlite3')
             # Release admission as soon as a consistent application copy exists.
             for descriptor in descriptors:
                 os.close(descriptor)
@@ -149,7 +151,7 @@ def monitor():
     restarts = {}
     deployments = kubernetes('get', 'deployments', '-o', 'json')['items']
     desired = {item['metadata']['name']: item['spec'].get('replicas', 1) for item in deployments}
-    for app in ['cvtailor', 'cvtailor-demo']:
+    for app in ['cvtailor', 'cvtailor-demo', *sorted(name for name in desired if name.startswith('cvtailor-processing-'))]:
         active = [pod for pod in pods if pod['metadata'].get('labels', {}).get('app') == app and not pod['metadata'].get('deletionTimestamp')]
         if len(active) != desired.get(app, 1) or not all(any(c['type'] == 'Ready' and c['status'] == 'True' for c in pod['status'].get('conditions', [])) for pod in active):
             issues.append(app + ': pod not ready')
