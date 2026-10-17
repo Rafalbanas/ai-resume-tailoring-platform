@@ -1,4 +1,5 @@
 """Limit real model calls and their responses independently of model compliance."""
+import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,9 +18,26 @@ async def model_call(provider):
 
 
 async def bounded_post(client, url, **kwargs):
+    return await bounded_request(client, 'POST', url, **kwargs)
+
+
+async def bounded_get(client, url, **kwargs):
+    return await bounded_request(client, 'GET', url, **kwargs)
+
+
+async def bounded_request(client, method, url, **kwargs):
+    # HTTPX's read timeout resets for every chunk. Bound the entire exchange too.
+    try:
+        async with asyncio.timeout(client.timeout.read or 300):
+            return await _bounded_request(client, method, url, **kwargs)
+    except TimeoutError as exc:
+        raise httpx.ReadTimeout('AI response exceeded its total deadline') from exc
+
+
+async def _bounded_request(client, method, url, **kwargs):
     headers = dict(kwargs.pop('headers', {}) or {})
     headers['Accept-Encoding'] = 'identity'
-    async with client.stream('POST', url, headers=headers, **kwargs) as response:
+    async with client.stream(method, url, headers=headers, **kwargs) as response:
         if response.headers.get('content-encoding', 'identity').lower() not in {'', 'identity'}:
             raise ProviderResponseError('Compressed AI responses are not accepted.')
         chunks, size = [], 0

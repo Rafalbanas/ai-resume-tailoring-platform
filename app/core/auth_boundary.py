@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
+from app.core import body_deadline
+
 
 def origin(url):
     parsed = urlsplit(url)
@@ -75,6 +77,7 @@ class AuthBoundaryMiddleware:
                 if length is not None and (int(length) < 0 or int(length) > limit):
                     raise HTTPException(413, 'Authentication request is too large')
                 body = bytearray()
+                receive = body_deadline.deadline_receive(receive, body_deadline.AUTH_BODY_SECONDS)
                 while True:
                     message = await receive()
                     if message['type'] == 'http.disconnect':

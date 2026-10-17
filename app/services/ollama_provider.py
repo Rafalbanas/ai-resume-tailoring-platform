@@ -450,6 +450,7 @@ class OllamaProvider(AIProvider):
             self._run_metrics.reset(token)
 
     async def health(self) -> dict[str, str]:
+        from app.services.bounded_http import bounded_get
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
@@ -457,7 +458,7 @@ class OllamaProvider(AIProvider):
                 follow_redirects=False,
                 transport=self.transport,
             ) as client:
-                response = await client.get("/api/tags")
+                response = await bounded_get(client, "/api/tags")
                 response.raise_for_status()
                 data = response.json()
         except (httpx.HTTPError, ValueError) as exc:

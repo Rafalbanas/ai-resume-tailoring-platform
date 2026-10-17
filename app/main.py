@@ -236,6 +236,9 @@ async def request_context(request: Request, call_next):
                     validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ""), settings.csrf_secret)
                     if not secrets.compare_digest(submitted, request.session.get("csrf_token", "")):
                         raise HTTPException(403, "Invalid CSRF token")
+                    # Read under admission before FastAPI's form parser, which
+                    # otherwise masks receive-time limits as generic HTTP 400.
+                    await request.body()
                 response = await call_next(request)
             except StarletteHTTPException as exc:
                 response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)

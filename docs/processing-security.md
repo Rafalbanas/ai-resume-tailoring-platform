@@ -9,6 +9,7 @@ The web process admits requests and selects the authenticated account. PDF/DOCX 
 | Regular request body | 512 KiB, including chunked requests |
 | Upload request body | 12 MiB total, at most 20 files / 200 fields |
 | Authentication body | Existing 16 KiB limit |
+| Total body reception | 15 seconds authentication, 30 seconds regular forms, 60 seconds uploads/internal RPC; small periodic chunks do not reset the deadline |
 | Concurrent request bodies | 2 shared by both accounts |
 | Concurrent account changes | 1 per account; reads and logout remain available |
 | Native document processing | 1 admitted operation per account, at most 2 isolated production workers; demo cannot occupy the owner’s reserved slot |
@@ -18,7 +19,7 @@ The web process admits requests and selects the authenticated account. PDF/DOCX 
 | Chromium | 1 active render per account (worker admits only one browser/document job at once); 32 routed requests, 4× configured fetch-byte budget, whole-render deadline |
 | Active AI calls | 1 shared by both accounts |
 | Durable AI request budget | 300 owner / 60 demo calls per UTC day, including retries and semantic review; does not reset on restart |
-| AI response | 2 MiB uncompressed; compressed responses rejected; Gemini output capped at 8192 tokens |
+| AI response | 2 MiB uncompressed; compressed responses rejected; Gemini output capped at 8192 tokens; total exchange limited by the configured read timeout (300 seconds if disabled) |
 | Task admission | 4 queued/running tasks per account, checked under a cross-process file lock |
 | Task retention | Latest 100 task records; active work is never pruned |
 | Account storage | 512 MiB owner / 128 MiB demo admission quota; 64 MiB reserved for bounded in-flight output; 10,000 file/directory entries |

@@ -2,6 +2,8 @@
 from fastapi import HTTPException
 from starlette.responses import JSONResponse
 
+from app.core import body_deadline
+
 
 class RequestSizeMiddleware:
     def __init__(self, app):
@@ -21,9 +23,11 @@ class RequestSizeMiddleware:
         except ValueError:
             return await JSONResponse({'detail': 'Request body exceeds the size limit'}, status_code=413)(scope, receive, send)
         size = 0
+        timed_receive = body_deadline.deadline_receive(
+            receive, body_deadline.UPLOAD_BODY_SECONDS if upload else body_deadline.FORM_BODY_SECONDS)
         async def bounded_receive():
             nonlocal size
-            message = await receive()
+            message = await timed_receive()
             size += len(message.get('body', b''))
             if size > limit:
                 raise HTTPException(413, 'Request body exceeds the size limit')

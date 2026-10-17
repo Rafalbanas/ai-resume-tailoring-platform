@@ -24,6 +24,96 @@ from app.services.resource_budget import ResourceBudget
 from app.services.task_manager import TaskKind, TaskManager, TaskStatus
 
 
+@pytest.mark.parametrize('path,setting', [('/login', 'AUTH_BODY_SECONDS'),
+    ('/settings/fallback', 'FORM_BODY_SECONDS'), ('/profile/photo', 'UPLOAD_BODY_SECONDS')])
+async def test_body_deadline_stops_slow_drip_and_releases_admission(path, setting, monkeypatch):
+    import app.main as main
+    from app.core import body_deadline
+    app = create_app(main.get_settings())
+    async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+        await login(client)
+        monkeypatch.setattr(body_deadline, setting, 0.1)
+        consumed = 0
+        async def chunks():
+            nonlocal consumed
+            for _ in range(100):
+                await asyncio.sleep(0.01)
+                consumed += 1
+                yield b'x'
+        response = await asyncio.wait_for(client.post(path, content=chunks(), headers={
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': client.cookies.get('csrf_token')}), 2)
+        assert response.status_code == 408
+        assert consumed < 100
+        assert app.state.resource_budget.body_slots._value == 2
+        assert app.state.resource_budget.mutation_slots._value == 1
+        assert (await client.get('/profile')).status_code == 200
+        await login(client)
+
+
+@pytest.mark.parametrize('method', ['GET', 'POST'])
+async def test_ai_response_deadline_is_total_not_reset_by_each_chunk(method):
+    from app.services.bounded_http import bounded_get
+    class Drip(httpx.AsyncByteStream):
+        closed = False
+        async def __aiter__(self):
+            for _ in range(100):
+                await asyncio.sleep(0.01)
+                yield b' '
+        async def aclose(self):
+            self.closed = True
+    stream = Drip()
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=stream))
+    async with httpx.AsyncClient(transport=transport, timeout=0.1) as client:
+        with pytest.raises(httpx.ReadTimeout, match='total deadline'):
+            operation = bounded_get if method == 'GET' else bounded_post
+            await asyncio.wait_for(operation(client, 'https://model.example.test'), 2)
+    assert stream.closed
+
+
+async def test_finished_request_body_does_not_limit_response_duration():
+    from app.core.body_deadline import deadline_receive
+    messages = iter([{'type': 'http.request', 'body': b''}, {'type': 'http.disconnect'}])
+    async def receive():
+        return next(messages)
+    bounded = deadline_receive(receive, 0.01)
+    assert (await bounded())['type'] == 'http.request'
+    await asyncio.sleep(0.02)
+    assert (await bounded())['type'] == 'http.disconnect'
+
+
+async def test_processing_body_deadline_releases_worker_slot(monkeypatch):
+    import app.processing_server as server
+    from app.core import body_deadline
+    monkeypatch.setenv('PROCESSING_TOKEN', 'x' * 48)
+    monkeypatch.setattr(body_deadline, 'UPLOAD_BODY_SECONDS', 0.1)
+    monkeypatch.setattr(server, 'slots', asyncio.Semaphore(1))
+    monkeypatch.setattr(server, 'local_process', lambda *args, **kwargs: {'ok': True, 'result': {}})
+    async def chunks():
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            yield b' '
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url='http://worker') as client:
+        headers = {'Authorization': 'Bearer ' + 'x' * 48}
+        response = await asyncio.wait_for(client.post('/process', headers=headers, content=chunks()), 2)
+        assert response.status_code == 408
+        assert (await client.post('/process', headers=headers, json={'operation': 'check', 'payload': {}})).status_code == 200
+
+
+@pytest.mark.parametrize('value', [[], None, {'operation': 'check', 'payload': []}] + [
+    {'operation': 'check', 'payload': {}, 'timeout_seconds': value}
+    for value in (None, 'nan', 'inf', -1)])
+async def test_processing_rejects_invalid_envelopes_without_running_parser(value, monkeypatch):
+    import app.processing_server as server
+    monkeypatch.setenv('PROCESSING_TOKEN', 'x' * 48)
+    def forbidden(*args, **kwargs):
+        pytest.fail('Invalid envelopes must not reach the parser')
+    monkeypatch.setattr(server, 'local_process', forbidden)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url='http://worker') as client:
+        response = await client.post('/process', headers={'Authorization': 'Bearer ' + 'x' * 48}, json=value)
+        assert response.status_code == 422
+
+
 def test_native_subprocess_cannot_open_ipv4_or_ipv6_sockets():
     script = '''
 import errno,socket

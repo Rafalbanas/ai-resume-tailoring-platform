@@ -389,6 +389,7 @@ class GeminiProvider(AIProvider):
         return WorkflowResponse(analysis=analysis, resume=resume, provider_used=self.name, model_used=self.model)
 
     async def health(self) -> dict[str, str]:
+        from app.services.bounded_http import bounded_get
         if not self.api_key:
             return {
                 "status": "unconfigured",
@@ -404,7 +405,7 @@ class GeminiProvider(AIProvider):
                 follow_redirects=False,
                 transport=self.transport,
             ) as client:
-                response = await client.get(url, headers=headers)
+                response = await bounded_get(client, url, headers=headers)
                 if response.status_code in (401, 403):
                     raise GeminiAuthError("Gemini API key is invalid.")
                 if response.status_code == 404:
