@@ -40,3 +40,8 @@ class SessionStore:
             return
         with self.connect() as db:
             db.execute('DELETE FROM sessions WHERE digest = ?', (self.digest(token),))
+
+    def revoke_all(self):
+        """End every browser/device session in this account's own database."""
+        with self.connect() as db:
+            db.execute('DELETE FROM sessions')

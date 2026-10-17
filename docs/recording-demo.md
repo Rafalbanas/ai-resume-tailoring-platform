@@ -6,6 +6,8 @@ The public process loads two independent application runtimes. Each has its own 
 
 A browser context has one active account. Visiting `/login` starts a new sign-in and revokes its previous server-side session. Signing in to another account replaces that session for every tab. Old tabs cannot submit old CSRF tokens to the new account. Separate browser profiles or private windows can remain logged into different accounts at the same URL.
 
+The same account can have concurrent sessions on multiple browsers and devices; tabs in one browser context share its session. **Sign out everywhere** revokes every session of the active account, without ending the other account's sessions. Already running requests or background jobs are not cancelled. Sessions also expire after an absolute eight hours by default (`SESSION_TTL_SECONDS=28800`); activity does not extend this deadline.
+
 All UI pages use a nonce-based script CSP, template escaping, no-store responses and same-origin resource/opener policies. Confirmation dialogs use external JavaScript instead of inline handlers. Clipboard paste and password managers remain supported. Shared-origin accounts are not OS sandboxes: a server compromise or an exploitable script in this origin can affect the active account, as in other applications with a shared login. Do not treat demo credentials as authorization to execute arbitrary code.
 
 ## Configuration

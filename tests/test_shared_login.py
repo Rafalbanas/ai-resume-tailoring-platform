@@ -268,3 +268,46 @@ def test_even_validly_signed_claim_cannot_reassign_a_session_to_another_account(
         client.cookies.set('session', forged)
         assert client.get('/profile', follow_redirects=False).status_code == 303
         assert client.get('/api/tasks/other', follow_redirects=False).status_code == 401
+
+
+@pytest.mark.parametrize('account', ['owner', 'demo'])
+async def test_logout_revokes_all_devices_only_for_active_account(shared_app, account):
+    from contextlib import AsyncExitStack
+
+    async with shared_app.router.lifespan_context(shared_app), AsyncExitStack() as stack:
+        clients = [await stack.enter_async_context(httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=shared_app, client=(f'192.0.2.{i+1}', 12345)),
+            base_url='http://testserver',
+        )) for i in range(4)]
+
+        async def sign_in(client, name):
+            username, password = (('demo-tests', 'different-demo-password') if name == 'demo'
+                                  else ('audit-tests', 'isolated-test-password'))
+            await client.get('/login')
+            response = await client.post('/login', data={
+                'username': username, 'password': password, 'csrf_token': client.cookies.get('csrf_token'),
+            })
+            assert response.status_code == 303
+
+        for client in clients[:3]:
+            await sign_in(client, account)
+        await sign_in(clients[3], 'owner' if account == 'demo' else 'demo')
+        assert len({c.cookies.get('session') for c in clients[:3]}) == 3
+        for client in clients:
+            assert (await client.get('/profile')).status_code == 200
+        # An invalid CSRF token must not log out any device.
+        assert (await clients[0].post('/logout', data={'csrf_token': 'wrong'})).status_code == 403
+        for client in clients:
+            assert (await client.get('/profile')).status_code == 200
+        response = await clients[0].post('/logout', data={'csrf_token': clients[0].cookies.get('csrf_token')})
+        assert response.status_code == 303
+        for client in clients[:3]:
+            assert (await client.get('/profile')).status_code == 303
+            assert (await client.post('/settings/fallback', data={
+                'enabled': 'off', 'csrf_token': client.cookies.get('csrf_token'),
+            })).status_code == 401
+        assert (await clients[3].get('/profile')).status_code == 200
+        # Revocation does not prevent a later, explicit fresh sign-in.
+        await sign_in(clients[0], account)
+        assert (await clients[0].get('/profile')).status_code == 200
+        assert (await clients[1].get('/profile')).status_code == 303

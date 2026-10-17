@@ -60,9 +60,11 @@ class SafePlaywrightRenderer:
                     except Exception:
                         await route.abort()
                         return
-                    # All network goes through the address-pinned fetcher.
+                    # Routed HTTP(S) requests use the address-pinned fetcher.
 
-                await page.route("**/*", secure_route)
+                # Page routes miss the first request of popup windows. Apply
+                # the same address-pinned policy to every page in this context.
+                await context.route("**/*", secure_route)
                 await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
                 await page.wait_for_timeout(1500)
                 await self.guard.validate(page.url)
