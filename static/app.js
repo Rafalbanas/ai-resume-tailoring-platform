@@ -1,3 +1,9 @@
+// Keep URL bootstrap external: proxies may strip inline CSP nonces.
+window.cvAppUrl = function(path) {
+  const root = document.documentElement.dataset.appRoot || "";
+  return root && path.startsWith('/') && !path.startsWith('//') && path !== root && !path.startsWith(root + '/') ? root + path : path;
+};
+
 document.addEventListener("submit", (event) => {
   const message = event.target.dataset.confirm;
   if (message && !window.confirm(message)) event.preventDefault();

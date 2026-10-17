@@ -22,7 +22,8 @@ def job_page():
             if route.request.url.split('?')[0].endswith('/static/app.js'):
                 route.fulfill(body=Path('static/app.js').read_text(), content_type='application/javascript')
             elif route.request.url == 'http://fixture.test/':
-                route.fulfill(body=html, content_type='text/html')
+                route.fulfill(body=html, content_type='text/html', headers={
+                    'Content-Security-Policy': "default-src 'self'; script-src 'self'; connect-src 'self'"})
             else:
                 route.fulfill(body='')
         page.route('**/*', serve)

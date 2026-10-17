@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-app-root="{{ app_root_path|default('') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,12 +7,6 @@
   <title>{% block title %}CV Tailor{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ app_root_path|default('') }}/static/favicon.svg">
   <link rel="stylesheet" href="{{ app_root_path|default('') }}/static/app.css?v={{ asset_version }}">
-  <script nonce="{{ request.state.csp_nonce|default('') }}">
-    window.cvAppUrl = function(path) {
-      const root = {{ app_root_path|default('')|tojson }};
-      return root && path.startsWith('/') && !path.startsWith('//') && path !== root && !path.startsWith(root + '/') ? root + path : path;
-    };
-  </script>
   <script src="{{ app_root_path|default('') }}/static/app.js?v={{ asset_version }}" defer></script>
 </head>
 <body>
