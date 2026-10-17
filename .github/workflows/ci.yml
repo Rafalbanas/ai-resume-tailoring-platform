@@ -16,6 +16,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Install Chromium for layout regression tests
         run: python -m playwright install --with-deps chromium
+      - name: Install native document and sandbox dependencies used by the image
+        run: sudo apt-get install --yes --no-install-recommends libharfbuzz-subset0 libseccomp2
       - run: ruff check .
       - run: pytest -q
       - name: Verify README is synced with current versions and test counts
