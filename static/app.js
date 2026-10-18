@@ -442,6 +442,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return companyInput.value.trim() && roleInput.value.trim() && descriptionInput.value.trim().length >= 30;
   }
 
+  function offerFailureMessage(reason) {
+    const messages = {
+      blocked: "The job website rejected automatic fetching (HTTP 403/429).",
+      timeout: "Fetching the job website timed out.",
+      fetch_failed: "The job website could not be downloaded.",
+      description_unavailable: "The page was downloaded, but a complete job description could not be extracted.",
+      unsafe_url: "This URL is not allowed. Use a public job offer URL.",
+    };
+    return `${messages[reason] || "Automatic fetching was unavailable."} Paste the offer and use Clean pasted job offer.`;
+  }
+
   async function fetchJob() {
     const url = urlInput.value.trim();
     if (!url) {
@@ -468,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (roleInput.value === beforeFetch[1] && !beforeFetch[1].trim()) roleInput.value = result.role || "";
           setStatus("Only offer metadata is available; the full description could not be fetched. Paste the full offer and use Clean pasted job offer before analysis.", "error");
         } else {
-          setStatus("Automatic fetching was unavailable or blocked. Paste the offer from any website and use Clean pasted job offer.", "error");
+          setStatus(offerFailureMessage(result.failure_reason), "error");
         }
         return false;
       }
@@ -481,8 +492,13 @@ document.addEventListener("DOMContentLoaded", () => {
       descriptionInput.value = result.job_description;
       setStatus("Job details fetched. Review and edit them before analysis.", "success");
       return fieldsAreComplete();
-    } catch (_) {
-      setStatus("Automatic fetching was unavailable or blocked. Paste the offer from any website and use Clean pasted job offer.", "error");
+    } catch (error) {
+      const message = error.name === "AbortError" ? offerFailureMessage("timeout")
+        : error.status === 401 ? "Your session expired. Sign in again to fetch the offer."
+        : error.status === 403 ? "The application rejected this request. Refresh the page and try again."
+        : error.status === 429 ? "Too many requests to the application. Wait a moment and try again."
+        : "The application could not complete the request. Check your connection and try again.";
+      setStatus(message, "error");
       return false;
     } finally {
       fetching = false;

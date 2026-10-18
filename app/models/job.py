@@ -97,6 +97,7 @@ class JobExtraction(BaseModel):
     job_description: str = ""
     source: str
     extraction_method: Literal["jsonld", "html", "playwright", "manual_required"]
+    failure_reason: Literal["blocked", "timeout", "fetch_failed", "description_unavailable", "unsafe_url"] | None = None
 
 
 class JobAnalysis(BaseModel):
