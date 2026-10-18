@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.core.config import Settings
 from app.models.job import JobExtraction
 from app.services.job_extractors.base import BaseExtractor, ExtractionCandidate
@@ -82,6 +84,7 @@ class JobExtractorService:
         source = url
         adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
         metadata = None
+        failure_reason = "description_unavailable"
         if isinstance(adapter, EldoradoExtractor):
             try:
                 candidate = await adapter.fetch_remote(
@@ -93,7 +96,7 @@ class JobExtractorService:
                 if candidate and candidate.usable:
                     metadata = candidate
             except UnsafeUrlError:
-                return JobExtraction(source=url, extraction_method="manual_required")
+                return JobExtraction(source=url, extraction_method="manual_required", failure_reason="unsafe_url")
             except Exception:
                 logger.info("Eldorado remote extraction failed", extra={"stage": "job_fetch_eldorado"})
 
@@ -104,14 +107,22 @@ class JobExtractorService:
             if candidate.usable or candidate.ambiguous:
                 return self._result(candidate, source, method)
         except UnsafeUrlError:
-            return JobExtraction(source=url, extraction_method="manual_required")
-        except JobFetchError:
+            return JobExtraction(source=url, extraction_method="manual_required", failure_reason="unsafe_url")
+        except JobFetchError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code in {403, 429}:
+                failure_reason = "blocked"
+            elif isinstance(cause, (httpx.TimeoutException, TimeoutError)):
+                failure_reason = "timeout"
+            else:
+                failure_reason = "fetch_failed"
             logger.info("Static job page fetch failed", extra={"stage": "job_fetch"})
 
         if self.playwright_enabled:
             try:
                 page = await self.renderer.render(url)
                 source = page.url
+                failure_reason = "description_unavailable"
                 candidate, _ = self._extract_html(page.url, page.html)
                 if candidate.usable or candidate.ambiguous:
                     return self._result(candidate, source, "playwright")
@@ -119,7 +130,7 @@ class JobExtractorService:
                 logger.info("Browser job page extraction failed", extra={"stage": "job_fetch_browser"})
         if metadata:
             return self._result(metadata, source, "manual_required")
-        return JobExtraction(source=source, extraction_method="manual_required")
+        return JobExtraction(source=source, extraction_method="manual_required", failure_reason=failure_reason)
 
 
 __all__ = ["JobExtractorService"]

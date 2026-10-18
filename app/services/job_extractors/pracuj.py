@@ -23,10 +23,23 @@ HEADINGS = {
     'etapy rekrutacji': None,
     'tak się u nas pracuje': None,
     'siedziba firmy': None,
+    'technologies we use': 'PORTAL TECHNOLOGY TAGS',
+    'expected': 'PORTAL TECHNOLOGY TAGS',
+    'operating system': 'PORTAL TECHNOLOGY TAGS',
+    'about the project': 'OFFER DESCRIPTION',
+    'your responsibilities': 'RESPONSIBILITIES',
+    'our requirements': 'REQUIREMENTS',
+    'optional': 'NICE TO HAVE',
+    'what we offer': None,
+    'benefits': None,
+    'recruitment stages': None,
+    'this is how we organize our work': None,
+    'this is how we work': None,
     '__cvtailor_section_end__': None,
 }
 EMPLOYMENT = re.compile(r'\b(?:umowa o pracę|kontrakt|b2b|pełny etat|część etatu|praca (?:stacjonarna|hybrydowa|zdalna)|mid\s*/\s*regular|junior|senior|śląskie|mazowieckie|małopolskie|wielkopolskie|pomorskie|dolnośląskie|łódzkie|podkarpackie|lubelskie|lubuskie|opolskie|podlaskie|świętokrzyskie|warmińsko.mazurskie|zachodniopomorskie|kujawsko.pomorskie)\b', re.I)
 UI = {'pokaż więcej', 'pokaż mniej', 'zobacz', 'sprawdź', 'aplikuj', 'zapisz', 'o firmie', 'wymagane', 'system operacyjny'}
+COMPANY_LABEL = r'o firmie|about the company'
 
 
 def _line(value):
@@ -67,8 +80,8 @@ class PracujExtractor(BaseExtractor):
             sections['EMPLOYMENT CONDITIONS'] = list(dict.fromkeys(employment))
         company = role = ''
         for index, line in enumerate(prelude):
-            if re.search(r'o firmie', line, re.I):
-                company = re.split(r'o firmie', line, flags=re.I)[0].strip()
+            if re.search(COMPANY_LABEL, line, re.I):
+                company = re.split(COMPANY_LABEL, line, flags=re.I)[0].strip()
                 if not company and index:
                     company = prelude[index - 1]
                     role = prelude[index - 2] if index > 1 else ''
@@ -101,6 +114,6 @@ class PracujExtractor(BaseExtractor):
                 text = '__cvtailor_section_end__'
             node.replace_with('\n' + text + '\n')
         candidate = self.extract_text(normalized_text(soup))
-        candidate.company = re.split(r'o firmie', company or candidate.company, flags=re.I)[0].strip()
+        candidate.company = re.split(COMPANY_LABEL, company or candidate.company, flags=re.I)[0].strip()
         candidate.role = role or candidate.role
         return candidate

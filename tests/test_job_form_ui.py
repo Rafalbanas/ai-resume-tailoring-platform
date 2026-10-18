@@ -105,3 +105,21 @@ def test_pending_submission_ignores_repeated_submit_events(job_page):
     assert len(calls) == 1
     assert page.locator('#submit').is_disabled()
     assert not errors
+
+
+@pytest.mark.parametrize('reason,message', [
+    ('blocked', 'HTTP 403/429'),
+    ('timeout', 'timed out'),
+    ('description_unavailable', 'page was downloaded'),
+])
+def test_offer_failure_explains_reason_and_keeps_entered_text(job_page, reason, message):
+    page, errors = job_page
+    page.locator('#job-url').fill('https://pracuj.pl/praca/example,oferta,123')
+    page.route('**/api/extract-job-url', lambda route: route.fulfill(json={
+        'extraction_method': 'manual_required', 'job_description': '', 'failure_reason': reason,
+    }))
+    page.locator('#fetch-job').click()
+    expect(page.locator('#fetch-status')).to_contain_text(message)
+    expect(page.locator('#fetch-job')).to_be_enabled()
+    assert page.locator('#job-description').input_value() == 'Support verified Python automation and Linux workflows.'
+    assert not errors

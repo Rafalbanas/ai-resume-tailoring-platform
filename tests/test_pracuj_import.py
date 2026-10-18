@@ -123,3 +123,71 @@ Domyślne CV Junior Support Specialist.pdf
 ''')
     assert not result.usable
     assert not result.job_description
+
+
+@pytest.mark.asyncio
+async def test_english_pracuj_offer_imports_full_description_without_browser():
+    from bs4 import BeautifulSoup
+
+    markup = (FIXTURES / 'alten_english.html').read_text()
+    service = JobExtractorService(Settings(_env_file=None, job_fetch_playwright_enabled=False))
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, headers={'content-type': 'text/html'}, text=markup)),
+    )
+    result = await service.extract('https://pracuj.pl/praca/it-support-specialist-tychy,oferta,1005146191')
+    assert result.extraction_method == 'html'
+    assert result.failure_reason is None
+    assert result.company == 'ALTEN Polska'
+    assert result.role == 'IT Support Specialist'
+    soup = BeautifulSoup(markup, 'html.parser')
+    for heading in ('Your responsibilities', 'Our requirements'):
+        section = soup.find('h2', string=heading).find_parent('section')
+        items = section.find_all('li')
+        assert len(items) >= 10
+        for item in items:
+            assert item.get_text(' ', strip=True) in result.job_description
+    for noise in ('Medicover', 'Access to professional certifications', 'in house', 'agile'):
+        assert noise not in result.job_description
+
+
+def test_english_pasted_offer_separates_optional_requirements_and_benefits():
+    result = PracujExtractor().extract_text('''Support Engineer
+Example Ltd About the company
+About the project
+Support our enterprise Windows workplace and business applications.
+Your responsibilities
+Investigate incidents and maintain documentation for the support team.
+Our requirements
+Experience with Active Directory and Microsoft Intune.
+Optional
+PowerShell scripting experience.
+What we offer
+Private healthcare.
+Benefits
+Gym membership.
+''')
+    assert result.usable
+    assert result.company == 'Example Ltd'
+    assert result.role == 'Support Engineer'
+    assert 'NICE TO HAVE\nPowerShell scripting experience.' in result.job_description
+    assert 'Private healthcare' not in result.job_description
+    assert 'Gym membership' not in result.job_description
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure,reason', [(403, 'blocked'), (429, 'blocked'), (503, 'fetch_failed'), ('timeout', 'timeout'), (200, 'description_unavailable')])
+async def test_import_failure_reports_actual_reason(failure, reason):
+    def handler(request):
+        if failure == 'timeout':
+            raise httpx.ReadTimeout('timed out', request=request)
+        return httpx.Response(failure, headers={'content-type': 'text/html'}, text='<h1>Unavailable</h1>')
+
+    service = JobExtractorService(Settings(_env_file=None, job_fetch_playwright_enabled=False))
+    service.fetcher = SafeHttpFetcher(
+        1, 100_000, 2, guard=PublicUrlGuard(public_resolver), transport=httpx.MockTransport(handler),
+    )
+    result = await service.extract('https://pracuj.pl/praca/support,oferta,100123')
+    assert result.extraction_method == 'manual_required'
+    assert result.failure_reason == reason
+    assert not result.job_description
