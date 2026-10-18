@@ -410,6 +410,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         model_used=getattr(response, "model_used", "unknown"),
         fallback_used=getattr(response, "fallback_used", False),
         fallback_reason=getattr(response, "fallback_reason", None),
+        retrieval_context=response.retrieval_context,
     )
     await cpu_work(request, request.app.state.pdf_generator.generate,
         fitted_resume,

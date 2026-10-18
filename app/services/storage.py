@@ -55,6 +55,7 @@ class Storage:
         model_used: str = "unknown",
         fallback_used: bool = False,
         fallback_reason: str | None = None,
+        retrieval_context: dict | None = None,
     ) -> tuple[str, Path]:
         date = datetime.now(timezone.utc).date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
@@ -97,6 +98,7 @@ class Storage:
             "model_used": model_used,
             "fallback_used": bool(fallback_used),
             "fallback_reason": fallback_reason,
+            "retrieval_context": retrieval_context or {},
             "pre_fit_available": pre_fit_resume is not None,
             "summary_attestation": resume.summary_attestation,
             "generated_summary_attestation": resume.summary_attestation,

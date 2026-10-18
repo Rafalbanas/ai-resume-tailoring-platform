@@ -37,6 +37,10 @@ Reference PDFs/DOCX and their derived index live in ignored `data/reference_cvs/
 - `ats_classic`: single-column, standard layout without photo, natural multi-page flow.
 - `modern_sidebar`: two-column layout with navy sidebar, optional photo/initials, natural multi-page flow.
 
+## Candidate retrieval
+
+After requirement analysis, direct Ollama and Gemini generation use request-local BM25 retrieval over canonical `FactCatalog` documents. `build_compact_tailor_payload` supplies selected source IDs/facts and identity metadata. No persisted retrieval cache or additional service is used. Full-profile analysis and independent export validation remain in place. See [RAG audit, ranking, lifecycle and fallback](rag.md).
+
 ## Truth Lock
 
 The AI provider selects source IDs (`summary:0`, `experience:0:fact:1`, `project:0:fact:0`) and eligible skill IDs from the verified skills bank. The independent Python validator resolves those IDs back to exact profile facts, canonicalizes skills, companies, roles, dates, projects, education, and certifications, and removes unsupported objects. This is deliberately stricter than semantic LLM checking: only exact referenced source sentences are accepted for automatic bullet export. Professional summaries select source sentences by role, with education and explicitly labelled project work. Source requirement clauses preserve AND, qualifiers and priorities; uncertain scope is partial and mandatory gaps block APPLY. Editing rejects unsupported wording without replacing the saved CV. Export updates render in staging first, back up previous versions, and roll back write errors.

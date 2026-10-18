@@ -27,7 +27,6 @@ from app.services.ai_provider import (
 )
 from app.services.analysis_validator import AnalysisValidator
 from app.services.comparison_capture import record_call
-from app.services.fact_catalog import FactCatalog
 from app.services.ollama_provider import TRUTH_RULES
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
@@ -342,7 +341,6 @@ class GeminiProvider(AIProvider):
             else []
         )
         layout_guide = self.reference_library.layout_guide() if self.reference_library else {}
-        catalog = FactCatalog(profile).for_prompt()
         job_text = f"{job.role}\n{job.job_description}".casefold()
         if self.skills_bank:
             relevant = [
@@ -366,13 +364,18 @@ class GeminiProvider(AIProvider):
             TailoredResume,
             RESUME_TAILOR_SYSTEM_PROMPT,
             payload,
-            source_catalog=catalog,
+            source_catalog=payload["source_catalog"],
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
 
         from app.services.summary_review import review_summary
-        return await review_summary(self, resume, profile)
+        resume = await review_summary(self, resume, profile)
+        # Keep the selected source text with the server-side trace so later
+        # profile edits cannot erase generation provenance. Do not send another
+        # copy of these facts to the model in retrieval diagnostics.
+        resume._retrieval_trace = {**payload["retrieval"], "source_snapshot": payload["source_catalog"]}
+        return resume
 
     async def tailor(
         self,

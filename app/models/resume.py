@@ -52,6 +52,7 @@ class TailoredResume(BaseModel):
     professional_summary: str = Field(max_length=700)
     summary_source_fact_ids: list[str] = Field(default_factory=list)
     _summary_attestation: str = PrivateAttr(default="")
+    _retrieval_trace: dict = PrivateAttr(default_factory=dict)
 
     @property
     def summary_attestation(self) -> str:
@@ -72,6 +73,7 @@ class TailoredResume(BaseModel):
 
 
 class WorkflowResponse(BaseModel):
+    retrieval_context: dict = Field(default_factory=dict)
     call_metrics: list[dict] = Field(default_factory=list)
     token_usage: dict = Field(default_factory=dict)
     analysis: "JobAnalysis"
@@ -84,6 +86,8 @@ class WorkflowResponse(BaseModel):
 
     @model_validator(mode='after')
     def attach_summary_review(self):
+        if self.resume._retrieval_trace:
+            self.retrieval_context = self.resume._retrieval_trace.copy()
         if self.summary_attestation:
             self.resume.summary_attestation = self.summary_attestation
         else:
