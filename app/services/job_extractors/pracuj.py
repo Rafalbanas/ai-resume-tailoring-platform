@@ -50,6 +50,8 @@ def _line(value):
 
 class PracujExtractor(BaseExtractor):
     domains = ('pracuj.pl',)
+    headings = HEADINGS
+    employment_pattern = EMPLOYMENT
     prefer_over_jsonld = True
     # Unknown/blocked Pracuj pages must not fall through to a noisy whole-page import.
     allow_generic_fallback = False
@@ -62,8 +64,8 @@ class PracujExtractor(BaseExtractor):
         prelude = []
         for line in lines:
             heading = line.casefold().rstrip(':')
-            if heading in HEADINGS:
-                active = HEADINGS[heading]
+            if heading in self.headings:
+                active = self.headings[heading]
                 if heading != '__cvtailor_section_end__':
                     started = True
                 continue
@@ -75,7 +77,7 @@ class PracujExtractor(BaseExtractor):
                     section.append(line)
         employment = [line for line in prelude if len(line) < 250
                       and not re.search(r'\.(?:pdf|docx?)\b|domyślne cv|dopasowanie cv', line, re.I)
-                      and (EMPLOYMENT.search(line) or line.casefold().endswith('śląskie'))]
+                      and (self.employment_pattern.search(line) or line.casefold().endswith('śląskie'))]
         if employment:
             sections['EMPLOYMENT CONDITIONS'] = list(dict.fromkeys(employment))
         company = role = ''
@@ -102,7 +104,7 @@ class PracujExtractor(BaseExtractor):
         if not company:
             title = soup.find('h1')
             next_heading = title.find_next('h2') if title else None
-            if next_heading and next_heading.get_text(' ', strip=True).casefold() not in HEADINGS:
+            if next_heading and next_heading.get_text(' ', strip=True).casefold() not in self.headings:
                 company = next_heading.get_text(' ', strip=True)
         # Flatten complete blocks, preserving inline links/product names in one
         # sentence. Unknown section headings terminate the current offer section.
@@ -110,7 +112,7 @@ class PracujExtractor(BaseExtractor):
             if node.decomposed or node.find_parent(['p','li']):
                 continue
             text = node.get_text(' ', strip=True)
-            if node.name != 'h1' and node.name.startswith('h') and text.casefold().rstrip(':') not in HEADINGS:
+            if node.name != 'h1' and node.name.startswith('h') and text.casefold().rstrip(':') not in self.headings:
                 text = '__cvtailor_section_end__'
             node.replace_with('\n' + text + '\n')
         candidate = self.extract_text(normalized_text(soup))

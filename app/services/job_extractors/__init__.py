@@ -14,6 +14,7 @@ from app.services.job_extractors.nofluff import NoFluffExtractor
 from app.services.job_extractors.playwright_renderer import BrowserRenderError, SafePlaywrightRenderer
 from app.services.job_extractors.pracuj import PracujExtractor
 from app.services.job_extractors.security import UnsafeUrlError
+from app.services.job_extractors.theprotocol import TheProtocolExtractor
 from app.services.job_extractors.workday import WorkdayExtractor
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class JobExtractorService:
             NoFluffExtractor(),
             WorkdayExtractor(),
             PracujExtractor(),
+            TheProtocolExtractor(),
             EldoradoExtractor(),
         )
         self.generic = GenericHtmlExtractor()
