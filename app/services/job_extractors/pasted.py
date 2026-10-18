@@ -5,6 +5,7 @@ import re
 from app.services.job_extractors.base import ExtractionCandidate
 from app.services.job_extractors.eldorado import EldoradoExtractor
 from app.services.job_extractors.pracuj import HEADINGS, PracujExtractor, _line
+from app.services.job_extractors.theprotocol import TheProtocolExtractor
 from app.services.job_sections import CONTEXT_HEADINGS, DUTY, MANDATORY, NEEDED, ORG, PREFERRED, STACK
 
 NOISE = {
@@ -69,6 +70,9 @@ def clean_generic_text(text: str) -> ExtractionCandidate:
 
 
 def clean_pasted_offer(text: str, url: str = "") -> ExtractionCandidate:
+    theprotocol = TheProtocolExtractor()
+    if theprotocol.matches(url) or theprotocol.recognizes_text(text):
+        return theprotocol.extract_text(text)
     eldorado = EldoradoExtractor()
     folded = text.casefold()
     if eldorado.matches(url) or any(marker in folded for marker in (
