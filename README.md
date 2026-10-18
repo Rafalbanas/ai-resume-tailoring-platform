@@ -15,6 +15,21 @@ CVTailor is designed as a production-grade, single-owner automation system demon
 
 ---
 
+## Candidate fact RAG
+
+CV generation through **Ollama and Gemini** now retrieves relevant candidate facts before calling the LLM. Earlier versions supplied the entire profile to generation; evidence matching for analysis and reference-CV style selection already existed. [The audit and implementation guide](docs/rag.md) identifies the files and functions behind this distinction.
+
+- **Sources and chunks:** `FactCatalog` turns the current master profile into individual facts with stable source IDs, type and owner. Employment, projects and education remain separate; skills are filtered by the existing verified skills bank. Profile facts remain candidate attestations.
+- **Retrieval and ranking:** a local Python **BM25** index searches fact text using analyzed job requirements and role competencies. Mandatory requirements have weight 2, others 1, and the role 0.5. Scores are normalized per query length and summed. Defaults: 24 ranked candidates and 16,000 source-text characters, plus identity anchors for summary, employment chronology and education. Whole facts are selected, never truncated. These are code constants in `app/services/fact_retrieval.py`, not new environment settings.
+- **Generation context:** selected facts/IDs, employment identities and project links are passed to the generator. Ollama's schema uses the selected source IDs. Analysis still sees all evidence to avoid treating retrieval misses as missing qualifications. Mock and legacy n8n webhook generation keep their existing behavior.
+- **Updates and isolation:** each request rebuilds an in-memory index from its own current profile. There is no persistent retrieval index or shared cache, so profile changes cannot leave stale cached facts and retrieval cannot search another candidate's corpus.
+- **No matches and fallback:** no hits keeps identity anchors; an index/search failure uses that candidate's canonical catalog. Both paths retain the same Truth Lock, skill eligibility and export review checks. Fallback can require more model context.
+- **Traceability:** new drafts and new application metadata record selected IDs, types, owners, scores, selection reasons, query weights and index revision. Direct providers also save a source-text snapshot after generation for provenance across profile edits. Final resume JSON retains source citations. Existing exports and application history are not rewritten.
+
+For example, with the same synthetic profile, a Technical Support Engineer query about customer tickets/network incidents ranks an employment incident-investigation fact first; an AI/Python Developer query about Python/FastAPI/JSON ranks a personal project fact first. Adding Kubernetes to the offer creates no candidate Kubernetes evidence. Retrieval selects context; **Truth Lock independently checks what may appear in the CV**, including actual skill levels and the distinction between project work and commercial employment. Job descriptions and retrieved documents are untrusted data, never model instructions.
+
+The retrieval layer uses only the Python standard library, with no additional service, dependency or paid retrieval API. It uses **no embeddings or vector database**. Memory grows with profile tokens; queries scan the candidate's fact documents. Lexical matching has limited synonym and multilingual recall, and the source-character budget is not a total prompt/token limit. No quality or performance improvement percentage has been measured. See [RAG details and limitations](docs/rag.md), [verification results](docs/rag-verification.md) and the [canonical project description and CV wording](docs/project-description.md).
+
 ## Architecture
 
 ```mermaid

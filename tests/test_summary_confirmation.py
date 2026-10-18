@@ -133,7 +133,10 @@ async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidat
         resume = TailoredResume.model_validate(dict(resume_payload, professional_summary=text, summary_source_fact_ids=['summary:0']))
         resume.summary_attestation = sign_summary(resume, app.state.profile, app.state.settings.csrf_secret)
         job = JobRequest(company='Synthetic', role='Python support', job_description='Requirements\nPython support and automation.')
-        draft_id = app.state.storage.save_draft(job, WorkflowResponse(analysis=analysis(), resume=resume))
+        from app.services.fact_retrieval import retrieve_facts
+        trace = retrieve_facts(job, app.state.profile, analysis(), app.state.skills_bank).trace
+        draft_id = app.state.storage.save_draft(job, WorkflowResponse(
+            analysis=analysis(), resume=resume, retrieval_context=trace))
         page = await client.get('/analysis/' + draft_id)
         result = await client.post('/generate/' + draft_id, data=csrf(client) | {
             'summary_confirmed': 'on', 'summary_token': token(page.text), 'template_name': 'ats_classic'})
@@ -144,7 +147,9 @@ async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidat
         assert pdf.status_code == docx.status_code == 200
         assert text in ' '.join(p.extract_text() for p in PdfReader(io.BytesIO(pdf.content)).pages).replace('\n', ' ')
         assert text in ' '.join(p.text for p in Document(io.BytesIO(docx.content)).paragraphs)
-        assert app.state.storage.load_application(slug)[3]['summary_confirmed_at']
+        metadata = app.state.storage.load_application(slug)[3]
+        assert metadata['summary_confirmed_at']
+        assert metadata['retrieval_context'] == trace
         folder = app.state.storage.application_folder(slug)
         payload = json.loads((folder / 'resume.json').read_text())
         payload['professional_summary'] = text + ' I have ten years of commercial experience.'
