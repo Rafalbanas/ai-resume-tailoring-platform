@@ -1,12 +1,5 @@
 from pathlib import Path
 
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.opc.constants import RELATIONSHIP_TYPE as RT
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from docx.shared import Inches, Pt
-
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
 from app.services.fact_catalog import FactCatalog
@@ -16,6 +9,10 @@ from app.services.resume_export import contacts, link_display, prepare_resume
 
 
 def add_link(paragraph, text: str, target: str) -> None:
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
     link = OxmlElement("w:hyperlink")
     link.set(qn("r:id"), paragraph.part.relate_to(target, RT.HYPERLINK, is_external=True))
     run = OxmlElement("w:r")
@@ -36,6 +33,10 @@ def _generate_docx_local(
     photo_enabled: bool = False,
     template_name: str = "modern_sidebar",
 ) -> None:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, Pt
+
     if not profile.personal.name.strip():
         raise ValueError("Candidate name is missing from the active master profile.")
     resume = prepare_resume(resume, profile)

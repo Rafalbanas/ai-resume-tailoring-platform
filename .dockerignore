@@ -30,3 +30,19 @@ AUDIT_REPORT.md
 # Private Kubernetes runtime artifacts and deployment coordination
 .k8s-lab
 data/.deployment-admission.lock
+
+# Source caches and local tooling never belong in runtime image layers.
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.DS_Store
+venv
+.codex
+.agents
+.aws
+.env.*
+!.env.example
+**/*.pdf
+**/*.docx
