@@ -61,9 +61,9 @@ class FactValidator:
                             if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
                                 self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
-    def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest):
+    def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest, *, allow_manual_skills: bool = False):
         from app.services.resume_edit_validation import validate_manual_edit
-        return validate_manual_edit(self, original, edited, job)
+        return validate_manual_edit(self, original, edited, job, allow_manual_skills=allow_manual_skills)
 
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         draft = deepcopy(candidate)

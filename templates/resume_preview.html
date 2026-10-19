@@ -30,6 +30,8 @@
     </form>
   </div>
 </div>
+{% include "_truth_lock_control.html" %}
+{% include "_tailoring_new_version.html" %}
 {% if summary_review %}
 <form action="{{ app_root_path|default('') }}/preview/{{ slug }}/summary/confirm" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

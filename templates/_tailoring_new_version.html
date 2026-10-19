@@ -1,0 +1,8 @@
+{% if job is defined %}
+<details class="card">
+  <summary>Create a new version with different job tailoring</summary>
+  {% set tailoring_source_type = 'application' %}
+  {% set tailoring_source_id = slug %}
+  {% include '_tailoring_retry.html' %}
+</details>
+{% endif %}

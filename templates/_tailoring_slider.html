@@ -1,0 +1,7 @@
+<label for="tailoring-level">Job tailoring · <output for="tailoring-level" class="tailoring-value">{{ tailoring_level|default(0.0) }}</output></label>
+<div class="truth-lock-slider">
+  <span aria-hidden="true">0</span>
+  <input id="tailoring-level" name="tailoring_level" type="range" min="0" max="1" step="0.1" value="{{ tailoring_level|default(0.0) }}" aria-describedby="tailoring-help">
+  <span aria-hidden="true">1</span>
+</div>
+<p class="muted" id="tailoring-help">0: strongest job-focused selection and wording. 1: closest to profile wording and order. Intermediate values blend both. All settings require confirmed facts; this does not change model temperature or Truth Lock.</p>

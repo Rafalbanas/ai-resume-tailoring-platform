@@ -20,6 +20,7 @@ from app.services.artifact_transaction import commit_artifacts, staged_artifacts
 from app.services.evidence_gaps import evidence_questions
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
+from app.services.manual_resume import check_edit, truth_lock_level
 from app.services.processing import cpu_work
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
@@ -130,6 +131,7 @@ async def index(request: Request, from_task: str | None = None):
         "job_description": "",
         "job_url": "",
         "llm_provider": default_provider,
+        "tailoring_level": 0.0,
     }
     if from_task:
         task = request.app.state.task_manager.get_task(from_task)
@@ -139,6 +141,7 @@ async def index(request: Request, from_task: str | None = None):
             form_data["role"] = job_payload.get("role", "")
             form_data["job_description"] = job_payload.get("job_description", "")
             form_data["job_url"] = job_payload.get("job_url", "")
+            form_data["tailoring_level"] = job_payload.get("tailoring_level", 0.0)
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
 
     return request.app.state.templates.TemplateResponse(
@@ -155,6 +158,7 @@ async def analyze(
     csrf_token: Annotated[str, Form()],
     job_url: Annotated[str, Form()] = "",
     llm_provider: Annotated[str, Form()] = "auto",
+    tailoring_level: Annotated[float, Form(ge=0, le=1)] = 0.0,
 ):
     guard(request)
     limit_request(request)
@@ -162,7 +166,8 @@ async def analyze(
     if len(job_description) > request.app.state.settings.max_job_description_chars:
         raise HTTPException(status_code=413, detail="Job description is too long")
     try:
-        job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description)
+        job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description,
+                         tailoring_level=tailoring_level)
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
             request=request, name="index.html",
@@ -174,6 +179,7 @@ async def analyze(
                 job_description=job_description,
                 job_url=job_url,
                 llm_provider=llm_provider,
+                tailoring_level=tailoring_level,
             ),
             status_code=422,
         )
@@ -186,6 +192,7 @@ async def analyze(
         job_description=job_description.strip(),
         job_url=job_url.strip(),
         llm_provider=llm_provider.strip(),
+        tailoring_level=tailoring_level,
     )
 
     task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, key)
@@ -232,6 +239,46 @@ async def get_task_status(request: Request, task_id: str):
     payload["stage"] = ui_text(task.stage)
     payload["error"] = ui_text(task.error) if task.error else None
     return JSONResponse(content=payload)
+
+
+@router.post('/retailor/{source_type}/{source_id}')
+async def retailor_saved_analysis(request: Request, source_type: Literal['draft', 'application'], source_id: str,
+                                 csrf_token: Annotated[str, Form()],
+                                 tailoring_level: Annotated[float, Form(ge=0, le=1)],
+                                 llm_provider: Annotated[str, Form()] = 'auto'):
+    guard(request)
+    limit_request(request)
+    validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ''),
+                  request.app.state.settings.csrf_secret)
+    try:
+        if source_type == 'draft':
+            job, response = request.app.state.storage.load_draft(source_id)
+            analysis = response.analysis
+        else:
+            job, _, _, _ = request.app.state.storage.load_application(source_id)
+            from app.models.job import JobAnalysis
+            folder = request.app.state.storage.application_folder(source_id)
+            analysis = JobAnalysis.model_validate_json((folder / 'analysis.json').read_text())
+    except (OSError, ValidationError, ValueError) as exc:
+        raise HTTPException(404, 'Saved analysis not found') from exc
+    if not analysis.is_reliable:
+        raise HTTPException(409, 'Saved analysis requires review. Analyze the offer again first.')
+    job = JobRequest.model_validate({**job.model_dump(), 'tailoring_level': tailoring_level})
+    import hashlib
+    snapshot = json.dumps({
+        'job': job.model_dump(mode='json'), 'analysis': analysis.model_dump(mode='json'),
+        'profile': request.app.state.profile.model_dump(mode='json'),
+        'skills': [skill.model_dump(mode='json') for skill in request.app.state.skills_bank.skills],
+    }, sort_keys=True)
+    key = compute_idempotency_key('retailor', source_type=source_type, source_id=source_id,
+                                  revision=hashlib.sha256(snapshot.encode()).hexdigest(), provider=llm_provider)
+    task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, key)
+    if not task:
+        task = request.app.state.task_manager.create_task(TaskKind.TAILOR, payload={
+            'job': job.model_dump(mode='json'), 'reuse_analysis': analysis.model_dump(mode='json'),
+            'llm_provider': llm_provider,
+        }, idempotency_key=key)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/tasks/{task.task_id}/view", status_code=303)
 
 
 @router.get("/tasks/{task_id}/view", response_class=HTMLResponse)
@@ -321,6 +368,7 @@ async def analysis_view(request: Request, draft_id: str):
             evidence_questions=evidence_questions(response.analysis),
             draft_id=draft_id,
             summary_review=review,
+            tailoring_resume=checked,
             provider_used=getattr(response, "provider_used", "unknown"),
             model_used=getattr(response, "model_used", "unknown"),
             fallback_used=getattr(response, "fallback_used", False),
@@ -448,7 +496,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
 async def preview(request: Request, slug: str):
     guard(request)
     try:
-        _, resume, _, metadata = request.app.state.storage.load_application(slug)
+        job, resume, _, metadata = request.app.state.storage.load_application(slug)
     except (OSError, ValidationError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     resume_html = await cpu_work(request, request.app.state.pdf_generator.render_preview,
@@ -466,6 +514,7 @@ async def preview(request: Request, slug: str):
         context=context(
             request,
             slug=slug,
+            job=job,
             metadata=metadata,
             resume_html=resume_html,
             photo_available=request.app.state.profile_photo.exists(),
@@ -580,6 +629,33 @@ async def remove_preview_photo(request: Request, slug: str):
     return {"ok": True, "photo_enabled": False}
 
 
+@router.post("/preview/{slug}/truth-lock")
+async def set_resume_truth_lock(request: Request, slug: str, csrf_token: Annotated[str, Form()],
+                                enabled: Annotated[Literal["on", "off"] | None, Form()] = None,
+                                level: Annotated[float | None, Form(ge=0, le=1)] = None):
+    guard(request)
+    limit_request(request)
+    validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""),
+                  request.app.state.settings.csrf_secret)
+    if level is None:
+        if enabled is None:
+            raise HTTPException(422, 'Choose a Truth Lock level between 0 and 1.')
+        level = 1.0 if enabled == 'on' else 0.0
+    try:
+        job, resume, _, metadata = request.app.state.storage.load_application(slug)
+        if level > 0 and (truth_lock_level(metadata) == 0 or level == 1 and truth_lock_level(metadata) < 1):
+            validator = FactValidator(request.app.state.profile, request.app.state.skills_bank,
+                                      review_key=request.app.state.settings.csrf_secret)
+            audit = validator.validate_manual_edit(resume, resume, job, allow_manual_skills=level < 1)
+            blocking_warnings = [w for w in audit.warnings if not w.startswith('Skills are manually maintained')]
+            if audit.issues or blocking_warnings:
+                raise HTTPException(409, "Verify the manually edited claims in your profile or restore the generated CV before enabling Truth Lock.")
+        request.app.state.storage.set_truth_lock(slug, level > 0, level=level)
+    except (OSError, ValidationError, ValueError) as exc:
+        raise HTTPException(404, "Resume not found") from exc
+    return RedirectResponse(f"/edit/{slug}", status_code=303)
+
+
 @router.get("/edit/{slug}", response_class=HTMLResponse)
 async def edit_resume(request: Request, slug: str):
     guard(request)
@@ -589,7 +665,7 @@ async def edit_resume(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Resume not found") from exc
     return request.app.state.templates.TemplateResponse(
         request=request, name="resume_edit.html",
-        context=context(request, slug=slug, metadata=metadata, resume=resume,
+        context=context(request, slug=slug, job=job, metadata=metadata, resume=resume,
                 existing_warnings=FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, resume, job).warnings),
     )
 
@@ -604,6 +680,12 @@ def _regenerate_artifacts(
     photo_enabled: bool = False,
     validated_edit=None,
 ) -> list[str]:
+    metadata = request.app.state.storage.load_application(slug)[3]
+    if validated_edit is None and truth_lock_level(metadata) < 1:
+        validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret)
+        validated_edit = check_edit(validator, resume, resume, job, slug, metadata)
+        if validated_edit.issues:
+            raise ValueError('Saved content requires source review before export.')
     result = validated_edit or FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate(resume, job, preserve_skills=True)
     layout_guide = request.app.state.reference_library.layout_guide()
     fitted_resume, layout_warnings = request.app.state.pdf_generator.fit_resume(
@@ -662,7 +744,8 @@ async def save_resume_edit(request: Request, slug: str):
                 photo_enabled = metadata.get("modern_photo_enabled", metadata.get("photo_enabled", False))
             await cpu_work(request, _refresh_photo_artifacts, request, slug, photo_enabled=photo_enabled, template_name=template_name)
             return RedirectResponse(f"/preview/{slug}", status_code=303)
-        checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret).validate_manual_edit(resume, edited, job)
+        validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, review_key=request.app.state.settings.csrf_secret)
+        checked = check_edit(validator, resume, edited, job, slug, metadata)
         if checked.issues:
             return request.app.state.templates.TemplateResponse(
                 request=request, name="resume_edit.html", context=context(request, slug=slug, metadata=metadata, resume=edited,

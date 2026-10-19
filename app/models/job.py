@@ -79,6 +79,7 @@ class JobRequest(BaseModel):
     role: str = Field(min_length=1, max_length=150)
     job_url: HttpUrl | None = None
     job_description: str = Field(min_length=30, max_length=30_000)
+    tailoring_level: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
 
 
     @field_validator("company", "role", "job_description", mode="before")

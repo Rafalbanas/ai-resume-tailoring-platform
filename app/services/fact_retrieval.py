@@ -88,6 +88,17 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
     mode = "ranked"
     try:
         ranked = FactIndex(documents).search(queries)
+        # Blend lexical relevance with the canonical profile order. Only ranked
+        # matches participate: this control cannot create evidence for a gap.
+        maximum = max((score for _, score in ranked), default=1)
+        source_order = {e.source_id: index for index, e in enumerate(documents)}
+        level = job.tailoring_level
+        ranking_scores = {
+            e.source_id: (1 - level) * score / maximum
+            + level * (1 - source_order[e.source_id] / max(1, len(documents)))
+            for e, score in ranked
+        }
+        ranked.sort(key=lambda item: (-ranking_scores[item[0].source_id], item[0].source_id))
         mode = "ranked" if ranked else "no_matches"
         used = sum(len(e.text) for e in selected.values())
         for entry, score in ranked[:top_k]:
@@ -108,11 +119,15 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
     entries = list(selected.values())
     return RetrievalResult(entries, {
         "method": "local_bm25", "mode": mode, "top_k": top_k,
+        "tailoring_level": job.tailoring_level,
+        "ranking_policy": "blend_normalized_bm25_with_profile_order",
         "index_revision": hashlib.sha256(json.dumps(
             [(e.source_id, e.kind, e.owner_name, e.text) for e in documents],
             ensure_ascii=False).encode()).hexdigest(),
         "queries": [{"text": q, "weight": w} for q, w in queries],
         "max_context_chars": max_chars, "document_count": len(documents),
         "selected": [{"source_id": e.source_id, "type": e.kind, "owner": e.owner_name,
-                      "reason": reasons[e.source_id], "score": scores.get(e.source_id, 0)} for e in entries],
+                      "reason": reasons[e.source_id], "score": scores.get(e.source_id, 0),
+                      "ranking_score": round(ranking_scores.get(e.source_id, 0), 6) if mode == 'ranked' else 0}
+                     for e in entries],
     })
