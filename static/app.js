@@ -637,3 +637,22 @@ if (providerSelect && providerOrder) {
   updateOrder();
 }
 window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
+
+// A selected level takes effect only after a server-validated form submission.
+document.querySelectorAll('.truth-lock-form').forEach(form => {
+  const slider = form.querySelector('input[name="level"]');
+  const value = form.querySelector('.truth-lock-value');
+  const mode = form.querySelector('.truth-lock-mode');
+  slider.addEventListener('input', () => {
+    const level = Number(slider.value);
+    value.value = slider.value;
+    mode.textContent = level === 1 ? 'Full source validation' : level === 0
+      ? 'Manual editing of all sections' : 'Manual Skills; all other sections source-validated';
+  });
+});
+
+document.querySelectorAll('input[name="tailoring_level"]').forEach(slider => {
+  slider.addEventListener('input', () => {
+    slider.form.querySelector('.tailoring-value').value = slider.value;
+  });
+});

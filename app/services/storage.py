@@ -56,6 +56,7 @@ class Storage:
         fallback_used: bool = False,
         fallback_reason: str | None = None,
         retrieval_context: dict | None = None,
+        truth_lock_enabled: bool = True,
     ) -> tuple[str, Path]:
         date = datetime.now(timezone.utc).date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
@@ -83,7 +84,8 @@ class Storage:
             "analysis_uncertain": any(r.interpretation_uncertain for r in analysis.requirements),
             "analysis_method": analysis.analysis_method,
             "document_status": "pending_export",
-            "candidate_data_status": "export fields checked",
+            "candidate_data_status": "export fields checked" if truth_lock_enabled else "Manual content — source validation disabled",
+            "truth_lock_enabled": truth_lock_enabled,
             "recommendation": analysis.recommendation,
             "warnings": warnings,
             "generation_warnings": warnings,
@@ -122,6 +124,27 @@ class Storage:
         metadata['summary_confirmation'] = token
         metadata['summary_confirmed_at'] = datetime.now(timezone.utc).isoformat()
         fd, temporary = tempfile.mkstemp(dir=folder, prefix='.summary-confirmation-')
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(metadata, stream, indent=2)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    def set_truth_lock(self, slug: str, enabled: bool, *, level: float | None = None) -> None:
+        level = float(enabled) if level is None else level
+        if not 0 <= level <= 1:
+            raise ValueError('Truth Lock level must be between 0 and 1')
+        folder = self.application_folder(slug)
+        path = folder / 'metadata.json'
+        metadata = json.loads(path.read_text())
+        metadata['truth_lock_enabled'] = level > 0
+        metadata['truth_lock_level'] = level
+        metadata['candidate_data_status'] = ('Source validation enabled' if level == 1 else
+            'Manual skills — other sections source-validated' if level > 0 else
+            'Manual content — source validation disabled')
+        metadata['truth_lock_changed_at'] = datetime.now(timezone.utc).isoformat()
+        fd, temporary = tempfile.mkstemp(dir=folder, prefix='.truth-lock-')
         try:
             with os.fdopen(fd, 'w') as stream:
                 json.dump(metadata, stream, indent=2)

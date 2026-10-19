@@ -38,6 +38,12 @@
   <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
 </div>
 {% endif %}
+<section class="card">
+  <h2>Adjust job tailoring before export</h2>
+  {% set tailoring_source_type = 'draft' %}
+  {% set tailoring_source_id = draft_id %}
+  {% include '_tailoring_retry.html' %}
+</section>
 {% if analysis.qualification_assessment %}<section class="card"><h2>Qualification assessment</h2><p>{{ analysis.qualification_assessment }}</p>
 <h2>Role alignment — documented experience</h2><p>{{ analysis.role_alignment_summary }}</p></section>{% endif %}
 {% if analysis.requirements and analysis.requirement_counts %}{% set optional_count = analysis.requirements|selectattr("priority", "equalto", "nice_to_have")|list|length %}<p>{{ analysis.requirement_counts.mandatory }} mandatory · {{ analysis.requirement_counts.preferred - optional_count }} preferred · {{ optional_count }} optional · {{ analysis.requirements|length }} assessed requirements</p>{% endif %}
@@ -170,7 +176,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if summary_review %}{% include '_summary_review.html' %}{% endif %}
     <label>Resume layout<select name="template_name"><option value="ats_classic">ATS Classic</option><option value="modern_sidebar">Modern Sidebar</option></select></label>
-    <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Generate tailored CV</button>
+    <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Export this draft as PDF / DOCX</button>
   </form>
 </div>
 {% endblock %}

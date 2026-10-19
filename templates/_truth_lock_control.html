@@ -1,0 +1,17 @@
+{% set lock_level = metadata.truth_lock_level|default(1 if metadata.truth_lock_enabled|default(true) else 0) %}
+<section class="card" aria-label="Truth Lock for this CV">
+  <p><strong>Truth Lock: {% if lock_level == 1 %}ON{% elif lock_level == 0 %}OFF — manual CV{% else %}PARTIAL — manual Skills{% endif %}</strong></p>
+  <form action="{{ app_root_path|default('') }}/preview/{{ slug }}/truth-lock" method="post" class="truth-lock-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="truth-lock-level">Validation level for this CV</label>
+    <div class="truth-lock-slider">
+      <span aria-hidden="true">0</span>
+      <input id="truth-lock-level" type="range" name="level" min="0" max="1" step="0.1" value="{{ lock_level }}" aria-describedby="truth-lock-help">
+      <span aria-hidden="true">1</span>
+      <output for="truth-lock-level" class="truth-lock-value">{{ lock_level }}</output>
+    </div>
+    <p class="truth-lock-mode" aria-live="polite">{% if lock_level == 1 %}Full source validation{% elif lock_level == 0 %}Manual editing of all sections{% else %}Manual Skills; all other sections source-validated{% endif %}</p>
+    <button type="submit" class="secondary">Apply validation level</button>
+  </form>
+  <p class="muted" id="truth-lock-help">1: all claims require profile evidence. Between 0 and 1: manually add Skills; other sections remain source-validated. 0: manually edit all sections. Intermediate values use the same Skills-only permission. Changes apply after saving, only to this CV. Manual content is never marked as verified by moving the slider.</p>
+</section>

@@ -11,7 +11,7 @@ class ManualEditResult(ValidationResult):
     issues: list[dict[str, str]] = field(default_factory=list)
 
 
-def validate_manual_edit(validator, original, edited, job):
+def validate_manual_edit(validator, original, edited, job, *, allow_manual_skills=False):
     result = ManualEditResult(deepcopy(edited), [])
     checked = validator.validate(edited, job, preserve_skills=True).resume
 
@@ -42,13 +42,18 @@ def validate_manual_edit(validator, original, edited, job):
         supported = (bool(entry and validator.skills_bank.eligible(entry)) if validator.skills_bank
                      else value in [s for values in validator.profile.skills.values() for s in values])
         canonical = validator.skills_bank.wording(entry) if entry and supported else None
+        if allow_manual_skills:
+            continue
         if count > old_skills[value]:
             if not supported or (canonical is not None and canonical != value):
                 reject(f'Skills: {value}', 'New or changed wording is not approved at this competence level.',
                        f'Use the verified wording: {canonical}.' if canonical else 'Remove this addition, or verify its scope and evidence in Skills Bank first.')
         elif not supported or (canonical is not None and canonical != value):
             audit(f'Skills: {value}')
-    if edited.core_skills != original.core_skills:
+    if allow_manual_skills:
+        result.resume.selected_skill_ids = []
+        result.warnings.append('Skills are manually maintained for this CV and are not marked as verified. Other sections remain source-validated.')
+    elif edited.core_skills != original.core_skills:
         # Resolve by actual rendered wording, never by positional zip with stale IDs.
         result.resume.selected_skill_ids = list(dict.fromkeys(s.id for value in edited.core_skills
             if (s := skill(value)) and validator.skills_bank.eligible(s) and validator.skills_bank.wording(s) == value)) if validator.skills_bank else []

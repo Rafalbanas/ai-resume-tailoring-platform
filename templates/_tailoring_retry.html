@@ -1,0 +1,19 @@
+<p>Current draft tailoring: {{ job.tailoring_level }}. Adjust the slider to generate another draft using this saved analysis. Existing CVs stay unchanged. Generation uses profile facts; manual additions are not copied.</p>
+{% if tailoring_resume is defined %}
+<details>
+  <summary>Review current CV text before adjusting</summary>
+  <p>{{ tailoring_resume.professional_summary }}</p>
+  <p><strong>Skills:</strong> {{ tailoring_resume.core_skills|join(', ') }}</p>
+  {% for experience in tailoring_resume.experience %}
+  <p><strong>{{ experience.title }} · {{ experience.company }}</strong> · {{ experience.dates }}</p>
+  <ul>{% for bullet in experience.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul>
+  {% endfor %}
+  {% for project in tailoring_resume.projects %}<p><strong>{{ project.name }}</strong>: {{ project.description }}</p>{% endfor %}
+</details>
+{% endif %}
+<form action="{{ app_root_path|default('') }}/retailor/{{ tailoring_source_type }}/{{ tailoring_source_id }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% set tailoring_level = job.tailoring_level %}
+  {% include '_tailoring_slider.html' %}
+  <button type="submit" class="secondary"{% if analysis is defined and not analysis.is_reliable %} disabled{% endif %}>Generate new draft · reuse analysis</button>
+</form>

@@ -73,6 +73,7 @@ class ResilientAIProvider(AIProvider):
         profile: CandidateProfile,
         requested_provider: str = "auto",
         on_stage: Callable[[str], None] | None = None,
+        reuse_analysis: JobAnalysis | None = None,
     ) -> WorkflowResponse:
         primary_name, fallback_name = self.resolve_chain(requested_provider)
         primary = self.providers.get(primary_name)
@@ -86,6 +87,24 @@ class ResilientAIProvider(AIProvider):
             return max(0.0, self.operation_budget_seconds - elapsed)
 
         async def _call(target: AIProvider, recovery_error=None) -> WorkflowResponse:
+            if reuse_analysis is not None:
+                if type(target).tailor_resume is AIProvider.tailor_resume and target.name != 'mock':
+                    raise ProviderUnavailableError('This provider does not support generation from a saved analysis. Use Ollama or Gemini.')
+                if on_stage:
+                    on_stage(f"Reusing saved analysis; generating CV ({target.name})...")
+                metrics = []
+                metric_context = getattr(target, '_run_metrics', None)
+                token = metric_context.set(metrics) if metric_context else None
+                try:
+                    resume = await target.tailor_resume(job, profile, reuse_analysis.model_copy(deep=True))
+                    return WorkflowResponse(analysis=reuse_analysis.model_copy(deep=True), resume=resume,
+                                            call_metrics=metrics)
+                except AIProviderError as exc:
+                    exc.call_metrics = metrics
+                    raise
+                finally:
+                    if metric_context:
+                        metric_context.reset(token)
             partial = getattr(recovery_error, 'partial_analysis', None)
             missing = getattr(recovery_error, 'unassessed_source_passages', [])
             if partial is not None and missing:
@@ -275,6 +294,10 @@ class ResilientAIProvider(AIProvider):
                 raise AIProviderError(
                     f"Both AI providers failed. {primary_name}: {primary_err}; {fallback_name}: {fallback_err}"
                 ) from fallback_err
+
+    async def retailor(self, job, profile, analysis, requested_provider='auto', on_stage=None):
+        return await self.tailor(job, profile, requested_provider=requested_provider,
+                                 on_stage=on_stage, reuse_analysis=analysis)
 
     async def analyze_job(
         self,

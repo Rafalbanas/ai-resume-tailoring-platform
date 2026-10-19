@@ -183,3 +183,54 @@ def test_trace_in_new_application_metadata(candidate, tmp_path):
     storage = Storage(tmp_path)
     _, folder = storage.save_application(job, analysis, resume, [], retrieval_context=trace)
     assert json.loads((folder / 'metadata.json').read_text())['retrieval_context'] == trace
+
+
+def test_tailoring_levels_interpolate_ranking_without_changing_evidence(candidate):
+    job, analysis = scenario('AI/Python Developer', 'Python FastAPI JSON')
+    traces = {}
+    for level in [0, 0.2, 0.5, 0.8, 1]:
+        job.tailoring_level = level
+        payload = build_compact_tailor_payload(job, candidate, analysis)
+        assert payload['tailoring_policy']['rewrite_budget'] == round(1 - level, 3)
+        assert payload['retrieval']['tailoring_level'] == level
+        assert payload['retrieval']['top_k'] == 24
+        assert payload['retrieval']['max_context_chars'] == 16000
+        traces[level] = {r['source_id']: r['ranking_score'] for r in payload['retrieval']['selected']
+                         if r['reason'] == 'lexical_match'}
+        assert all(FactCatalog(candidate).get(e['source_id']).text == e['fact'] for e in payload['source_catalog'])
+    common = set(traces[0]) & set(traces[1])
+    assert common
+    for source_id in common:
+        for level in [0.2, 0.5, 0.8]:
+            assert traces[level][source_id] == pytest.approx(
+                (1 - level) * traces[0][source_id] + level * traces[1][source_id], abs=0.000002)
+    assert any(traces[0][i] != traces[1][i] for i in common)
+
+
+@pytest.mark.parametrize('level', [0, 0.5, 1])
+def test_tailoring_never_grants_missing_skills(candidate, level):
+    job, analysis = scenario('Engineer', 'Kubernetes commercial expert')
+    job.tailoring_level = level
+    payload = build_compact_tailor_payload(job, candidate, analysis)
+    assert 'Kubernetes' not in str(payload['source_catalog'])
+    draft = TailoredResume(headline='Kubernetes expert', professional_summary='Kubernetes expert.',
+                           core_skills=['Kubernetes'], experience=[])
+    checked = FactValidator(candidate, analysis=analysis).validate(draft, job).resume
+    assert 'Kubernetes' not in checked.model_dump_json()
+
+
+def test_tailoring_level_is_validated_and_persisted_in_job(candidate, tmp_path):
+    from pydantic import ValidationError
+    job, analysis = scenario('Engineer', 'Python technical support')
+    for invalid in [-0.1, 1.1, float('nan'), float('inf')]:
+        with pytest.raises(ValidationError):
+            JobRequest.model_validate({**job.model_dump(), 'tailoring_level': invalid})
+    job.tailoring_level = 0.8
+    response = WorkflowResponse(analysis=analysis, resume=TailoredResume(
+        headline='Support', professional_summary='', core_skills=[], experience=[]))
+    storage = Storage(tmp_path)
+    restored, _ = storage.load_draft(storage.save_draft(job, response))
+    assert restored.tailoring_level == 0.8
+    slug, _ = storage.save_application(restored, analysis, response.resume, [])
+    assert storage.load_application(slug)[0].tailoring_level == 0.8
+    assert storage.load_application(slug)[3]['truth_lock_enabled'] is True

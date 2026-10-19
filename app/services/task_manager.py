@@ -17,7 +17,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from app.models.job import JobRequest
+from app.models.job import JobAnalysis, JobRequest
 from app.services.ai_provider import AIProviderError, GeminiAuthError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.comparison_capture import capture_comparison
@@ -318,10 +318,21 @@ class TaskManager:
 
         on_stage_cb("Starting generation...")
 
+        reused_analysis = task.payload.get('reuse_analysis')
+        if reused_analysis is not None:
+            reused_analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
+                JobAnalysis.model_validate(reused_analysis), f"{job.role}\n{job.job_description}")
+            if not reused_analysis.is_reliable:
+                raise AIProviderError('Saved analysis requires review. Analyze the offer again before generating.')
+
         try:
-            response = await app_state.provider.tailor(
-                job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
-            )
+            if reused_analysis is not None:
+                response = await app_state.provider.retailor(
+                    job, app_state.profile, reused_analysis, requested_provider=llm_provider, on_stage=on_stage_cb)
+            else:
+                response = await app_state.provider.tailor(
+                    job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
+                )
         except AIProviderError as exc:
             if hasattr(app_state, "diagnostics"):
                 last_call = (getattr(exc, "call_metrics", []) or [{}])[-1]
@@ -332,6 +343,8 @@ class TaskManager:
                     error_message=str(exc), call_metrics=getattr(exc, "call_metrics", []))
             raise
         except TypeError:
+            if reused_analysis is not None:
+                raise
             try:
                 response = await app_state.provider.tailor(
                     job, app_state.profile, requested_provider=llm_provider
