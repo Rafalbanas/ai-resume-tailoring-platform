@@ -17,6 +17,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[2]
 SLOTS = threading.BoundedSemaphore(1)
 ENDPOINT = ContextVar("processing_endpoint", default=None)
+BROWSER_ENDPOINT = ContextVar("processing_browser_endpoint", default=None)
 DEADLINE = ContextVar("processing_deadline", default=None)
 MAX_RESULT = 24 * 1024 * 1024
 logger = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ def process(operation, payload, *, timeout=60):
         raise ProcessingError('Document processing exceeded its deadline.')
     request = {'operation': operation, 'payload': payload, 'timeout_seconds': timeout}
     endpoint, token = ENDPOINT.get() or (os.environ.get('PROCESSING_URL', ''), os.environ.get('PROCESSING_TOKEN', ''))
+    if operation == 'browser':
+        browser_endpoint = BROWSER_ENDPOINT.get()
+        if browser_endpoint is None:
+            browser_endpoint = (os.environ.get('BROWSER_PROCESSING_URL', ''), os.environ.get('BROWSER_PROCESSING_TOKEN', ''))
+        if browser_endpoint[0]:
+            endpoint, token = browser_endpoint
     endpoint = endpoint.rstrip('/')
     if endpoint:
         try:
@@ -69,6 +76,8 @@ def process(operation, payload, *, timeout=60):
         except (httpx.HTTPError, ValueError) as exc:
             raise ProcessingError('Document processing is unavailable or exceeded its limits.') from exc
     else:
+        if os.environ.get('CVTAILOR_RUNTIME_ROLE') == 'api':
+            raise ProcessingError('The API image requires a configured remote processing service.')
         result = local_process(request, timeout=timeout)
     if not result.get('ok'):
         raise ProcessingError(result.get('error', 'Document processing failed.'))

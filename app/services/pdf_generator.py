@@ -8,11 +8,8 @@ from html import escape
 from io import BytesIO
 from pathlib import Path
 
-import pypdfium2
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pypdf import PdfReader
-from weasyprint import HTML
 
 from app.models.candidate import CandidateProfile
 from app.models.resume import TailoredResume
@@ -134,6 +131,9 @@ class PDFGenerator:
         validate_layout(document)
         pdf = document.write_pdf(pdf_tags=True)
         validate_pdf_output(pdf, profile)
+        import pypdfium2
+        from pypdf import PdfReader
+
         reader = PdfReader(BytesIO(pdf))
         if len(reader.pages) > 30:
             raise ValueError('CV exceeds the 30-page processing limit.')
@@ -213,6 +213,8 @@ class PDFGenerator:
         page. Detect actual rendered text and retain whole sections in the main
         flow; it can paginate without losing facts or reducing font size.
         """
+        from weasyprint import HTML
+
         document = HTML(string=markup, base_url=str(self.data_dir)).render()
         soup = BeautifulSoup(markup, "html.parser")
         sidebar = soup.select_one("aside.resume-sidebar")
@@ -284,6 +286,8 @@ class PDFGenerator:
         return result
 
     def _finish_document(self, markup, document):
+        from weasyprint import HTML
+
         soup = BeautifulSoup(markup, "html.parser")
         metrics = self.page_content_metrics(document)
         # A small trailing fragment is repaired by moving whole sections, never

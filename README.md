@@ -309,7 +309,7 @@ Docker Compose uses `network_mode: host` on Linux so that the container can reac
 2. **Configure environment variables**:
    ```bash
    cp .env.example .env
-   # Edit .env and configure strong random secrets for APP_PASSWORD and CSRF_SECRET
+   # Configure APP_PASSWORD, CSRF_SECRET, PROCESSING_TOKEN and BROWSER_PROCESSING_TOKEN
    ```
 
 3. **Initialize candidate profile and skills bank**:
@@ -333,6 +333,12 @@ Docker Compose uses `network_mode: host` on Linux so that the container can reac
    ```bash
    docker compose exec cv-tailor python -m app.cli reset-password
    ```
+
+### Role-specific container images
+
+Compose builds separate **API**, **document worker**, and **browser worker** targets from an explicit Debian Slim base. The API excludes native document/browser packages; workers retain independent account credentials and sandboxing. Set `PROCESSING_TOKEN` and `BROWSER_PROCESSING_TOKEN` before starting Compose, and independent demo equivalents when enabling its profile. Versions still come from the single `requirements.txt` pin file. See [runtime images, checks and size measurements](docs/runtime-images.md).
+
+The default `docker build .` target remains `full` for existing CD/Kubernetes compatibility. The role-image change does not deploy or migrate production automatically.
 
 ### Option C: Local Development (Python <!-- PYTHON_VERSION:START -->3.14<!-- PYTHON_VERSION:END -->)
 
@@ -379,6 +385,10 @@ All configurable environment variables correspond to `.env.example`:
 | `DEMO_DATA_DIR` | unset | Optional separate demo account directory served at the same `/login` |
 | `DEMO_CSRF_SECRET_FILE` | demo `csrf.secret` | Independent demo signing secret file |
 | `DATA_DIR` | `/app/data` (Docker) or `data` | Directory for master profile, skills bank, auth, and generated resumes |
+| `PROCESSING_URL` / `PROCESSING_TOKEN` | set by Compose / required secret | Account-specific document worker endpoint and token |
+| `BROWSER_PROCESSING_URL` / `BROWSER_PROCESSING_TOKEN` | set by Compose / required secret | Account-specific Chromium worker endpoint and token |
+| `DEMO_PROCESSING_URL` / `DEMO_PROCESSING_TOKEN` | separate demo worker | Independent document service for the shared demo |
+| `DEMO_BROWSER_PROCESSING_URL` / `DEMO_BROWSER_PROCESSING_TOKEN` | separate demo worker | Independent browser service for the shared demo |
 | `CV_TAILOR_PORT` | `8000` | Loopback port bound by Uvicorn under Docker host networking |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Maximum requests per minute per IP for mutating endpoints |
 | `AI_PROVIDER` | `ollama` | Active provider: `ollama`, `gemini`, `auto`, `mock`, or `n8n` |

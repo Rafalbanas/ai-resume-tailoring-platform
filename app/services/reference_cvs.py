@@ -11,9 +11,6 @@ from collections import Counter
 from pathlib import Path
 from uuid import uuid4
 
-from docx import Document
-from pypdf import PdfReader
-
 ALLOWED_SUFFIXES = {".pdf", ".docx"}
 SECTION_ALIASES = {
     "summary": {"summary", "professional summary", "profile", "professional profile", "about me"},
@@ -219,6 +216,8 @@ class ReferenceCVLibrary:
     @staticmethod
     def _extract_text_local(path: Path) -> str:
         if path.suffix.lower() == ".pdf":
+            from pypdf import PdfReader
+
             reader = PdfReader(path)
             if len(reader.pages) > 30:
                 raise ReferenceCVError('Reference document exceeds 30 pages.')
@@ -235,6 +234,8 @@ class ReferenceCVLibrary:
                     raise ReferenceCVError('Reference text exceeds the processing limit.')
                 result.append(text)
             return '\n'.join(result)
+        from docx import Document
+
         document = Document(path)
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
         cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells]

@@ -31,7 +31,7 @@ from app.services.mock_provider import MockAIProvider
 from app.services.n8n_provider import N8NGeminiProvider
 from app.services.ollama_provider import OllamaProvider
 from app.services.pdf_generator import PDFGenerator
-from app.services.processing import ENDPOINT, process
+from app.services.processing import BROWSER_ENDPOINT, ENDPOINT, process
 from app.services.profile_loader import load_master_profile
 from app.services.profile_photo import ProfilePhotoStore
 from app.services.reference_cvs import ReferenceCVLibrary
@@ -156,6 +156,8 @@ async def lifespan(app: FastAPI):
             "storage_quota_bytes": settings.demo_storage_quota_bytes,
             "processing_url": settings.demo_processing_url,
             "processing_token": settings.demo_processing_token,
+            "browser_processing_url": settings.demo_browser_processing_url,
+            "browser_processing_token": settings.demo_browser_processing_token,
         })
         demo_settings._shared_account = True
         demo = create_app(demo_settings, shared_account=True)
@@ -178,6 +180,7 @@ async def lifespan(app: FastAPI):
 async def request_context(request: Request, call_next):
     settings = request.app.state.settings
     processing_token = ENDPOINT.set((settings.processing_url, settings.processing_token))
+    browser_token = BROWSER_ENDPOINT.set((settings.browser_processing_url, settings.browser_processing_token))
     request_id = uuid4().hex
     token = request_id_var.set(request_id)
     csrf = request.session.get("csrf_token", "")
@@ -250,6 +253,7 @@ async def request_context(request: Request, call_next):
             request.app.state.resource_budget.body_slots.release()
         request_id_var.reset(token)
         ENDPOINT.reset(processing_token)
+        BROWSER_ENDPOINT.reset(browser_token)
     location = response.headers.get("Location", "")
     root_path = request.scope.get("root_path", "")
     if root_path and location.startswith("/") and not location.startswith("//"):

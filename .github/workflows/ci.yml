@@ -63,3 +63,24 @@ jobs:
               browser.close()
           print("Python 3.14, application imports, PDF/DOCX exports and Chromium OK")
           PY
+
+  split-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build role images with shared dependency layers
+        run: |
+          for role in api documents browser; do
+            docker build --target "$role" --tag "cvtailor:split-$role" .
+          done
+      - name: Check role dependencies and native processing
+        run: |
+          for role in api documents browser; do
+            docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+              --entrypoint python "cvtailor:split-$role" -m scripts.check_runtime_image "$role"
+          done
+      - name: Check isolated API to worker RPC and startup
+        run: scripts/check_split_runtime.sh
+      - name: Report image sizes
+        run: docker image ls --filter reference='cvtailor:split-*'

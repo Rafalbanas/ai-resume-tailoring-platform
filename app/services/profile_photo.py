@@ -1,22 +1,17 @@
+from __future__ import annotations
+
 import io
 import logging
 import os
 import tempfile
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL import Image
 from pathlib import Path
-
-from PIL import Image, ImageOps, UnidentifiedImageError
-
-try:
-    import pillow_heif
-
-    pillow_heif.register_heif_opener()
-except Exception:  # pragma: no cover
-    pass
 
 logger = logging.getLogger(__name__)
 
-# Protect against decompression bombs (max 40 megapixels)
-Image.MAX_IMAGE_PIXELS = 40_000_000
 
 
 class ProfilePhotoError(ValueError):
@@ -82,6 +77,15 @@ class ProfilePhotoStore:
         crop_y: float = 50.0,
         crop_zoom: float = 1.0,
     ) -> Path:
+        from PIL import Image, ImageOps, UnidentifiedImageError
+
+        Image.MAX_IMAGE_PIXELS = 40_000_000
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except Exception:  # Preserve optional HEIF registration behavior.
+            pass
+
         suffix = Path(filename).suffix.casefold() if filename else ""
         if not suffix and content_type:
             ct = content_type.lower()
