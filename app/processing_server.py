@@ -55,6 +55,10 @@ async def process(request: Request):
                 raise ValueError('Invalid processing envelope')
             if value.get('operation') not in {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'browser', 'check'}:
                 raise HTTPException(400, 'Unsupported operation')
+            role = os.environ.get('PROCESSING_ROLE', 'full')
+            allowed = {'browser', 'check'} if role == 'browser' else {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'check'}
+            if role not in {'full', 'documents', 'browser'} or role != 'full' and value['operation'] not in allowed:
+                raise HTTPException(400, 'Operation is not supported by this worker role')
             limit = 20 if value['operation'] in {'reference', 'browser'} else 60
             requested_timeout = float(value.get('timeout_seconds', limit))
             if not math.isfinite(requested_timeout) or requested_timeout <= 0:

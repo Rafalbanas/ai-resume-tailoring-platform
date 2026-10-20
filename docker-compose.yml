@@ -1,6 +1,8 @@
 services:
   cv-tailor:
-    build: .
+    build:
+      context: .
+      target: api
     container_name: cv-tailor
     restart: unless-stopped
     env_file: .env
@@ -12,8 +14,14 @@ services:
       PROCESSING_TOKEN: ${PROCESSING_TOKEN:?Set a random PROCESSING_TOKEN in .env}
       DEMO_PROCESSING_URL: http://127.0.0.1:18003
       DEMO_PROCESSING_TOKEN: ${DEMO_PROCESSING_TOKEN:-}
+      BROWSER_PROCESSING_URL: http://127.0.0.1:18004
+      BROWSER_PROCESSING_TOKEN: ${BROWSER_PROCESSING_TOKEN:?Set a random BROWSER_PROCESSING_TOKEN in .env}
+      DEMO_BROWSER_PROCESSING_URL: http://127.0.0.1:18005
+      DEMO_BROWSER_PROCESSING_TOKEN: ${DEMO_BROWSER_PROCESSING_TOKEN:-}
     depends_on:
       processor-owner:
+        condition: service_healthy
+      browser-owner:
         condition: service_healthy
     # Linux VPS: host networking lets the container reach Ollama on host loopback.
     # Uvicorn remains bound to loopback, so the configured port is not exposed publicly.
@@ -27,7 +35,9 @@ services:
       - no-new-privileges:true
 
   processor-owner:
-    build: .
+    build:
+      context: .
+      target: documents
     restart: unless-stopped
     entrypoint: []
     command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
@@ -52,7 +62,9 @@ services:
 
   processor-demo:
     profiles: [demo]
-    build: .
+    build:
+      context: .
+      target: documents
     restart: unless-stopped
     entrypoint: []
     command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
@@ -62,6 +74,60 @@ services:
       HOME: /tmp
       PROCESSING_CONTAINER_ISOLATED: "1"
     ports: ["127.0.0.1:18003:8080"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  browser-owner:
+    build:
+      context: .
+      target: browser
+    restart: unless-stopped
+    entrypoint: []
+    command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
+    user: "10001:10001"
+    environment:
+      PROCESSING_TOKEN: ${BROWSER_PROCESSING_TOKEN:?Set a random BROWSER_PROCESSING_TOKEN in .env}
+      HOME: /tmp
+      PROCESSING_CONTAINER_ISOLATED: "1"
+    ports: ["127.0.0.1:18004:8080"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+
+  browser-demo:
+    profiles: [demo]
+    build:
+      context: .
+      target: browser
+    restart: unless-stopped
+    entrypoint: []
+    command: ["uvicorn", "app.processing_server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--limit-concurrency", "8"]
+    user: "10001:10001"
+    environment:
+      PROCESSING_TOKEN: ${DEMO_BROWSER_PROCESSING_TOKEN:-}
+      HOME: /tmp
+      PROCESSING_CONTAINER_ISOLATED: "1"
+    ports: ["127.0.0.1:18005:8080"]
     read_only: true
     tmpfs: ["/tmp:size=256m,mode=1777"]
     cap_drop: [ALL]

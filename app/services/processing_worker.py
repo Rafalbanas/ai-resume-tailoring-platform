@@ -25,10 +25,6 @@ def main():
 def dispatch(operation, payload, work):
     from app.services.processing import decoded, encoded
     if operation != 'browser':
-        from pypdf import apply_configuration
-        apply_configuration(zlib_maximum_output_length=8_000_000, lzw_maximum_output_length=8_000_000,
-                            run_length_maximum_output_length=8_000_000, array_based_stream_maximum_output_length=8_000_000,
-                            stream_decoding_work_maximum_length=16_000_000, maximum_declared_stream_length=10_000_000)
         from app.services.processing_security import restrict_network
         restrict_network()
     if operation == 'check':
@@ -38,6 +34,11 @@ def dispatch(operation, payload, work):
         except PermissionError:
             return {'protocol': 1, 'network_blocked': True}
         raise RuntimeError('Network sandbox is not enforced')
+    if operation != 'browser':
+        from pypdf import apply_configuration
+        apply_configuration(zlib_maximum_output_length=8_000_000, lzw_maximum_output_length=8_000_000,
+                            run_length_maximum_output_length=8_000_000, array_based_stream_maximum_output_length=8_000_000,
+                            stream_decoding_work_maximum_length=16_000_000, maximum_declared_stream_length=10_000_000)
     if operation == 'browser':
         import asyncio
 

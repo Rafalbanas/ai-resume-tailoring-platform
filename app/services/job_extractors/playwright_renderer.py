@@ -42,9 +42,11 @@ class SafePlaywrightRenderer:
                 raise BrowserRenderError('Browser processing exceeded its deadline') from exc
 
     async def _render(self, url: str) -> RenderedPage:
-        from app.services.processing import ENDPOINT
+        from app.services.processing import BROWSER_ENDPOINT, ENDPOINT
         endpoint = ENDPOINT.get()
-        if self.isolated and (endpoint[0] if endpoint is not None else os.environ.get('PROCESSING_URL')):
+        browser_endpoint = BROWSER_ENDPOINT.get()
+        browser_url = browser_endpoint[0] if browser_endpoint is not None else os.environ.get('BROWSER_PROCESSING_URL')
+        if self.isolated and (browser_url or (endpoint[0] if endpoint is not None else os.environ.get('PROCESSING_URL')) or os.environ.get('CVTAILOR_RUNTIME_ROLE') == 'api'):
             from app.services.processing import ProcessingError, process
             try:
                 value = await run_in_threadpool(process, 'browser', {'url': url, 'timeout': self.timeout_ms / 1000,

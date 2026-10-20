@@ -22,6 +22,14 @@ def validate_auth_settings(settings, shared_account=False):
         raise RuntimeError('An isolated processing service is required for this deployment')
     if settings.processing_url and len(settings.processing_token) < 32:
         raise RuntimeError('A PROCESSING_TOKEN of at least 32 characters is required')
+    if settings.browser_processing_url and len(settings.browser_processing_token) < 32:
+        raise RuntimeError('A BROWSER_PROCESSING_TOKEN of at least 32 characters is required')
+    if settings.demo_data_dir is not None and settings.browser_processing_url and (
+        not settings.demo_browser_processing_url or len(settings.demo_browser_processing_token) < 32
+        or settings.demo_browser_processing_url == settings.browser_processing_url
+        or settings.demo_browser_processing_token == settings.browser_processing_token
+    ):
+        raise RuntimeError('Shared accounts require independent browser processing services and tokens')
     if settings.demo_data_dir is not None and settings.processing_url and (not settings.demo_processing_url or not settings.demo_processing_token or settings.demo_processing_url == settings.processing_url or settings.demo_processing_token == settings.processing_token or len(settings.demo_processing_token) < 32):
         raise RuntimeError('Shared accounts require independent processing services and tokens')
     own = origin(settings.base_url)
