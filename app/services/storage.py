@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -18,6 +19,38 @@ def safe_filename(value: str, fallback: str = "item") -> str:
     return (cleaned[:80] or fallback).strip(".-")
 
 
+def _compact_label(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    prefix = value[:limit + 1].rsplit("-", 1)[0]
+    return prefix if limit // 2 <= len(prefix) <= limit else value[:limit].rstrip("-")
+
+
+def _company_label(company: str) -> str:
+    company = safe_filename(company, "firma")
+    company = re.sub(
+        r"(?:^|-)(?:spolka-z-ograniczona-odpowiedzialnoscia|sp-z-o-o|sp-z-oo|s-a|sa|ltd|limited|llc|inc|gmbh)(?=-|$)",
+        "-", company,
+    )
+    company = re.sub(r"(?:^|-)resources(?=-|$)", "-", company)
+    return re.sub(r"-+", "-", company).strip("-") or "firma"
+
+
+def _role_label(role: str) -> str:
+    replacements = {
+        "planning": "plan", "systems": "sys", "consultant": "cons",
+        "analysis": "anal", "engineer": "eng", "developer": "dev",
+        "specialist": "spec", "senior": "sr", "junior": "jr", "manager": "mgr",
+    }
+    normalized = safe_filename(role, "rola").replace("supply-chain-planning", "supply-plan")
+    words = normalized.split("-")
+    words = [replacements.get(word, word) for word in words if word not in {"and", "of", "the", "platform"}]
+    # Preserve short technology names near the end of long job titles (SQL, OMP, etc.).
+    technical = [word for word in words if len(word) <= 3 and word not in replacements.values()]
+    descriptive = [word for word in words if word not in technical]
+    return "-".join(descriptive[:2] + list(dict.fromkeys(technical)) + descriptive[2:]) or "rola"
+
+
 class Storage:
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
@@ -25,6 +58,27 @@ class Storage:
         self.drafts_dir = data_dir / ".drafts"
         self.generated_dir.mkdir(parents=True, exist_ok=True)
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
+
+    def download_filename(self, slug: str, kind: str, metadata: dict) -> str:
+        """Name both existing and new exports within the upload portal's 50-character limit."""
+        if kind not in {"pdf", "docx"}:
+            raise ValueError("Unsupported export format")
+        self.application_folder(slug)
+        digest = hashlib.sha256(slug.encode()).hexdigest()
+        other_digests = [
+            hashlib.sha256(folder.name.encode()).hexdigest()
+            for folder in self.generated_dir.iterdir() if folder.is_dir() and folder.name != slug
+        ]
+        id_length = 6
+        while any(other.startswith(digest[:id_length]) for other in other_digests):
+            id_length += 1
+        identifier = digest[:id_length]
+        date = datetime.fromisoformat(metadata["date"]).strftime("%y-%m-%d")
+        # Reserve date, identifier, three separators and the complete extension first.
+        budget = 50 - len(date) - len(identifier) - 3 - len(f".{kind}")
+        company = _compact_label(_company_label(metadata["company"]), min(12, budget // 2))
+        role = _compact_label(_role_label(metadata["role"]), budget - len(company))
+        return f"{date}_{company}_{role}_{identifier}.{kind}"
 
     def save_draft(self, job: JobRequest, response: WorkflowResponse) -> str:
         draft_id = uuid4().hex
