@@ -293,7 +293,7 @@ The production environment operates as a hardened, single-node **K3s (v1.36.5+k3
 - **Loopback & Ingress Architecture**: Pods listen on host loopback (`127.0.0.1:18000` for main, `127.0.0.1:18001` for demo) via `hostNetwork`, preserving host-level Nginx reverse proxying, TLS termination, and existing SSH tunnels to Ollama (`127.0.0.1:11434`).
 - **Storage & Volume Management**: State (master profile, SQLite sessions, tasks, generated CVs) is mounted on dedicated PersistentVolumeClaims backed by host storage under `/storage/cvtailor-k3s-runtime/`.
 - **Nightly Backups & Monitoring**: Automated systemd timers execute atomic archives of application volumes with SHA-256 integrity verification.
-- **Continuous Deployment**: Triggered via GitHub Actions `workflow_dispatch` on `main`. Executes automated regression testing, builds and pushes an immutable image by exact digest to GHCR, and deploys via a restricted SSH entrypoint on the VPS with active task draining and automatic rollback.
+- **Continuous Deployment**: Starts automatically on pushes to `main`, including merged PRs; manual runs via GitHub Actions `workflow_dispatch` remain available on `main`. Executes automated regression testing, builds and pushes an immutable image by exact digest to GHCR, and deploys via a restricted SSH entrypoint on the VPS with active task draining and automatic rollback.
 
 For complete K3s operations, RBAC, and storage architecture, see [Kubernetes Production Guide](docs/kubernetes-production.md) and [Deployment Guide](docs/deployment.md).
 
