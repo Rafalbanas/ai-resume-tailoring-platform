@@ -109,6 +109,7 @@ def test_pending_submission_ignores_repeated_submit_events(job_page):
 
 @pytest.mark.parametrize('reason,message', [
     ('blocked', 'HTTP 403/429'),
+    ('unsupported_browser', 'unsupported-browser page'),
     ('timeout', 'timed out'),
     ('description_unavailable', 'page was downloaded'),
 ])

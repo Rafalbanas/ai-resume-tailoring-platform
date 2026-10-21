@@ -1,9 +1,16 @@
 """Extract The Protocol offers without treating page controls as job content."""
 
+import json
 import re
+
+from bs4 import BeautifulSoup
 
 from app.services.job_extractors.base import ExtractionCandidate
 from app.services.job_extractors.pracuj import EMPLOYMENT, HEADINGS, PracujExtractor, _line
+
+
+class UnsupportedBrowserError(RuntimeError):
+    """The portal returned a browser warning instead of a job offer."""
 
 
 class TheProtocolExtractor(PracujExtractor):
@@ -49,7 +56,7 @@ class TheProtocolExtractor(PracujExtractor):
         for index, line in enumerate(cleaned):
             if line.casefold().rstrip(':') in self.headings:
                 break
-            company = re.fullmatch(r'(?:firma|company):\s*(.+)', line, re.I)
+            company = re.fullmatch(r'(?:firma|company)\s*:\s*(.+)', line, re.I)
             if company:
                 candidate.company = company[1].strip()
                 if index:
@@ -57,7 +64,21 @@ class TheProtocolExtractor(PracujExtractor):
                 break
         return candidate
 
+    @staticmethod
+    def is_unsupported_browser(html: str) -> bool:
+        soup = BeautifulSoup(html, 'html.parser')
+        node = soup.find('script', id='__NEXT_DATA__')
+        if node is None:
+            return False
+        try:
+            payload = json.loads(node.get_text())
+        except (ValueError, TypeError):
+            return False
+        return isinstance(payload, dict) and payload.get('page') == '/unsupportedBrowser'
+
     def extract(self, html: str) -> ExtractionCandidate:
+        if self.is_unsupported_browser(html):
+            raise UnsupportedBrowserError('The Protocol returned its unsupported-browser page')
         candidate = super().extract(html)
-        candidate.company = re.sub(r'^(?:firma|company):\s*', '', candidate.company, flags=re.I)
+        candidate.company = re.sub(r'^(?:firma|company)\s*:\s*', '', candidate.company, flags=re.I)
         return candidate

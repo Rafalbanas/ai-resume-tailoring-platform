@@ -6,6 +6,14 @@ import httpx
 
 from app.services.job_extractors.security import PublicUrlGuard
 
+USER_AGENT = "CVTailor/1.0 (+single user-requested job extraction)"
+# The Protocol redirects unrecognized clients to an unsupported-browser page.
+# Keep our product identifier while supplying its required browser tokens.
+THEPROTOCOL_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36 " + USER_AGENT
+)
+
 
 class JobFetchError(RuntimeError):
     pass
@@ -44,7 +52,7 @@ class SafeHttpFetcher:
         current_url = url
         timeout = httpx.Timeout(self.timeout_seconds, connect=min(self.timeout_seconds, 5.0))
         headers = {
-            "User-Agent": "CVTailor/1.0 (+single user-requested job extraction)",
+            "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml",
             "Accept-Encoding": "identity",
         }
@@ -61,10 +69,14 @@ class SafeHttpFetcher:
                     original = httpx.URL(current_url)
                     address = next((value for value in addresses if ":" not in value), addresses[0])
                     pinned = original.copy_with(host=address)
+                    hostname = original.host.lower().rstrip(".")
+                    user_agent = THEPROTOCOL_USER_AGENT if (
+                        hostname == "theprotocol.it" or hostname.endswith(".theprotocol.it")
+                    ) else USER_AGENT
                     # Connect to the already validated address; retain Host and
                     # certificate verification/SNI for the original hostname.
                     async with client.stream("GET", pinned,
-                                             headers={"Host": original.netloc.decode("ascii")},
+                                             headers={"Host": original.netloc.decode("ascii"), "User-Agent": user_agent},
                                              extensions={"sni_hostname": original.host}) as response:
                         if response.is_redirect:
                             location = response.headers.get("location")

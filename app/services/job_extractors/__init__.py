@@ -14,7 +14,7 @@ from app.services.job_extractors.nofluff import NoFluffExtractor
 from app.services.job_extractors.playwright_renderer import BrowserRenderError, SafePlaywrightRenderer
 from app.services.job_extractors.pracuj import PracujExtractor
 from app.services.job_extractors.security import UnsafeUrlError
-from app.services.job_extractors.theprotocol import TheProtocolExtractor
+from app.services.job_extractors.theprotocol import TheProtocolExtractor, UnsupportedBrowserError
 from app.services.job_extractors.workday import WorkdayExtractor
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,8 @@ class JobExtractorService:
                 return self._result(candidate, source, method)
         except UnsafeUrlError:
             return JobExtraction(source=url, extraction_method="manual_required", failure_reason="unsafe_url")
+        except UnsupportedBrowserError:
+            failure_reason = "unsupported_browser"
         except JobFetchError as exc:
             cause = exc.__cause__
             if isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code in {403, 429}:
@@ -124,10 +126,13 @@ class JobExtractorService:
             try:
                 page = await self.renderer.render(url)
                 source = page.url
-                failure_reason = "description_unavailable"
+                if failure_reason not in {"blocked", "unsupported_browser"}:
+                    failure_reason = "description_unavailable"
                 candidate, _ = self._extract_html(page.url, page.html)
                 if candidate.usable or candidate.ambiguous:
                     return self._result(candidate, source, "playwright")
+            except UnsupportedBrowserError:
+                failure_reason = "unsupported_browser"
             except (UnsafeUrlError, BrowserRenderError):
                 logger.info("Browser job page extraction failed", extra={"stage": "job_fetch_browser"})
         if metadata:
