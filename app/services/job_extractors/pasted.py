@@ -3,6 +3,7 @@
 import re
 
 from app.services.job_extractors.base import ExtractionCandidate
+from app.services.job_extractors.builtin import BuiltInExtractor
 from app.services.job_extractors.eldorado import EldoradoExtractor
 from app.services.job_extractors.pracuj import HEADINGS, PracujExtractor, _line
 from app.services.job_extractors.theprotocol import TheProtocolExtractor
@@ -70,6 +71,9 @@ def clean_generic_text(text: str) -> ExtractionCandidate:
 
 
 def clean_pasted_offer(text: str, url: str = "") -> ExtractionCandidate:
+    builtin = BuiltInExtractor()
+    if builtin.matches(url) or builtin.recognizes_text(text):
+        return builtin.extract_text(text)
     theprotocol = TheProtocolExtractor()
     if theprotocol.matches(url) or theprotocol.recognizes_text(text):
         return theprotocol.extract_text(text)
