@@ -35,7 +35,7 @@ Normal generation/reset validation remains available. The manual export path acc
 
 ## Earlier full-suite verification of the binary manual switch
 
-Using the current pinned dependencies in an isolated temporary environment: **805 passed, 1 failed, 1 warning** out of 806 tests. The remaining failure is `test_ats_preserves_long_text_and_reading_order`, which exceeds the existing 60-second document-processing deadline. This long-PDF timeout was also reproduced on pristine HEAD during the earlier RAG audit (see `rag-verification.md`); the manual-switch work does not change that renderer or timeout. The warning is the existing Starlette/httpx deprecation. Ruff, pinned-environment validation, pip check, README synchronization and whitespace checks passed. No deployment was performed.
+Using the current pinned dependencies in an isolated temporary environment: **805 passed, 1 failed, 1 warning** out of 806 tests. The remaining failure is `test_ats_preserves_long_text_and_reading_order`, which exceeds the existing 60-second document-processing deadline. This long-PDF timeout was also reproduced on pristine HEAD during the earlier RAG audit (see [RAG verification](archive/rag-verification.md)); the manual-switch work does not change that renderer or timeout. The warning is the existing Starlette/httpx deprecation. Ruff, pinned-environment validation, pip check, README synchronization and whitespace checks passed. No deployment was performed.
 
 ## Historical validation of the original editor repair
 
