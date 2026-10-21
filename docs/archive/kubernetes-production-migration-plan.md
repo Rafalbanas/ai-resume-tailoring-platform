@@ -1,7 +1,7 @@
 # Plan migracji CVTailor do Kubernetes
 
 Status: migracja wykonana 15 października 2026 po późniejszej zgodzie użytkownika.
-Raport wdrożenia i aktualna obsługa: [kubernetes-production.md](kubernetes-production.md).
+Raport wdrożenia i aktualna obsługa: [kubernetes-production.md](../kubernetes-production.md).
 Poniższy tekst zachowuje historyczne założenia planowania; późniejsza prośba
 użytkownika obejmuje przeniesienie archiwów i magazynu K3s na `/storage` oraz
 usunięcie sprawdzonych lokalnych zasobów laboratorium. Zwykły Docker pozostaje.

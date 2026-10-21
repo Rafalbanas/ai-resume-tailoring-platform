@@ -41,9 +41,9 @@ zwracał `404`. Pozostawiono pierwotny obraz oraz konfigurację Ollama → Gemin
 
 Przykładowe eksporty znajdują się w prywatnym katalogu wyników:
 
-- [PDF z Ollamy](../.k8s-lab/e2e/exports/primary-e2e.pdf), [DOCX z Ollamy](../.k8s-lab/e2e/exports/primary-e2e.docx).
-- [PDF po fallbacku na Gemini](../.k8s-lab/e2e/exports/fallback-e2e.pdf), [DOCX po fallbacku](../.k8s-lab/e2e/exports/fallback-e2e.docx).
-- [PDF po ponowieniu zadania](../.k8s-lab/e2e/exports/retry-e2e.pdf), [DOCX po ponowieniu](../.k8s-lab/e2e/exports/retry-e2e.docx).
+- [PDF z Ollamy](../../.k8s-lab/e2e/exports/primary-e2e.pdf), [DOCX z Ollamy](../../.k8s-lab/e2e/exports/primary-e2e.docx).
+- [PDF po fallbacku na Gemini](../../.k8s-lab/e2e/exports/fallback-e2e.pdf), [DOCX po fallbacku](../../.k8s-lab/e2e/exports/fallback-e2e.docx).
+- [PDF po ponowieniu zadania](../../.k8s-lab/e2e/exports/retry-e2e.pdf), [DOCX po ponowieniu](../../.k8s-lab/e2e/exports/retry-e2e.docx).
 
 Pliki nie są częścią Git; powyższe linki działają w lokalnym workspace.
 

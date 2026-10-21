@@ -1,7 +1,7 @@
 # Kubernetes na własnej aplikacji — laboratorium
 
 Wyniki pełnego przepływu AI, awarii, odtwarzania danych oraz zmiany obrazu:
-[raport testów integracyjnych](kubernetes-e2e-results.md).
+[raport testów integracyjnych](archive/kubernetes-e2e-results.md).
 
 Uruchamiasz CVTailor na jednym węźle Kubernetes w Dockerze (kind).
 Aplikacja używa fikcyjnego profilu i dostawcy `mock`: możesz ćwiczyć infrastrukturę

@@ -57,4 +57,4 @@ Both retain basic identity anchors. Adding Kubernetes to the job query adds no K
 
 ## Validation
 
-`tests/test_fact_retrieval.py` covers role-specific selection, source types/IDs, profile edits/deletions, separate candidates sharing project names, no matches, a failed index search, unknown technology and instruction injection, whole-fact budgeting, empty corpus, skill eligibility, both provider payloads and trace persistence in new drafts/application metadata. All inputs are synthetic; provider calls are mocked. See [executed checks and results](rag-verification.md) for the repository checks.
+`tests/test_fact_retrieval.py` covers role-specific selection, source types/IDs, profile edits/deletions, separate candidates sharing project names, no matches, a failed index search, unknown technology and instruction injection, whole-fact budgeting, empty corpus, skill eligibility, both provider payloads and trace persistence in new drafts/application metadata. All inputs are synthetic; provider calls are mocked. See [executed checks and results](archive/rag-verification.md) for the repository checks.

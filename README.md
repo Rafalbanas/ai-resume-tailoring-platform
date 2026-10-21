@@ -4,6 +4,8 @@ A private, mobile-first web application that analyzes specific job postings, eva
 
 CVTailor is designed as a production-grade, single-owner automation system demonstrating Python backend development, secure web extraction, structured LLM integration with resilient fallback, cryptographic attestation, and deterministic document generation.
 
+See the [documentation index](docs/README.md) for setup, operations, feature guides and historical reports.
+
 > [!IMPORTANT]
 > **Essential Operating Principles & Disclaimers:**
 > - **Single-posting analysis only**: CVTailor fetches and analyzes only explicitly provided job postings (one URL or pasted text at a time). It does **not** crawl or scrape job portals en masse.
@@ -42,7 +44,7 @@ CV generation through **Ollama and Gemini** now retrieves relevant candidate fac
 
 For example, with the same synthetic profile, a Technical Support Engineer query about customer tickets/network incidents ranks an employment incident-investigation fact first; an AI/Python Developer query about Python/FastAPI/JSON ranks a personal project fact first. Adding Kubernetes to the offer creates no candidate Kubernetes evidence. Retrieval selects context; **Truth Lock independently checks what may appear in the CV**, including actual skill levels and the distinction between project work and commercial employment. Job descriptions and retrieved documents are untrusted data, never model instructions.
 
-The retrieval layer uses only the Python standard library, with no additional service, dependency or paid retrieval API. It uses **no embeddings or vector database**. Memory grows with profile tokens; queries scan the candidate's fact documents. Lexical matching has limited synonym and multilingual recall, and the source-character budget is not a total prompt/token limit. No quality or performance improvement percentage has been measured. See [RAG details and limitations](docs/rag.md), [verification results](docs/rag-verification.md) and the [canonical project description and CV wording](docs/project-description.md).
+The retrieval layer uses only the Python standard library, with no additional service, dependency or paid retrieval API. It uses **no embeddings or vector database**. Memory grows with profile tokens; queries scan the candidate's fact documents. Lexical matching has limited synonym and multilingual recall, and the source-character budget is not a total prompt/token limit. No quality or performance improvement percentage has been measured. See [RAG details and limitations](docs/rag.md), [verification results](docs/archive/rag-verification.md) and the [canonical project description and CV wording](docs/project-description.md).
 
 ## Architecture
 
