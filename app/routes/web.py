@@ -1216,7 +1216,8 @@ async def download(request: Request, slug: str, kind: str):
         if kind == "pdf"
         else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-    return FileResponse(path, media_type=media_type, filename=f"{slug}.{kind}")
+    download_name = request.app.state.storage.download_filename(slug, kind, metadata)
+    return FileResponse(path, media_type=media_type, filename=download_name)
 
 
 @router.get("/health")
