@@ -13,7 +13,7 @@ from app.models.resume import (
 )
 from app.services.ai_provider import AIProvider
 from app.services.fact_catalog import FactCatalog
-from app.services.skills_bank import SkillsBank
+from app.services.skills_bank import GENERATED_CV_SKILL_TARGET, SkillsBank
 
 
 class MockAIProvider(AIProvider):
@@ -114,7 +114,8 @@ class MockAIProvider(AIProvider):
                 )
             )
         selected = self.skills_bank.select_for_job(
-            [skill.id for skill in bank_matches], f"{job.role}\n{job.job_description}"
+            [skill.id for skill in bank_matches], f"{job.role}\n{job.job_description}",
+            minimum=GENERATED_CV_SKILL_TARGET,
         ) if self.skills_bank else []
         resume = TailoredResume(
             headline=job.role,

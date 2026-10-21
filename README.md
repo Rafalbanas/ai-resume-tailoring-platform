@@ -118,6 +118,7 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 
 ### 2. Verified Skills Bank (`data/skills.json`)
 - **Evidence-Backed Skills**: CV skills are selected strictly from `data/skills.json`. A skill must be marked `verified`, `enabled`, `allowed_in_cv`, have a non-learning level, and be supported by concrete employment or project evidence (or explicitly confirmed `manual_verified`).
+- **Generated CV Skill Coverage**: New CVs target 10–12 distinct confirmed skills (up to 16 when relevant). Direct offer matches rank first; sparse lists are filled from the strongest remaining eligible skills. Fewer are kept when the bank lacks enough eligible, distinct skills. Manual edits keep the selected list.
 - **Management UI**: Full in-browser skill management at `/skills` allows editing aliases, priority, category, and evidence links.
 - **Health Monitoring**: The `/health/skills` endpoint exposes skill bank validity, verified counts, and learning counts without disclosing personal information.
 

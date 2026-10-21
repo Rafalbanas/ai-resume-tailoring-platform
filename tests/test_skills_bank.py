@@ -215,7 +215,7 @@ def test_manual_skill_edit_replaces_generated_ids(tmp_path, profile):
     store = bank(tmp_path, profile, [python, linux])
     generated = resume(["Hands-on Python", "Hands-on Linux"], [python.id, linux.id])
     edited = apply_resume_edits(generated, {"core_skills": "Linux"})
-    result = FactValidator(profile, store).validate(edited, job("Linux support engineer"))
+    result = FactValidator(profile, store).validate_manual_edit(generated, edited, job("Linux support engineer"))
     assert result.resume.selected_skill_ids == [linux.id]
 
 
@@ -536,3 +536,77 @@ def test_production_skills_bank_role_selection_and_evidence():
     assert any("XGBoost" in s for s in res.resume.core_skills)
     assert any("PostgreSQL" in w for w in res.warnings)
 
+
+
+@pytest.mark.parametrize("eligible_count,expected", [(4, 4), (10, 10), (14, 10)])
+def test_generated_cv_fills_sparse_support_skills(tmp_path, profile, eligible_count, expected):
+    values = [skill("Windows", priority=1)] + [
+        skill(f"Tool {index}", priority=9) for index in range(eligible_count - 1)
+    ]
+    store = bank(tmp_path, profile, values)
+    support_job = JobRequest(
+        company="Wazdan Services Limited", role="Specjalistka/Specjalista ds. Wsparcia Technicznego",
+        job_description="Obsługa zgłoszeń użytkowników i diagnostyka Windows.",
+    )
+    result = FactValidator(profile, store).validate(resume(["Windows"], [values[0].id]), support_job).resume
+    assert len(result.core_skills) == expected
+    assert result.core_skills[0] == "Windows"
+    assert result.core_skills == [store.wording(store.get(i)) for i in result.selected_skill_ids]
+
+
+def test_skill_fill_keeps_more_than_ten_relevant_skills(tmp_path, profile):
+    values = [skill(f"Tool {index}") for index in range(18)]
+    store = bank(tmp_path, profile, values)
+    result = FactValidator(profile, store).validate(resume([]), job("; ".join(s.name for s in values))).resume
+    assert len(result.core_skills) == 16
+
+
+def test_skill_fill_preserves_truth_lock_and_deduplication(tmp_path, profile):
+    python = skill("Python", level="basic")
+    duplicate = skill("Python alias")
+    duplicate.cv_wording = "Basic Python"
+    values = [python, duplicate, skill("English"), skill("Disabled", enabled=False),
+              skill("Unverified", verified=False), skill("Private", allowed=False),
+              skill("Learning", level="learning", verified=False, allowed=False), skill("No evidence")]
+    store = bank(tmp_path, profile, values)
+    store.get("skill_no_evidence").evidence = []
+    result = FactValidator(profile, store).validate(resume([]), job("Technical support specialist")).resume
+    assert result.core_skills == ["Basic Python"]
+    assert len(result.selected_skill_ids) == 1
+
+
+def test_minimum_never_overrides_maximum_or_manual_selection(tmp_path, profile):
+    values = [skill(f"Tool {index}") for index in range(12)]
+    store = bank(tmp_path, profile, values)
+    assert len(store.select_for_job([], "Support", minimum=10, maximum=3)) == 3
+    assert store.select_for_job([], "Support", minimum=10, maximum=0) == []
+    assert store.select_for_job([], "Support", minimum=10, requested_only=True) == []
+    original = resume([values[0].name], [values[0].id])
+    checked = FactValidator(profile, store).validate(original, job("Support specialist"), preserve_skills=True).resume
+    assert checked.core_skills == original.core_skills
+    assert checked.selected_skill_ids == original.selected_skill_ids
+
+
+def test_profile_only_generation_fills_to_ten_without_languages(profile):
+    profile.skills = {"technical": [f"Tool {i}" for i in range(12)], "languages": ["English B2"]}
+    candidate = resume(["Tool 0", "Invented cloud"])
+    validator = FactValidator(profile)
+    result = validator.validate(candidate, job("Technical support specialist")).resume
+    assert len(result.core_skills) == 10
+    assert "English B2" not in result.core_skills
+    assert "Invented cloud" not in result.core_skills
+    assert validator.validate(candidate, job("Support specialist"), preserve_skills=True).resume.core_skills == ["Tool 0"]
+
+
+async def test_tailoring_payload_and_mock_offer_ten_verified_skills(tmp_path, profile):
+    from app.services.ai_provider import build_compact_tailor_payload
+    from app.services.mock_provider import MockAIProvider
+
+    values = [skill("Windows")] + [skill(f"Tool {i}") for i in range(11)]
+    store = bank(tmp_path, profile, values)
+    support_job = job("Windows technical support specialist")
+    payload = build_compact_tailor_payload(support_job, profile, analysis(), store)
+    assert len(payload["eligible_skills"]) >= 10
+    result = await MockAIProvider(store).tailor(support_job, profile)
+    assert len(result.resume.core_skills) == 10
+    assert result.resume.core_skills[0] == "Windows"

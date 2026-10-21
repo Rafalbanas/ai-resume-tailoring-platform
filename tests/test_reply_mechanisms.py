@@ -66,7 +66,7 @@ def test_profile_silence_and_explicit_gap_are_distinct(profile):
     assert [r.status for r in result.requirements] == ['absent', 'missing']
 
 
-def test_skills_rank_job_over_model_order_without_padding(tmp_path, profile, resume_payload):
+def test_skills_rank_job_over_model_order_before_filling(tmp_path, profile, resume_payload):
     skills = [VerifiedSkill(id=f'skill_{i}', name=name, category='Tools', level='hands_on', verified=True,
         allowed_in_cv=True, evidence=[SkillEvidence(source_type='manual_verified', source_id=f'manual:{i}', description='Verified fixture')])
         for i, name in enumerate(['Windows 11', 'Linux', 'Salesforce', 'Incident handling', 'Technical troubleshooting'])]
@@ -78,11 +78,13 @@ def test_skills_rank_job_over_model_order_without_padding(tmp_path, profile, res
     candidate.selected_skill_ids = [skills[0].id, skills[1].id]
     support_job = JobRequest(company='Example', role='Customer support', job_description='Provide customer support using CRM and incident handling.')
     result = FactValidator(profile, bank).validate(candidate, support_job)
-    assert 'Salesforce' in result.resume.core_skills
-    assert not any('Windows' in s or 'Linux' in s for s in result.resume.core_skills)
+    assert set(result.resume.core_skills[:3]) == {'Salesforce', 'Incident handling', 'Technical troubleshooting'}
+    assert set(result.resume.core_skills[3:]) == {'Windows 11', 'Linux'}
+    assert set(result.resume.selected_skill_ids) == {skill.id for skill in skills}
     linux_job = support_job.model_copy(update={'role':'Linux operations', 'job_description':'Administer Linux servers and services.'})
     linux = FactValidator(profile, bank).validate(candidate, linux_job)
-    assert linux.resume.core_skills == ['Linux']
+    assert linux.resume.core_skills[0] == 'Linux'
+    assert set(linux.resume.core_skills) == {skill.name for skill in skills}
     assert bank.document.skills == skills
 
 

@@ -58,7 +58,7 @@ Rank projects by documented evidence for the requirements, not project title or 
 Project technologies may contain only supplied skill wording; never place a project name in technologies.
 Every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
-Select only relevant confirmed existing skill IDs in descending offer relevance (up to 16; no minimum) in selected_skill_ids. Never create a skill or evidence. Learning, disabled,
+Aim for 10–12 confirmed existing skill IDs in selected_skill_ids, up to 16 when relevant. Rank direct offer matches first, then complement a sparse list with the strongest remaining confirmed skills. If fewer than 10 distinct eligible skills exist, include only those available. Never create a skill or evidence. Learning, disabled,
 unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
 AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
 The source IDs, not string equality, bind paraphrased wording to verified facts.
@@ -215,6 +215,9 @@ def build_compact_tailor_payload(
     eligible_skills = []
     if skills_bank and hasattr(skills_bank, "skills"):
         job_text = f"{job.role}\n{job.job_description}".casefold()
+        from app.services.skills_bank import GENERATED_CV_SKILL_TARGET
+        suggested_ids = {s.id for s in skills_bank.select_for_job(
+            [], job_text, minimum=GENERATED_CV_SKILL_TARGET)}
         for s in skills_bank.skills:
             if hasattr(skills_bank, "eligible") and skills_bank.eligible(s):
                 is_candidate = hasattr(skills_bank, "confirmed_profile_skill") and skills_bank.confirmed_profile_skill(s)
@@ -225,7 +228,7 @@ def build_compact_tailor_payload(
                     or s.id in analysis.strong_skill_ids
                     or s.id in getattr(analysis, "partial_skill_ids", [])
                 )
-                if is_candidate or is_mentioned or is_matched:
+                if is_candidate or is_mentioned or is_matched or s.id in suggested_ids:
                     wording = skills_bank.wording(s) if hasattr(skills_bank, "wording") else s.name
                     eligible_skills.append({
                         "id": s.id,
