@@ -445,6 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function offerFailureMessage(reason) {
     const messages = {
       blocked: "The job website rejected automatic fetching (HTTP 403/429).",
+      unsupported_browser: "The job website returned an unsupported-browser page instead of the offer.",
       timeout: "Fetching the job website timed out.",
       fetch_failed: "The job website could not be downloaded.",
       description_unavailable: "The page was downloaded, but a complete job description could not be extracted.",
