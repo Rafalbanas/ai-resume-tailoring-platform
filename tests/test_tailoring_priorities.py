@@ -194,5 +194,7 @@ def test_incomplete_profile_and_empty_projects_remain_safe():
     )
     result = FactValidator(profile).validate(draft, job).resume
     assert result.headline == "Professional Profile"
-    assert not result.projects and not result.experience and not result.core_skills
+    assert not result.projects and not result.experience
+    assert set(result.core_skills) == set(profile.skills["technical"])
+    assert "Kubernetes" not in result.core_skills
     assert "expert" not in result.professional_summary

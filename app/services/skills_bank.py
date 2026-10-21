@@ -12,6 +12,8 @@ from app.models.skills import SkillEvidence, SkillsDocument, VerifiedSkill
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 from app.services.languages import is_language_skill
 
+GENERATED_CV_SKILL_TARGET = 10
+
 
 class SkillsConfigurationError(RuntimeError):
     pass
@@ -194,6 +196,9 @@ class SkillsBank:
     def select_for_job(
         self, requested_ids: list[str], job_text: str, *, minimum: int = 0, maximum: int = 16, requested_only: bool = False
     ) -> list[VerifiedSkill]:
+        if maximum <= 0:
+            return []
+        minimum = min(max(0, minimum), maximum)
         requested = {value for value in requested_ids}
         eligible = [skill for skill in self.skills if self.eligible(skill) and not is_language_skill(skill.name, self.profile)]
         normalized_job = _normal(job_text)
@@ -305,7 +310,9 @@ class SkillsBank:
             if family in families or label in chosen_labels:
                 continue
             relevant = role_relevance(skill) > 0 or (requested_only and skill.id in requested)
-            if not relevant:
+            # Relevant skills rank first. Fill a sparse generated CV from the
+            # remaining verified bank without weakening eligibility or deduplication.
+            if not relevant and len(chosen) >= minimum:
                 continue
             if skill.subcategory == "AI-Assisted Development":
                 if ai_dev_count >= 1:

@@ -15,7 +15,7 @@ from app.models.resume import (
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 from app.services.languages import is_language_skill
 from app.services.professional_summary import build_summary, deduplicate_summary
-from app.services.skills_bank import SkillsBank
+from app.services.skills_bank import GENERATED_CV_SKILL_TARGET, SkillsBank
 
 
 @dataclass
@@ -94,7 +94,7 @@ class FactValidator:
             selected = self.skills_bank.select_for_job(
                 list(dict.fromkeys(requested_ids)),
                 f"{job.role}\n{job.job_description}",
-                minimum=0,
+                minimum=0 if preserve_skills else GENERATED_CV_SKILL_TARGET,
                 maximum=16,
                 requested_only=preserve_skills,
             )
@@ -128,6 +128,15 @@ class FactValidator:
                     if key and (key in job_text or canonical.casefold() in job_text)
                 ]
                 clean_skills = relevant
+            if not preserve_skills and len(clean_skills) < GENERATED_CV_SKILL_TARGET:
+                job_tokens = normalized_tokens(f"{job.role}\n{job.job_description}")
+                remaining = sorted(dict.fromkeys(allowed_skills.values()),
+                                   key=lambda value: -len(normalized_tokens(value) & job_tokens))
+                for value in remaining:
+                    if value not in clean_skills:
+                        clean_skills.append(value)
+                    if len(clean_skills) >= GENERATED_CV_SKILL_TARGET:
+                        break
             draft.core_skills = clean_skills[:18]
 
         verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)

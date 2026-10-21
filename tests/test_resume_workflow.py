@@ -199,7 +199,11 @@ def test_truth_lock_resolves_paraphrase_to_exact_source_sentences(verified_profi
     assert "MSc in Computer Science" in result.resume.professional_summary
     assert result.resume.experience[0].bullets[0].text == verified_profile.experience[0].facts[1]
     assert result.resume.experience[0].company == "Motorola Solutions"
-    assert result.resume.core_skills == ["Python", "Bash (basic)"]
+    assert result.resume.core_skills[:2] == ["Python", "Bash (basic)"]
+    assert set(result.resume.core_skills) == {
+        skill for category, values in verified_profile.skills.items() if category != "languages"
+        for skill in values
+    }
 
 
 def test_project_titles_are_verified_separately_from_technologies(verified_profile, platform_job, tmp_path):
