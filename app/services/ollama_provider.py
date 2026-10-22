@@ -94,6 +94,7 @@ class OllamaProvider(AIProvider):
         _completion_budget: int | None = None,
         _schema: dict | None = None,
         _think: bool = False,
+        _reasoning_only: bool = False,
     ) -> ModelT:
         from app.services.bounded_http import bounded_post, model_call
         schema = _schema or response_model.model_json_schema()
@@ -155,7 +156,7 @@ class OllamaProvider(AIProvider):
             "format": schema,
             "keep_alive": self.keep_alive,
             "options": {
-                "temperature": 0,
+                "temperature": 0.6 if _think else 0,
                 "num_predict": _completion_budget or self.num_predict,
                 "num_ctx": self.num_ctx,
             },
@@ -164,6 +165,10 @@ class OllamaProvider(AIProvider):
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        if _reasoning_only:
+            # A bounded reasoning prefix is a hint for a separate non-thinking
+            # verdict, never a partially parsed decision or an approval.
+            request.pop("format")
         progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
@@ -238,6 +243,16 @@ class OllamaProvider(AIProvider):
             eval_tokens if envelope.get("eval_count") is not None else "unavailable",
             total_ms,
         )
+
+        if _reasoning_only:
+            message = envelope["message"]
+            notes = message.get("thinking") or message.get("content")
+            if envelope.get("done") is False or not isinstance(notes, str) or not notes.strip():
+                metrics["error_kind"] = "incomplete_response"
+                raise OllamaAnalysisError("incomplete_response", "Ollama returned no review reasoning.")
+            metrics["reasoning_budget_exhausted"] = envelope.get("done_reason") == "length"
+            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", {}, notes, metrics)
+            return response_model.model_validate({"notes": notes[:6000]})
 
         try:
             content = envelope["message"]["content"]

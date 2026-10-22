@@ -1,12 +1,15 @@
 # Bounded Ollama thinking review
 
 Analysis, recovery, CV generation and the existing summary check use `think: false`.
-With `OLLAMA_DRAFT_REVIEW_ENABLED=true` (the default), one optional `think: true`
-request reviews the completed analysis and CV draft before the summary check.
-It never repeats the whole analysis or generation stage.
+With `OLLAMA_DRAFT_REVIEW_ENABLED=true` (the default), one optional review phase
+checks the completed analysis and CV draft before the summary check. A reasoning
+request uses `think: true` and at most 1024 tokens, then a separate structured
+verdict uses `think: false` and at most 3072 tokens. These are two fixed steps,
+not retries. The phase never repeats the whole analysis or generation stage.
 
 The review checks up to four missing/partial/absent requirement assessments and
-up to sixteen existing experience bullets. It can correct gap explanations and
+up to eight existing experience bullets, prioritizing the longest descriptions.
+It can correct gap explanations and
 assessments, subject to the existing semantic source/evidence validator. It cannot
 change requirement names, source quotes, priorities, tenure, proficiency or
 AND/OR structure. Component corrections go through the existing aggregation.
@@ -24,10 +27,13 @@ otherwise one entry is retained for the normal source-validation fallback.
 
 ## Budgets and failure behavior
 
-The optional review has a 2048-token output budget and a 60-second total deadline,
-including admission/semaphore waits. There are no review retries or review-triggered
+The optional review has a combined 4096-token output budget and a 90-second total
+deadline, including both requests and admission/semaphore waits. There are no review retries or review-triggered
 provider fallbacks. Timeout, truncation, invalid evidence, incomplete/duplicate
-verdicts or invalid analysis leave the first-pass result intact. A cancelled outer
+verdicts or invalid analysis leave the first-pass result intact. The reasoning
+prefix may deliberately stop at its 1024-token limit; its notes are untrusted
+hints, cannot authorize claims and never count as a parsed verdict. The final
+non-thinking request must return a complete, validated verdict. A cancelled outer
 task still cancels the review. Review is skipped when completed provider calls
 already consumed 480 seconds; the global task/operation limits remain unchanged.
 Call metrics record the review stage, whether thinking was requested/returned, and
@@ -41,6 +47,21 @@ consume all 8192 output tokens, approximately 166 seconds each. The enclosing ta
 failed at its 720-second limit. A tiny arithmetic smoke test had confirmed thinking
 availability but had not tested this workload. Unrestricted thinking was disabled
 on the VPS while this bounded review was prepared.
+
+Synthetic probes of the new reviewer also exhausted 2048 and 4096 tokens before
+returning a verdict, even after clarifying the JSON contract and requesting brief
+reasoning. The installed model exposes only boolean thinking controls, without a
+low-effort mode. The final design therefore separates a bounded reasoning prefix
+from the required non-thinking verdict. Reasoning uses temperature 0.6; all
+structured verdicts and initial stages retain temperature 0. The total review
+limit remains 4096 tokens / 90 seconds and at most eight descriptions.
+
+The final design completed a real synthetic probe in approximately 23 seconds:
+1024 thinking tokens followed by a complete 97-token verdict. It retained a
+concise description that preserved a single diagnostic task's scope and rejected
+an invented Linux administration claim citing the same unrelated source. The
+approved wording survived Truth Lock. This checks the mechanism on one case,
+not universal analysis accuracy.
 
 A separate CI failure in `test_native_deadline_kills_the_process_group_and_releases_slot`
 was a procfs race: the process could disappear during `/proc/PID/stat` reading.

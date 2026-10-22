@@ -41,15 +41,17 @@ async def test_full_workflow_thinks_only_in_the_final_review(profile):
         body = json.loads(request.content)
         requests.append(body)
         stage = json.loads(body["messages"][1]["content"])["stage"]
+        if stage == "review_draft_thinking":
+            return review_response(body)
         answer = {"analyze_job": analysis_payload, "tailor_resume": resume_payload}.get(stage)
         content = answer() if answer else verdict(body)
         return httpx.Response(200, json={"message": {"content": json.dumps(content)}, "done_reason": "stop"})
     p = OllamaProvider(Settings(_env_file=None, csrf_secret="review-key"), transport=httpx.MockTransport(handler))
     response = await p.tailor(job(), profile)
     assert [json.loads(r["messages"][1]["content"])["stage"] for r in requests] == [
-        "analyze_job", "tailor_resume", "review_draft"]
-    assert [r["think"] for r in requests] == [False, False, True]
-    assert [m["thinking_requested"] for m in response.call_metrics] == [False, False, True]
+        "analyze_job", "tailor_resume", "review_draft_thinking", "review_draft"]
+    assert [r["think"] for r in requests] == [False, False, True, False]
+    assert [m["thinking_requested"] for m in response.call_metrics] == [False, False, True, False]
     from app.services.resilient_provider import ResilientAIProvider
     response.analysis.requirements[-1].reason = "First-pass explanation."
     router = ResilientAIProvider({"ollama": p}, default_primary="ollama", default_fallback="none")
@@ -66,6 +68,14 @@ def verdict(body):
             "bullets": [{"id": b["id"], "supported": True, "relevant": True} for b in data["bullets"]]}
 
 
+def review_response(body, answer=None, reason="stop"):
+    if json.loads(body["messages"][1]["content"])["stage"] == "review_draft_thinking":
+        return httpx.Response(200, json={"message": {"thinking": "Check facts, not unsupported claims.", "content": ""},
+                                        "done": True, "done_reason": "length"})
+    return httpx.Response(200, json={"message": {"content": json.dumps(answer if answer is not None else verdict(body))},
+                                    "done": True, "done_reason": reason})
+
+
 @pytest.mark.asyncio
 async def test_review_is_one_bounded_thinking_call_and_preserves_approved_paraphrase(profile, tmp_path):
     job, analysis, resume = inputs(profile)
@@ -73,12 +83,17 @@ async def test_review_is_one_bounded_thinking_call_and_preserves_approved_paraph
     async def handler(request):
         body = json.loads(request.content)
         requests.append(body)
-        return httpx.Response(200, json={"message": {"content": json.dumps(verdict(body)), "thinking": "Review."},
-                                        "done": True, "done_reason": "stop"})
+        return review_response(body)
     p = OllamaProvider(Settings(_env_file=None, csrf_secret="review-key"), transport=httpx.MockTransport(handler))
     reviewed = await review_draft(p, resume, analysis, job, profile)
-    assert len(requests) == 1
-    assert requests[0]["think"] is True and requests[0]["options"]["num_predict"] == 2048
+    assert len(requests) == 2
+    assert requests[0]["think"] is True and requests[0]["options"]["num_predict"] == 1024
+    assert requests[0]["options"]["temperature"] == 0.6
+    assert "format" not in requests[0]
+    assert requests[1]["think"] is False and requests[1]["options"]["num_predict"] == 3072
+    assert "review_notes" in json.loads(requests[1]["messages"][1]["content"])
+    assert p.call_metrics[0]["reasoning_budget_exhausted"] is True
+    assert p.call_metrics[0]["error_kind"] is None
     assert p.call_metrics[-1]["stage"] == "review_draft" and p.call_metrics[-1]["review_outcome"] == "accepted"
     assert valid_bullet_attestation(reviewed.experience[0].bullets[0], reviewed, profile, "review-key")
     assert "does not establish inability" in next(r.reason for r in analysis.requirements if r.name == "Docker")
@@ -107,19 +122,20 @@ async def test_failed_review_keeps_first_pass_without_retries_or_approval(profil
         answer = verdict(body)
         if failure == "timeout":
             await asyncio.sleep(1)
+        if json.loads(body["messages"][1]["content"])["stage"] == "review_draft_thinking":
+            return review_response(body)
         if failure == "unknown_id":
             answer["bullets"][0]["id"] = "invented"
         if failure == "duplicate":
             answer["bullets"] *= 2
         if failure in {"unknown_fact", "no_evidence"}:
             answer["gaps"][0].update(status="strong", facts=["invented"] if failure == "unknown_fact" else [])
-        return httpx.Response(200, json={"message": {"content": json.dumps(answer)}, "done": True,
-                                        "done_reason": "length" if failure == "length" else "stop"})
+        return review_response(body, answer, "length" if failure == "length" else "stop")
     monkeypatch.setattr(ollama_draft_review, "REVIEW_TIMEOUT_SECONDS", 0.01)
     p = OllamaProvider(Settings(_env_file=None, csrf_secret="review-key"), transport=httpx.MockTransport(handler))
     reviewed = await review_draft(p, resume, analysis, job, profile)
     assert reviewed is resume and not reviewed._bullet_attestations
-    assert analysis.model_dump() == before and len(calls) == 1
+    assert analysis.model_dump() == before and len(calls) == (1 if failure == "timeout" else 2)
 
 
 @pytest.mark.parametrize("change", ["text", "citation", "profile", "key", "forged"])
@@ -147,9 +163,12 @@ async def test_review_drops_irrelevant_description_and_cannot_move_facts_between
     resume.experience[0].bullets.append(ResumeBullet(text=profile.experience[0].facts[0],
                                                    source_fact_ids=["experience:0:fact:0"]))
     async def handler(request):
-        answer = verdict(json.loads(request.content))
-        answer["bullets"][0]["relevant"] = False
-        return httpx.Response(200, json={"message": {"content": json.dumps(answer)}, "done_reason": "stop"})
+        body = json.loads(request.content)
+        if json.loads(body["messages"][1]["content"])["stage"] == "review_draft_thinking":
+            return review_response(body)
+        answer = verdict(body)
+        next(b for b in answer["bullets"] if b["id"] == "E1B1")["relevant"] = False
+        return review_response(body, answer)
     p = OllamaProvider(Settings(_env_file=None, csrf_secret="review-key"), transport=httpx.MockTransport(handler))
     reviewed = await review_draft(p, resume, analysis, job, profile)
     assert len(reviewed.experience[0].bullets) == 1

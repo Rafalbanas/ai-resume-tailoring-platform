@@ -408,7 +408,7 @@ All configurable environment variables correspond to `.env.example`:
 | `OLLAMA_MAX_CONCURRENCY` | `1` | Maximum concurrent Ollama requests allowed |
 | `OLLAMA_NUM_PREDICT` | `8192` | Maximum generated tokens per Ollama call |
 | `OLLAMA_NUM_CTX` | `32768` | Context window size for Ollama requests |
-| `OLLAMA_DRAFT_REVIEW_ENABLED` | `true` | One optional thinking review of gaps and experience wording after the initial draft; 2048 tokens / 60 seconds, no retries |
+| `OLLAMA_DRAFT_REVIEW_ENABLED` | `true` | One optional thinking review of gaps and experience wording after the initial draft; 4096 tokens / 90 seconds, no retries |
 | `GEMINI_API_KEY` | — | Google AI Studio API key (leave empty if not using Gemini) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Gemini model identifier |
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com` | Google Generative Language API base URL |
