@@ -72,6 +72,8 @@ def link_display(value: str) -> str:
 
 
 def prepare_resume(resume: TailoredResume, profile: CandidateProfile) -> TailoredResume:
+    from app.services.cv_content_policy import check_export_content
+    check_export_content(resume)
     contacts(profile)
     prepared = deepcopy(resume)
     from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues

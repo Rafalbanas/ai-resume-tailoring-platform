@@ -19,3 +19,15 @@ Synthetic regressions cover visible/searchable contacts and link targets in both
 The saved control offer is regenerated once with the existing Ollama model. The raw output and validated CV remain private. PDF text and link annotations, DOCX XML and relationships, PDF page rendering, and LibreOffice DOCX-to-PDF conversion are checked before publication. ATS Classic uses one column for systems that infer reading order from page geometry. Modern Sidebar has coherent source/tag order, but geometry-based extractors can choose a different order for sidebar and main sections; no universal ATS guarantee or hiring prediction is made.
 
 Candidate contacts, source profile, model output and exported files stay outside Git. Export changes require no profile migration or LLM configuration change.
+
+Experience facts may define `cv_fact_conditions` in the private master profile:
+map an exact fact sentence to a list of posting terms. At least one term must
+appear as a complete word or phrase in the original role or description. An empty
+list excludes the fact; an absent key keeps normal selection. These presentation
+conditions apply before retrieval (including index failure) and again during
+validation, including chronological fallbacks. Analysis can still assess the fact.
+
+Model approval cannot bypass checks for internal evidence annotations, unrelated
+citations, or new cited technologies/acronyms. Export also refuses visible internal
+annotations in PDF and DOCX content. Evidence labels resolve to canonical profile
+facts instead of administrative descriptions whenever a source is available.
