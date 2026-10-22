@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ollama_num_predict: int = 8192
     ollama_num_ctx: int = 32768
     ollama_analysis_recovery_calls: int = Field(default=4, ge=0, le=8)
+    ollama_draft_review_enabled: bool = True
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_base_url: str = "https://generativelanguage.googleapis.com"

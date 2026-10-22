@@ -83,6 +83,7 @@ class Storage:
     def save_draft(self, job: JobRequest, response: WorkflowResponse) -> str:
         draft_id = uuid4().hex
         payload = {"job": job.model_dump(mode="json"), "response": response.model_dump(mode="json")}
+        payload["bullet_attestations"] = response.resume._bullet_attestations
         (self.drafts_dir / f"{draft_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return draft_id
 
@@ -90,7 +91,9 @@ class Storage:
         if not re.fullmatch(r"[a-f0-9]{32}", draft_id):
             raise FileNotFoundError(draft_id)
         payload = json.loads((self.drafts_dir / f"{draft_id}.json").read_text(encoding="utf-8"))
-        return JobRequest.model_validate(payload["job"]), WorkflowResponse.model_validate(payload["response"])
+        response = WorkflowResponse.model_validate(payload["response"])
+        response.resume._bullet_attestations = payload.get("bullet_attestations", [])
+        return JobRequest.model_validate(payload["job"]), response
 
     def save_application(
         self,
@@ -158,6 +161,8 @@ class Storage:
             "pre_fit_available": pre_fit_resume is not None,
             "summary_attestation": resume.summary_attestation,
             "generated_summary_attestation": resume.summary_attestation,
+            "bullet_attestations": resume._bullet_attestations,
+            "generated_bullet_attestations": resume._bullet_attestations,
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
@@ -234,6 +239,8 @@ class Storage:
             )
         resume.summary_attestation = metadata.get('summary_attestation', '')
         generated.summary_attestation = metadata.get('generated_summary_attestation', '')
+        resume._bullet_attestations = metadata.get('bullet_attestations', [])
+        generated._bullet_attestations = metadata.get('generated_bullet_attestations', [])
         return job, resume, generated, metadata
 
     def save_current_resume(
@@ -256,6 +263,7 @@ class Storage:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["warnings"] = warnings
         metadata['summary_attestation'] = resume.summary_attestation
+        metadata['bullet_attestations'] = resume._bullet_attestations
         if truth_lock_warnings is not None:
             metadata["truth_lock_warnings"] = truth_lock_warnings
         if layout_warnings is not None:

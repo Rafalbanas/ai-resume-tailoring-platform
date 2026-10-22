@@ -76,6 +76,7 @@ class OllamaProvider(AIProvider):
         self.num_predict = settings.ollama_num_predict
         self.num_ctx = settings.ollama_num_ctx
         self.analysis_recovery_calls = settings.ollama_analysis_recovery_calls
+        self.draft_review_enabled = getattr(settings, "ollama_draft_review_enabled", True)
         self.transport = transport
         self.reference_library = reference_library
         self.skills_bank = skills_bank
@@ -92,6 +93,7 @@ class OllamaProvider(AIProvider):
         allowed_skill_ids: list[str] | None = None,
         _completion_budget: int | None = None,
         _schema: dict | None = None,
+        _think: bool = False,
     ) -> ModelT:
         from app.services.bounded_http import bounded_post, model_call
         schema = _schema or response_model.model_json_schema()
@@ -149,7 +151,7 @@ class OllamaProvider(AIProvider):
         request = {
             "model": self.model,
             "stream": False,
-            "think": True,
+            "think": _think,
             "format": schema,
             "keep_alive": self.keep_alive,
             "options": {
@@ -167,7 +169,7 @@ class OllamaProvider(AIProvider):
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
                    "total_ms": None, "done_reason": None, "num_predict": _completion_budget or self.num_predict,
-                   "num_ctx": self.num_ctx, "thinking_present": False, "error_kind": None}
+                   "num_ctx": self.num_ctx, "thinking_requested": _think, "thinking_present": False, "error_kind": None}
         self.call_metrics.append(metrics)
         del self.call_metrics[:-128]
         if self._run_metrics.get() is not None:
@@ -183,6 +185,10 @@ class OllamaProvider(AIProvider):
                     response = await bounded_post(client, "/api/chat", json=request)
                     response.raise_for_status()
                     envelope = response.json()
+        except asyncio.CancelledError:
+            metrics.update(error_kind="cancelled", total_ms=(time.perf_counter() - call_start) * 1000)
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            raise
         except httpx.TimeoutException as exc:
             metrics["error_kind"] = "timeout"
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
@@ -414,12 +420,18 @@ class OllamaProvider(AIProvider):
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         resume = await self._chat(
             TailoredResume,
-            RESUME_TAILOR_SYSTEM_PROMPT,
+            RESUME_TAILOR_SYSTEM_PROMPT + "\nFor experience bullets, select facts relevant to the advertised duties. "
+            "Write concise CV statements, not diagnostic anecdotes. Preserve one-off scope, actual responsibility "
+            "and proficiency; never imply repeated or advanced work from a single task. Respect tailoring_policy.",
             payload,
             source_catalog=payload["source_catalog"],
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
+
+        if self.draft_review_enabled:
+            from app.services.ollama_draft_review import review_draft
+            resume = await review_draft(self, resume, analysis, job, profile)
 
         from app.services.summary_review import review_summary
         resume = await review_summary(self, resume, profile)
