@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Cookies · CVTailor{% endblock %}
+{% block content %}
+<article class="card cookie-notice" aria-labelledby="cookies-title">
+  <p class="eyebrow">CVTAILOR</p>
+  <h1 id="cookies-title">About cookies</h1>
+  <p>This application uses first-party cookies to keep you signed in and protect forms and other requests. These cookies are necessary to provide the service; they are not used for advertising or audience tracking, so we do not ask for consent to set them.</p>
+
+  <h2>Cookies used by this application</h2>
+  <dl>
+    <dt><code>{{ session_cookie_name }}</code> — session</dt>
+    <dd>Stores a signed session identifier and security information so the application can recognise your browser. It does not contain your CV or password. The browser cookie lasts up to {{ '%g'|format(session_hours) }} hours and is refreshed as you use the application. The server-side sign-in can expire earlier; signing out invalidates it.</dd>
+    <dt><code>{{ csrf_cookie_name }}</code> — request protection</dt>
+    <dd>Helps prevent another website from submitting requests on your behalf. This is a browser-session cookie with no fixed expiry date. Browsers usually remove it when the session ends, although session-restore features may retain it.</dd>
+  </dl>
+
+  <h2>Analytics and advertising</h2>
+  <p>The application does not include analytics or advertising trackers. Posting a link to this application on LinkedIn does not add a LinkedIn tracker to it.</p>
+
+  <h2>Your browser settings</h2>
+  <p>You can delete or block cookies in your browser settings. Blocking these essential cookies can prevent sign-in and form submissions from working. On a shared device, sign out and clear this site's cookies after use.</p>
+
+  <h2>Scope of this notice</h2>
+  <p>This notice describes browser cookies set by CVTailor. It does not cover how submitted job offers, profile data or generated documents are processed. Essential cookies do not require a consent choice, but other processing of personal data still requires appropriate privacy information.</p>
+</article>
+{% endblock %}
