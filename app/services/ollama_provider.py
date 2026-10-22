@@ -149,7 +149,7 @@ class OllamaProvider(AIProvider):
         request = {
             "model": self.model,
             "stream": False,
-            "think": False,
+            "think": True,
             "format": schema,
             "keep_alive": self.keep_alive,
             "options": {
