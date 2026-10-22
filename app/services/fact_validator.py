@@ -61,6 +61,8 @@ class FactValidator:
                             if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
                                 self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
+        self._analysis_priorities = self.fact_priorities.copy()
+
     def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest, *, allow_manual_skills: bool = False):
         from app.services.resume_edit_validation import validate_manual_edit
         return validate_manual_edit(self, original, edited, job, allow_manual_skills=allow_manual_skills)
@@ -68,6 +70,19 @@ class FactValidator:
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         from app.services.cv_content_policy import cv_catalog
         self.catalog = cv_catalog(self.profile, job)
+        self.fact_priorities = self._analysis_priorities.copy()
+        if self.analysis is not None and not preserve_skills:
+            from app.services.job_sections import relevance_text
+            posting = relevance_text(f"{job.role}\n{job.job_description}")
+            # Rank attested employment details even when analysis cited only a
+            # global skill. This never transfers global claims into an employer.
+            topics = [r"\bnetworks?\b|\bnetworking\b", r"\bcollaborat\w*\b", r"\bescalat\w*\b"]
+            for entry in self.catalog.prompt_entries:
+                if entry.kind != "experience":
+                    continue
+                shared = sum(bool(re.search(t, posting, re.I) and re.search(t, entry.text, re.I)) for t in topics)
+                if shared:
+                    self.fact_priorities[entry.source_id] = max(self.fact_priorities.get(entry.source_id, 0), 0.25 * shared)
         draft = deepcopy(candidate)
         warnings: list[str] = []
         learning = self.skills_bank.learning_for_job(f"{job.role}\n{job.job_description}") if self.skills_bank else []

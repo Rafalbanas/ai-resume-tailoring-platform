@@ -38,3 +38,11 @@ DHCP or VPN is rejected at export, and a model summary approval cannot bypass th
 check. Valid mentions of OSPF/BGP followed by separate NAT/DHCP configuration remain
 allowed. This targeted check does not establish experience with any dynamic
 routing protocol.
+
+For integration-oriented offers, source-only fallback summaries introduce the
+actual dated occupation before selecting technical details. Relevant networking
+and collaboration/escalation facts from employment receive a small presentation
+priority even when analysis cited only a global skill. Employer details always
+come from that employer's own facts; global router configuration declarations
+cannot become an employer claim. Conditional fact rules and manual-edit
+preservation still apply, and one-page selection can omit optional details.
