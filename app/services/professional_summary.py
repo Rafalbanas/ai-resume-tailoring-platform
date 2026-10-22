@@ -123,24 +123,31 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             if education:
                 source = catalog.profile.education[education.owner_index]
                 add(3, education, f"{source.qualification}, {source.institution} ({source.dates})")
+        # Introduce the actual dated occupation before technical details. The
+        # advertised title cannot confer a new occupation, even in a fallback.
+        if catalog.profile.experience:
+            current = catalog.profile.experience[0]
+            fact = next((e for e in entries if e.kind == 'experience' and e.owner_index == 0), None)
+            if fact:
+                identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
+                add(0, fact, identity)
         ranked = sorted(entries, key=lambda e: ((priorities or {}).get(e.source_id, 0), len(normalized_tokens(e.text) & tokens)), reverse=True)
         used_priorities = set()
+        details = 0
         for entry in ranked:
-            if len(used) >= 3:
+            if entry.source_id in used:
+                continue
+            if details >= (2 if groups[0] else 3):
                 break
             priority = (priorities or {}).get(entry.source_id, 0)
             if priority and priority in used_priorities:
                 # Several sentences citing the same leading requirement should
                 # not consume the summary at the expense of other evidence.
                 continue
-            add(min(len(used), 3), entry)
-            if entry.source_id in used and priority:
-                used_priorities.add(priority)
-        if catalog.profile.experience:
-            current = catalog.profile.experience[0]
-            fact = next((e for e in entries if e.kind == 'experience' and e.owner_index == 0), None)
-            if fact:
-                identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
-                add(3, fact, identity, reuse=True)
+            add(min(details + 1, 2), entry)
+            if entry.source_id in used:
+                details += 1
+                if priority:
+                    used_priorities.add(priority)
     text = " ".join("; ".join(group) + "." for group in groups if group)
     return deduplicate_summary(text, catalog), list(dict.fromkeys(selected_ids))

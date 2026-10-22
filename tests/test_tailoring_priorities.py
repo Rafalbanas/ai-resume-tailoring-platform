@@ -118,7 +118,9 @@ def test_same_profile_different_offers_keep_facts_but_change_emphasis():
     assert infrastructure.experience[0].bullets[0].source_fact_ids != support.experience[0].bullets[0].source_fact_ids
     assert infrastructure.projects[0].name == "Service lab"
     assert support.projects[0].name == "Support notes"
-    assert "Linux" in infrastructure.professional_summary.split(".")[0]
+    opener, _, details = infrastructure.professional_summary.partition(". ")
+    assert opener == "Support Engineer at Example Ltd"
+    assert "Linux" in details.split(".")[0]
     assert profile.model_dump() == original
     catalog = FactCatalog(profile)
     for resume in [infrastructure, support]:
