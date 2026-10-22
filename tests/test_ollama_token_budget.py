@@ -65,7 +65,7 @@ async def test_adaptive_complete_analysis_counts_and_bounded_calls(count, profil
     ids = [p["id"] for r in requests for p in json.loads(r["messages"][1]["content"])["passages"]]
     assert len(ids) == len(set(ids)) == count + 2
     assert all(r["options"] == {"temperature": 0, "num_predict": 8192, "num_ctx": 32768} for r in requests)
-    assert all(r["think"] is False and r["stream"] is False for r in requests)
+    assert all(r["think"] is True and r["stream"] is False for r in requests)
     assert all(len(json.dumps(r["format"])) < 12000 for r in requests)
 
 

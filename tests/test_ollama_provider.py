@@ -137,6 +137,7 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     assert json.loads(requests[1]["messages"][1]["content"])["stage"] == "tailor_resume"
     assert all(request["format"]["type"] == "object" for request in requests)
     assert all(request["stream"] is False for request in requests)
+    assert all(request["think"] is True for request in requests)
     assert all(request["options"]["num_predict"] == 8192 for request in requests)
     assert all(request["options"]["num_ctx"] == 32768 for request in requests)
     assert all(
