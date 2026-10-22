@@ -96,8 +96,9 @@ class ResilientAIProvider(AIProvider):
                 metric_context = getattr(target, '_run_metrics', None)
                 token = metric_context.set(metrics) if metric_context else None
                 try:
-                    resume = await target.tailor_resume(job, profile, reuse_analysis.model_copy(deep=True))
-                    return WorkflowResponse(analysis=reuse_analysis.model_copy(deep=True), resume=resume,
+                    reviewed_analysis = reuse_analysis.model_copy(deep=True)
+                    resume = await target.tailor_resume(job, profile, reviewed_analysis)
+                    return WorkflowResponse(analysis=reviewed_analysis, resume=resume,
                                             call_metrics=metrics)
                 except AIProviderError as exc:
                     exc.call_metrics = metrics

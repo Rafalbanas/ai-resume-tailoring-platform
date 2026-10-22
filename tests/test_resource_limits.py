@@ -146,7 +146,12 @@ def test_native_deadline_kills_the_process_group_and_releases_slot(tmp_path, mon
     pid = int(pid_file.read_text())
     stat = Path(f'/proc/{pid}/stat')
     for _ in range(100):
-        if not stat.exists() or stat.read_text().split()[2] == 'Z':
+        try:
+            state = stat.read_text().split()[2]
+        except (FileNotFoundError, ProcessLookupError):
+            # The kernel can reap the process before or during the procfs read.
+            break
+        if state == 'Z':
             break
         time.sleep(0.01)
     else:

@@ -189,6 +189,7 @@ class FactValidator:
             # its provenance separately from a semantic model verdict.
             draft.summary_attestation = sign_source_summary(draft, self.profile, self.review_key)
         clean_experience: list[ResumeExperience] = []
+        accepted_bullet_attestations = []
         for exp in draft.experience:
             bullets = []
             exp_index: int | None = None
@@ -204,13 +205,17 @@ class FactValidator:
                     continue
                 exp_index = bullet_index
                 valid_ids = [entry.source_id for entry in entries]
-                if (not self.catalog.supports_paraphrase(bullet.text, valid_ids)
+                from app.services.ollama_draft_review import sign_bullet, valid_bullet_attestation
+                reviewed_bullet = valid_bullet_attestation(bullet, draft, self.profile, self.review_key)
+                if (not reviewed_bullet and not self.catalog.supports_paraphrase(bullet.text, valid_ids)
                         and not any(bullet.text == self._experience_wording(entry.text) for entry in entries)
                         and bullet.text != self._experience_wording(" ".join(entry.text for entry in entries))):
                     warnings.append(f"Unsupported AI bullet replaced in {self.profile.experience[exp_index].company}")
                     bullet.text = " ".join(entry.text for entry in entries)
                 bullet.text = self._experience_wording(bullet.text)
                 bullet.source_fact_ids = valid_ids
+                if reviewed_bullet:
+                    accepted_bullet_attestations.append(sign_bullet(bullet, self.profile, self.review_key))
                 bullets.append(bullet)
             if exp_index is None or not bullets:
                 warnings.append(f"Unsupported AI experience removed: {exp.company} — {exp.title}")
@@ -264,6 +269,7 @@ class FactValidator:
         order = {(e.company, e.title): i for i, e in enumerate(self.profile.experience)}
         clean_experience.sort(key=lambda e: order.get((e.company, e.title), len(order)))
         draft.experience = clean_experience
+        draft._bullet_attestations = accepted_bullet_attestations
 
         clean_projects: list[ResumeProject] = []
         for project in draft.projects:

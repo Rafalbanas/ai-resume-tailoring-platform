@@ -102,7 +102,8 @@ async def test_fooled_judge_cannot_export_without_user_confirmation(provider_nam
             if provider_name == 'gemini':
                 return httpx.Response(200, json={'candidates': [{'content': {'parts': [{'text': content}]}}]})
             return httpx.Response(200, json={'done': True, 'message': {'content': content}})
-        settings = app.state.settings.model_copy(update={'gemini_api_key': 'synthetic-key'})
+        settings = app.state.settings.model_copy(update={
+            'gemini_api_key': 'synthetic-key', 'ollama_draft_review_enabled': False})
         provider = (GeminiProvider if provider_name == 'gemini' else OllamaProvider)(settings, transport=httpx.MockTransport(handler))
         draft = await provider.tailor_resume(job, profile, analysis())
         assert stages == ['tailor_resume', 'review_summary']

@@ -76,6 +76,7 @@ class OllamaProvider(AIProvider):
         self.num_predict = settings.ollama_num_predict
         self.num_ctx = settings.ollama_num_ctx
         self.analysis_recovery_calls = settings.ollama_analysis_recovery_calls
+        self.draft_review_enabled = getattr(settings, "ollama_draft_review_enabled", True)
         self.transport = transport
         self.reference_library = reference_library
         self.skills_bank = skills_bank
@@ -92,6 +93,8 @@ class OllamaProvider(AIProvider):
         allowed_skill_ids: list[str] | None = None,
         _completion_budget: int | None = None,
         _schema: dict | None = None,
+        _think: bool = False,
+        _reasoning_only: bool = False,
     ) -> ModelT:
         from app.services.bounded_http import bounded_post, model_call
         schema = _schema or response_model.model_json_schema()
@@ -149,11 +152,11 @@ class OllamaProvider(AIProvider):
         request = {
             "model": self.model,
             "stream": False,
-            "think": True,
+            "think": _think,
             "format": schema,
             "keep_alive": self.keep_alive,
             "options": {
-                "temperature": 0,
+                "temperature": 0.6 if _think else 0,
                 "num_predict": _completion_budget or self.num_predict,
                 "num_ctx": self.num_ctx,
             },
@@ -162,12 +165,16 @@ class OllamaProvider(AIProvider):
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        if _reasoning_only:
+            # A bounded reasoning prefix is a hint for a separate non-thinking
+            # verdict, never a partially parsed decision or an approval.
+            request.pop("format")
         progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
                    "total_ms": None, "done_reason": None, "num_predict": _completion_budget or self.num_predict,
-                   "num_ctx": self.num_ctx, "thinking_present": False, "error_kind": None}
+                   "num_ctx": self.num_ctx, "thinking_requested": _think, "thinking_present": False, "error_kind": None}
         self.call_metrics.append(metrics)
         del self.call_metrics[:-128]
         if self._run_metrics.get() is not None:
@@ -183,6 +190,10 @@ class OllamaProvider(AIProvider):
                     response = await bounded_post(client, "/api/chat", json=request)
                     response.raise_for_status()
                     envelope = response.json()
+        except asyncio.CancelledError:
+            metrics.update(error_kind="cancelled", total_ms=(time.perf_counter() - call_start) * 1000)
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            raise
         except httpx.TimeoutException as exc:
             metrics["error_kind"] = "timeout"
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
@@ -232,6 +243,16 @@ class OllamaProvider(AIProvider):
             eval_tokens if envelope.get("eval_count") is not None else "unavailable",
             total_ms,
         )
+
+        if _reasoning_only:
+            message = envelope["message"]
+            notes = message.get("thinking") or message.get("content")
+            if envelope.get("done") is False or not isinstance(notes, str) or not notes.strip():
+                metrics["error_kind"] = "incomplete_response"
+                raise OllamaAnalysisError("incomplete_response", "Ollama returned no review reasoning.")
+            metrics["reasoning_budget_exhausted"] = envelope.get("done_reason") == "length"
+            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", {}, notes, metrics)
+            return response_model.model_validate({"notes": notes[:6000]})
 
         try:
             content = envelope["message"]["content"]
@@ -414,12 +435,18 @@ class OllamaProvider(AIProvider):
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         resume = await self._chat(
             TailoredResume,
-            RESUME_TAILOR_SYSTEM_PROMPT,
+            RESUME_TAILOR_SYSTEM_PROMPT + "\nFor experience bullets, select facts relevant to the advertised duties. "
+            "Write concise CV statements, not diagnostic anecdotes. Preserve one-off scope, actual responsibility "
+            "and proficiency; never imply repeated or advanced work from a single task. Respect tailoring_policy.",
             payload,
             source_catalog=payload["source_catalog"],
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
+
+        if self.draft_review_enabled:
+            from app.services.ollama_draft_review import review_draft
+            resume = await review_draft(self, resume, analysis, job, profile)
 
         from app.services.summary_review import review_summary
         resume = await review_summary(self, resume, profile)

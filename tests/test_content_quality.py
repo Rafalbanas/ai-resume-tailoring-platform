@@ -203,7 +203,7 @@ async def test_ollama_full_workflow_preserves_reviewed_natural_summary(profile):
     async def handler(request):
         requests.append(json.loads(request.content))
         return httpx.Response(200, json={'message': {'content': json.dumps(replies[len(requests)-1])}})
-    settings = Settings(_env_file=None, csrf_secret='test-secret')
+    settings = Settings(_env_file=None, csrf_secret='test-secret', ollama_draft_review_enabled=False)
     provider = OllamaProvider(settings, transport=httpx.MockTransport(handler))
     job = JobRequest(company='A', role='Engineer', job_description='Requirements\nPython automation required')
     response = await provider.tailor(job, profile)
