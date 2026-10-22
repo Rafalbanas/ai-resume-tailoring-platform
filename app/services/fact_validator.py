@@ -168,14 +168,16 @@ class FactValidator:
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
         from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues, unfinished
-        from app.services.cv_content_policy import internal_annotation
+        from app.services.cv_content_policy import internal_annotation, networking_terminology_issue
         from app.services.summary_review import sign_source_summary, sign_summary, valid_summary_attestation
         reviewed = (all(self.catalog.get(i) for i in draft.summary_source_fact_ids)
                     and not internal_annotation(draft.professional_summary)
+                    and not networking_terminology_issue(draft.professional_summary)
                     and valid_summary_attestation(draft, self.profile, self.review_key))
         if reviewed:
             model_ids = [e.source_id for e in summary_entries]
-        if (unfinished(draft.professional_summary) or (sentence_count > 5 and not reviewed)
+        if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
+                or (sentence_count > 5 and not reviewed)
                 or not (reviewed or self.catalog.supports_paraphrase(draft.professional_summary, model_ids))):
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
