@@ -12,6 +12,15 @@ def internal_annotation(text: str) -> bool:
     return bool(_INTERNAL.search(text))
 
 
+def networking_terminology_issue(text: str) -> bool:
+    # Match the contents of a named list, not unrelated services elsewhere in a
+    # sentence: "routing protocols (OSPF, BGP), NAT and DHCP" is valid.
+    lists = re.finditer(
+        r"\brouting protocols?\s*(?:\(|:|such as\b|including\b)\s*([^).;\n]+)", text, re.I)
+    return any(re.search(r"\b(?:NAT|DHCP|VPN|static rout(?:e|es|ing))\b", match[1], re.I)
+               for match in lists)
+
+
 def cv_catalog(profile, job):
     catalog = FactCatalog(profile)
     posting = f"{job.role}\n{job.job_description}"
@@ -37,7 +46,7 @@ def reviewable_bullet(bullet, profile):
 
     This is a conservative floor, not a substitute for semantic review.
     """
-    if internal_annotation(bullet.text):
+    if internal_annotation(bullet.text) or networking_terminology_issue(bullet.text):
         return False
     catalog = FactCatalog(profile)
     entries = catalog.valid(bullet.source_fact_ids, kind="experience")
@@ -73,5 +82,8 @@ def check_export_content(resume):
             for key, item in value.items():
                 if key not in {"source_fact_ids", "summary_source_fact_ids", "selected_skill_ids", "selected_interest_ids", "skill_id"}:
                     yield from texts(item)
-    if any(internal_annotation(text) for text in texts(resume.model_dump())):
+    visible = list(texts(resume.model_dump()))
+    if any(internal_annotation(text) for text in visible):
         raise ValueError("Internal evidence annotation in CV content; export stopped.")
+    if any(networking_terminology_issue(text) for text in visible):
+        raise ValueError("Invalid networking terminology: static routes, NAT, DHCP and VPN are not routing protocols; export stopped.")

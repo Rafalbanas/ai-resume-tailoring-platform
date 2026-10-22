@@ -31,3 +31,10 @@ Model approval cannot bypass checks for internal evidence annotations, unrelated
 citations, or new cited technologies/acronyms. Export also refuses visible internal
 annotations in PDF and DOCX content. Evidence labels resolve to canonical profile
 facts instead of administrative descriptions whenever a source is available.
+
+CV generation and review distinguish static routes and network services from
+routing protocols. A named routing-protocol list containing static routes, NAT,
+DHCP or VPN is rejected at export, and a model summary approval cannot bypass the
+check. Valid mentions of OSPF/BGP followed by separate NAT/DHCP configuration remain
+allowed. This targeted check does not establish experience with any dynamic
+routing protocol.

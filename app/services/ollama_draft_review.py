@@ -64,6 +64,7 @@ AND/OR conditions and commercial versus project experience intact. Do not invent
 For each bullet judge whether EVERY claim is entailed by its cited facts at its actual
 scope and whether it is useful for the advertised duties. Concise wording can omit
 incidental details but must retain material limits (one-off, assisted, basic, learning).
+Static routes, NAT, DHCP and VPN are not routing protocols. Name these directly as network configuration or services; do not group them under routing protocols. Do not infer OSPF, BGP or other dynamic-routing experience from static routes.
 Reject invented outcomes, proficiency, tools, duration, responsibility or frequency.
 A diagnostic anecdote may support a concise diagnostic bullet, not advanced networking
 or ongoing expertise. Reject awkward, misleading or irrelevant descriptions. Do not
