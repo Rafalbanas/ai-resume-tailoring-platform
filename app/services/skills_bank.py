@@ -168,7 +168,10 @@ class SkillsBank:
             if not self.evidence_supports(skill, evidence):
                 continue
             entry = self.catalog.get(evidence.source_id)
-            label = entry.owner_name if entry and entry.owner_name else evidence.description
+            from app.services.cv_content_policy import internal_annotation
+            label = (entry.owner_name or entry.text) if entry else evidence.description
+            if internal_annotation(label):
+                label = skill.name
             if label and label not in labels:
                 labels.append(label)
         if not labels and self.confirmed_profile_skill(skill):

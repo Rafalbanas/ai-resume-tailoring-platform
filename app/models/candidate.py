@@ -17,6 +17,8 @@ class Experience(BaseModel):
     start: str = ""
     end: str = ""
     employment_note: str = ""
+    # Exact fact text -> any posting term required before including it in a CV.
+    cv_fact_conditions: dict[str, list[str]] = Field(default_factory=dict)
     facts: list[str] = Field(default_factory=list)
 
 

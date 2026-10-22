@@ -79,7 +79,8 @@ def sign_bullet(bullet, profile, key):
 
 
 def valid_bullet_attestation(bullet, resume, profile, key):
-    if not key:
+    from app.services.cv_content_policy import reviewable_bullet
+    if not key or not reviewable_bullet(bullet, profile):
         return False
     expected = sign_bullet(bullet, profile, key)
     return any(isinstance(value, str) and value.isascii() and hmac.compare_digest(expected, value)
@@ -183,7 +184,9 @@ async def review_draft(provider, resume, analysis, job, profile):
         for decision in verdict.bullets:
             ei, bi = bullet_targets[decision.id]
             bullet = result.experience[ei].bullets[bi]
-            if decision.supported and decision.relevant and provider.summary_review_key:
+            from app.services.cv_content_policy import reviewable_bullet
+            if (decision.supported and decision.relevant and provider.summary_review_key
+                    and reviewable_bullet(bullet, profile)):
                 result._bullet_attestations.append(sign_bullet(bullet, profile, provider.summary_review_key))
             else:
                 rejected.add((ei, bi))

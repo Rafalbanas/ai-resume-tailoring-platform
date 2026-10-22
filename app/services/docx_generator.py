@@ -154,6 +154,8 @@ def _generate_docx_local(
 
 
 def generate_docx(resume, profile, output, *, photo_path=None, photo_enabled=None, template_name="modern_sidebar"):
+    from app.services.cv_content_policy import check_export_content
+    check_export_content(resume)
     contacts(profile)
     from app.services.processing import decoded, encoded, process
     if photo_path and photo_path.with_name('current.jpg').is_file():
