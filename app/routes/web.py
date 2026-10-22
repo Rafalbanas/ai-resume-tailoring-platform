@@ -1368,6 +1368,18 @@ async def clear_diagnostics(request: Request, csrf_token: Annotated[str, Form()]
     return RedirectResponse("/diagnostics", status_code=303)
 
 
+@router.get("/cookies", response_class=HTMLResponse)
+async def cookies_notice(request: Request):
+    settings = request.app.state.settings
+    return request.app.state.templates.TemplateResponse(
+        request=request, name="cookies.html", context=context(
+            request, session_cookie_name=settings.session_cookie_name,
+            csrf_cookie_name=settings.csrf_cookie_name,
+            session_hours=settings.session_ttl_seconds / 3600,
+        ),
+    )
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return request.app.state.templates.TemplateResponse(request=request, name="login.html", context=context(request))

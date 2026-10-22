@@ -198,7 +198,7 @@ async def request_context(request: Request, call_next):
         root_path = request.scope.get("root_path", "")
         if root_path and (path == root_path or path.startswith(root_path + "/")):
             path = path[len(root_path):] or "/"
-        public = path in {"/login", "/health"} or path.startswith("/static/")
+        public = path in {"/login", "/health", "/cookies"} or path.startswith("/static/")
         credential = request.app.state.auth_store.credential_version if not public else ""
         request.state.authenticated = bool(not public and request.app.state.sessions.valid(
             request.session.get("id", ""), credential))
