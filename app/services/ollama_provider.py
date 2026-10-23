@@ -3,7 +3,9 @@ import json
 import logging
 import time
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from typing import Callable, TypeVar
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -169,12 +171,20 @@ class OllamaProvider(AIProvider):
             # A bounded reasoning prefix is a hint for a separate non-thinking
             # verdict, never a partially parsed decision or an approval.
             request.pop("format")
+        call_id = uuid4().hex
         progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
                    "total_ms": None, "done_reason": None, "num_predict": _completion_budget or self.num_predict,
                    "num_ctx": self.num_ctx, "thinking_requested": _think, "thinking_present": False, "error_kind": None}
+        metrics.update(
+            call_id=call_id, started_at=datetime.now(timezone.utc).isoformat(),
+            endpoint="/api/chat", http_status=None,
+            request_bytes=len(json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()),
+            schema_bytes=len(json.dumps(request["format"], ensure_ascii=False, separators=(",", ":")).encode()) if "format" in request else 0,
+            prompt_chars=sum(len(message["content"]) for message in request["messages"]),
+        )
         self.call_metrics.append(metrics)
         del self.call_metrics[:-128]
         if self._run_metrics.get() is not None:
@@ -187,7 +197,9 @@ class OllamaProvider(AIProvider):
                     follow_redirects=False,
                     transport=self.transport,
                 ) as client:
-                    response = await bounded_post(client, "/api/chat", json=request)
+                    response = await bounded_post(client, "/api/chat", json=request, headers={"X-Request-ID": call_id})
+                    metrics["http_status"] = response.status_code
+                    metrics["response_bytes"] = len(response.content)
                     response.raise_for_status()
                     envelope = response.json()
         except asyncio.CancelledError:
@@ -205,14 +217,23 @@ class OllamaProvider(AIProvider):
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         except httpx.HTTPStatusError as exc:
-            kind = "context_budget" if any(w in exc.response.text.casefold() for w in ("context", "prompt too long")) else "http"
-            metrics["error_kind"] = kind
+            from app.services.provider_diagnostics import http_error_details
+            details = http_error_details(exc.response)
+            kind = "context_budget" if details['error_code'] == 'context_budget' else "http"
+            metrics.update(details, error_kind=kind)
+            logger.warning("Ollama call failed (call_id=%s, HTTP=%s, error_code=%s)",
+                           call_id, details['http_status'], details['error_code'])
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
-            raise OllamaAnalysisError(kind, "Ollama rejected the request (context budget or HTTP error).") from exc
+            raise OllamaAnalysisError(
+                kind, f"Ollama HTTP {details['http_status']} ({details['error_code']}): "
+                f"{details['error_summary']} Call ID: {call_id}."
+            ) from exc
         except ValueError as exc:
             metrics["error_kind"] = "envelope"
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError("envelope", "Ollama returned an invalid HTTP JSON envelope.") from exc
+        finally:
+            metrics["client_ms"] = (time.perf_counter() - call_start) * 1000
 
         if not isinstance(envelope, dict) or not isinstance(envelope.get("message"), dict):
             metrics["error_kind"] = "envelope"
@@ -387,7 +408,7 @@ class OllamaProvider(AIProvider):
             if not pending or recovery_calls >= self.analysis_recovery_calls:
                 if pending:
                     raise coverage_error('Ollama analysis failed source coverage validation; incomplete analysis — review required.', pending)
-                raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues))
+                raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues + validated.classification_issues + validated.evidence_issues))
             for pid in pending:
                 inventory.passages[pid]["assessment_required"] = True
             rows[:] = [row for row in rows if row.p not in pending]

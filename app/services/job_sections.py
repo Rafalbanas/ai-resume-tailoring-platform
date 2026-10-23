@@ -26,19 +26,31 @@ NEEDED = re.compile(
     re.I,
 )
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??)\s*:?$', re.I)
-ORG = re.compile(r'^(?:company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
+ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }
 END = re.compile(r'^(?:benefits|we offer|what we offer|tech stack|travel requirements|relocation provided|position type|referral payment plan|company|eeo statement|equal opportunity.*)\s*:?$', re.I)
-REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity)\b', re.I)
+REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wymagan\w*|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity)\b', re.I)
 ORGANIZATION_SIGNAL = re.compile(r'\b(?:global leader|our (?:company|team|division)|we (?:believe|build|offer)|join (?:our|a) team)\b', re.I)
 INSTRUCTION = re.compile(r'ignore.*instructions|system prompt|you are chatgpt|return.*json|mark.*(?:strong|apply)|reveal.*(?:secret|key)', re.I)
 LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|advanced|expert|fluent|fluency|basic|working knowledge|hands.on)\b\+?', re.I)
 PREFERENCE_MARKER = re.compile(r'\b(?:preferred|preferably|nice.to.have|big plus|(?:is |are |would be )a plus|(?:considered (?:an? )?)?advantage|considered an asset|optional)\b', re.I)
+
+APPLICATION = re.compile(r"(?:\b(?:aplikuj|apply)\b.*(?:nadrobisz|learn|anyway|regardless)|(?:nie masz|don.t meet|don.t have).*(?:aplikuj|apply))", re.I)
+WORK_CONDITION = re.compile(r"(?:full.time job|based and eligible for employment|contract of employment|^(?:praca|pracę|work|remote|hybrid|on.site|gotowość do|willingness to travel)\b.*(?:zdaln|hybryd|remote|hybrid|travel|wizyt)|(?:occasional|okazjonaln\w*)\s+(?:client visits|wizyt)|^(?:client visits|wizyty u klientów))", re.I)
+
+
+def clean_source_line(raw: str) -> str:
+    """Normalize presentation markers without changing the literal content quote."""
+    line = raw.strip().replace('\u200b', '').replace('\ufeff', '')
+    line = re.sub(r'^#{1,6}\s+|^(?:->|[•−–>\-]|\d+[.)])\s*', '', line).strip()
+    line = re.sub(r'^(?:[-*]\s+)', '', line).strip()
+    return re.sub(r'\*\*|__', '', line).strip()
+
 
 TECH_LIST = r'(?:JavaScript|TypeScript|Python|PowerShell|Bash|SQL|T-SQL|Linux|Windows|Mac|Docker|Kubernetes|Azure|AWS|Terraform|Java|C\+\+|C#)'
 
@@ -103,8 +115,7 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
     units, section, category, recognized = [], '', None, ['MUST HAVE'] if legacy_tags else []
     for raw in text.splitlines():
         structural_heading = bool(re.match(r'^#{1,6}\s+', raw.strip()))
-        line = re.sub(r'^#{1,6}\s+', '', raw.strip().replace('\u200b', '').replace('\ufeff', ''))
-        line = re.sub(r'^(?:->|[•*−–>-])\s*', '', line).strip()
+        line = clean_source_line(raw)
         if not line:
             continue
         heading = line.rstrip(':').strip()
@@ -131,12 +142,21 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             category = None
             section = heading
             continue
-        elif structural_heading:
+        elif structural_heading or (line.endswith(':') and len(line.split()) <= 8 and not REQUIREMENT_SIGNAL.search(line)):
             category = 'unknown'
         else:
+            if INSTRUCTION.search(line):
+                continue
+            if APPLICATION.search(line):
+                units.append(SourceUnit(line, line, 'recruitment', 'Application encouragement, not a qualification', section, f'source_{len(units)+1}'))
+                continue
+            if WORK_CONDITION.search(line):
+                units.append(SourceUnit(line, line, 'employment', 'Working arrangement requires personal confirmation; excluded from skills scoring', section, f'source_{len(units)+1}'))
+                continue
             if category is None:
                 continue
-            if INSTRUCTION.search(line):
+            if (category == 'unknown' and REQUIREMENT_SIGNAL.search(line) or category in {'benefits', 'organization', 'recruitment'} and re.search(r'^(?:you must|must|required|requires|wymagamy|wymagane|znajomość|doświadczenie|experience (?:in|with)|knowledge of)\b', line, re.I)):
+                units.append(SourceUnit(line, line, 'unknown' if category == 'unknown' else 'mandatory', 'Qualification signal outside a qualification section; priority needs review', section, f'source_{len(units)+1}', uncertain=True))
                 continue
             # An introductory category has no independently assessable condition.
             if line.endswith(':') and re.search(r'(?:following|knowledge with|skills and experience)', line, re.I):

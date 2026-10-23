@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -52,15 +53,28 @@ class DiagnosticLogStore:
         error_message: str | None = None,
         call_metrics: list[dict] | None = None,
         assessed_requirements: int | None = None,
+        task_id: str | None = None,
     ) -> dict:
         allowed = {"provider", "model", "stage", "prompt_tokens", "completion_tokens", "reasoning_tokens", "total_ms",
-                   "client_ms", "done_reason", "num_predict", "num_ctx", "thinking_present", "error_kind",
-                   "assessed_requirements", "recovery_calls", "covered_passages", "unassessed_passages", "source_context_resolved", "tokens_per_second"}
+                   "client_ms", "done_reason", "num_predict", "num_ctx", "thinking_present", "thinking_requested", "error_kind",
+                   "assessed_requirements", "recovery_calls", "covered_passages", "unassessed_passages", "source_context_resolved", "tokens_per_second", "call_id", "started_at", "endpoint", "http_status",
+                   "request_bytes", "schema_bytes", "prompt_chars", "response_bytes", "response_sha256", "error_code"}
         # Explicit allowlist: never persist raw content, payloads or CV facts here.
         safe_calls = [{k: v for k, v in call.items() if k in allowed and isinstance(v, (str, int, float, bool, type(None)))}
                       for call in (call_metrics or [])]
+        from app.services.provider_diagnostics import HTTP_REASONS
+        for call in safe_calls:
+            # The stored explanation is generated from a fixed dictionary, never
+            # copied from upstream responses or model-provided metric strings.
+            if call.get('error_code') in HTTP_REASONS:
+                call['error_summary'] = HTTP_REASONS[call['error_code']]
+            for key in ('call_id', 'response_sha256'):
+                size = 32 if key == 'call_id' else 64
+                if key in call and not re.fullmatch(r'[a-f0-9]{' + str(size) + '}', str(call[key])):
+                    del call[key]
         entry = {
             "id": uuid4().hex[:12],
+            "task_id": task_id if isinstance(task_id, str) and re.fullmatch(r"[a-f0-9]{32}", task_id) else None,
             "call_metrics": safe_calls,
             "llm_call_count": len(safe_calls),
             "assessed_requirements": assessed_requirements,

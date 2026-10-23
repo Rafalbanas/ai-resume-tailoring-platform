@@ -82,7 +82,8 @@ class Storage:
 
     def save_draft(self, job: JobRequest, response: WorkflowResponse) -> str:
         draft_id = uuid4().hex
-        payload = {"job": job.model_dump(mode="json"), "response": response.model_dump(mode="json")}
+        payload = {"job": job.model_dump(mode="json"), "response": response.model_dump(mode="json"),
+                   "created_at": datetime.now(timezone.utc).isoformat()}
         payload["bullet_attestations"] = response.resume._bullet_attestations
         (self.drafts_dir / f"{draft_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return draft_id
@@ -331,6 +332,66 @@ class Storage:
             except (OSError, json.JSONDecodeError):
                 continue
         return sorted(rows, key=lambda item: (item["date"], item["slug"]), reverse=True)
+
+    def analysis_history(self) -> list[dict]:
+        """Expose persisted requests and reports that have no generated application.
+
+        Tasks already save the original job before contacting a provider. Reading
+        them here also restores older unfinished work without migrating user data.
+        """
+        from app.services.task_manager import TaskKind, TaskRecord, TaskStatus
+
+        exported = {row.get('draft_id') for row in self.history()}
+        drafts, rows, represented = {}, [], set()
+        for path in self.drafts_dir.glob('*.json'):
+            if not re.fullmatch(r'[a-f0-9]{32}', path.stem) or path.stem in exported:
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding='utf-8'))
+                job = JobRequest.model_validate(payload['job'])
+                WorkflowResponse.model_validate(payload['response'])
+                created = payload.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+                drafts[path.stem] = (job, created)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        for path in (self.data_dir / 'tasks').glob('*.json'):
+            if not re.fullmatch(r'[a-f0-9]{32}', path.stem):
+                continue
+            try:
+                task = TaskRecord.model_validate_json(path.read_text(encoding='utf-8'))
+                if task.kind != TaskKind.TAILOR or task.task_id != path.stem:
+                    continue
+                job = JobRequest.model_validate(task.payload.get('job'))
+                draft_id = (task.result or {}).get('draft_id')
+                if isinstance(draft_id, str) and draft_id in exported:
+                    continue
+                has_report = isinstance(draft_id, str) and draft_id in drafts
+                # Deleting a generated CV also deletes its draft. Do not revive
+                # its completed task as an unfinished analysis afterward.
+                if task.status == TaskStatus.COMPLETED and not has_report:
+                    continue
+                if has_report:
+                    if draft_id in represented:
+                        continue
+                    represented.add(draft_id)
+                rows.append({
+                    'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
+                    'date': task.created_at, 'status': 'report_ready' if has_report else task.status.value,
+                    'interrupted': task.stage == 'Interrupted',
+                    'view_url': f'/analysis/{draft_id}' if has_report else f'/tasks/{task.task_id}/view',
+                    'edit_url': f'/?from_task={task.task_id}',
+                })
+            except (OSError, ValueError, TypeError):
+                continue
+        for draft_id, (job, created) in drafts.items():
+            if draft_id in represented:
+                continue
+            rows.append({
+                'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
+                'date': created, 'status': 'report_ready', 'interrupted': False,
+                'view_url': f'/analysis/{draft_id}', 'edit_url': f'/?from_draft={draft_id}',
+            })
+        return sorted(rows, key=lambda row: (row['date'], row['view_url']), reverse=True)
 
     def load_pre_fit_resume(self, slug: str) -> TailoredResume | None:
         folder = self.application_folder(slug)

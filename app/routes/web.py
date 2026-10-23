@@ -122,7 +122,7 @@ async def clean_job_text(request: Request, payload: JobTextRequest):
 
 
 @router.get("/", response_class=HTMLResponse)
-async def index(request: Request, from_task: str | None = None):
+async def index(request: Request, from_task: str | None = None, from_draft: str | None = None):
     guard(request)
     default_provider = getattr(request.app.state.settings, "active_llm_provider", "ollama")
     form_data = {
@@ -143,6 +143,13 @@ async def index(request: Request, from_task: str | None = None):
             form_data["job_url"] = job_payload.get("job_url", "")
             form_data["tailoring_level"] = job_payload.get("tailoring_level", 0.0)
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
+
+    elif from_draft:
+        try:
+            job, _ = request.app.state.storage.load_draft(from_draft)
+        except (OSError, ValueError, KeyError):
+            raise HTTPException(status_code=404, detail="Analysis draft not found") from None
+        form_data.update(job.model_dump(mode='json'))
 
     return request.app.state.templates.TemplateResponse(
         request=request, name="index.html", context=context(request, **form_data)
@@ -804,7 +811,8 @@ async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, F
 async def history(request: Request):
     guard(request)
     return request.app.state.templates.TemplateResponse(
-        request=request, name="history.html", context=context(request, rows=request.app.state.storage.history())
+        request=request, name="history.html", context=context(request, rows=request.app.state.storage.history(),
+                     analyses=request.app.state.storage.analysis_history())
     )
 
 

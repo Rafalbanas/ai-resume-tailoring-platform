@@ -30,7 +30,7 @@
   <strong>Automatic Fallback Activated:</strong> {{ (fallback_reason or '').split('. Automatically recovered using')[0] }}
   {% if not analysis.is_reliable or analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' %}
   <p>The fallback analysis is also incomplete. Recovery did not produce a reliable assessment; review the source and retry.</p>
-  {% else %}<p>The fallback analysis passed completeness validation.</p>{% endif %}
+  {% else %}<p>Fallback source coverage checked. Classification and evidence validation are assessed separately; this does not guarantee correctness.</p>{% endif %}
 </div>
 {% endif %}
 {% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
@@ -39,6 +39,8 @@
   <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
 </div>
 {% endif %}
+{% if analysis.validation_version|default(0) < 2 %}<p class="alert alert-warning">Saved report uses older validation rules. Run a new analysis to check sections, evidence and compound requirements. Saved reports and CVs are unchanged.</p>{% endif %}
+{% if analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
 <section class="card">
   <h2>Adjust job tailoring before export</h2>
   {% set tailoring_source_type = 'draft' %}
@@ -128,7 +130,7 @@
         {% for quote in req.source_quotes|default([req.source_quote], true) %}<small><em>“{{ quote }}”</em></small>{% endfor %}
       </div>
       {% endif %}
-      {% if req.components %}<ul class="requirement-components">{% for component in req.components %}<li><strong>{{ component.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed', 'absent':'Confirmed gap'}.get(component.status, component.status) }}<p>{{ component.reason }}</p>{% for source in component.evidence_sources %}<small>{{ source.owner or source.type }}: {{ source.fact }}</small>{% endfor %}</li>{% endfor %}</ul>{% endif %}
+      {% if req.components %}<p>{{ {'all':'AND — every component must be confirmed.', 'any':'OR — one applicable alternative suffices; examples are not cumulative.', 'ambiguous':'Combined condition — confirm the source logic.'}.get(req.operator, 'Component results') }}</p><ul class="requirement-components">{% for component in req.components %}<li><strong>{{ component.name }}</strong> — {{ {'strong':'Confirmed', 'partial':'Partial match', 'missing':'Not confirmed', 'absent':'Confirmed gap'}.get(component.status, component.status) }}<p>{{ component.reason }}</p>{% for source in component.evidence_sources %}<small>{{ source.owner or source.type }}: {{ source.fact }}</small>{% endfor %}</li>{% endfor %}</ul>{% endif %}
       {% if req.evidence %}
       <div class="req-evidence">
         <small><strong>Profile evidence:</strong> {{ req.evidence|join('; ') }}</small>
