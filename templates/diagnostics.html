@@ -65,7 +65,7 @@
       <tbody>
         {% for run in runs %}
         <tr class="diag-row-{{ run.status }}">
-          <td><small>{{ run.timestamp[11:19] }}</small></td>
+          <td><small>{{ run.timestamp }}</small><br><small>Run {{ run.id }}</small>{% if run.task_id %}<br><a href="{{ app_root_path|default('') }}/tasks/{{ run.task_id }}/view">Task {{ run.task_id[:12] }}</a>{% endif %}</td>
           <td><strong>{{ run.role }}</strong><br><small>{{ run.company }}</small></td>
           <td><code>{{ run.requested_provider }}</code></td>
           <td><code>{{ run.provider_used }}</code><br><small>{{ run.model_used }}</small></td>
@@ -78,7 +78,15 @@
           </td>
           <td>{{ run.duration_ms }} ms
             {% if run.call_metrics %}<details><summary>{{ run.llm_call_count }} model calls · {{ run.assessed_requirements }} requirements</summary>
-            {% for call in run.call_metrics %}<p><small>{{ call.stage }} · {{ call.model }} · input {{ call.prompt_tokens if call.prompt_tokens is not none else 'unavailable' }} · output {{ call.completion_tokens if call.completion_tokens is not none else 'unavailable' }} · reasoning {{ call.reasoning_tokens if call.reasoning_tokens is not none else 'unavailable' }} · stop {{ call.done_reason or 'unavailable' }}{% if call.error_kind %} · {{ call.error_kind }}{% endif %}</small></p>{% endfor %}</details>{% endif %}
+            {% for call in run.call_metrics %}<p><small>{{ call.stage }} · {{ call.model }} · input {{ call.prompt_tokens if call.prompt_tokens is not none else 'unavailable' }} · output {{ call.completion_tokens if call.completion_tokens is not none else 'unavailable' }} · reasoning {{ call.reasoning_tokens if call.reasoning_tokens is not none else 'unavailable' }} · stop {{ call.done_reason or 'unavailable' }}{% if call.error_kind %} · {{ call.error_kind }}{% endif %}
+            {% if call.http_status %} · HTTP {{ call.http_status }}{% endif %}
+            {% if call.error_summary %}<br>{{ call.error_summary }}{% endif %}
+            {% if call.call_id %}<br>Call ID: <code>{{ call.call_id }}</code>{% endif %}
+            {% if call.started_at %} · started {{ call.started_at }}{% endif %}
+            {% if call.client_ms is defined and call.client_ms is not none %} · client {{ call.client_ms|round(1) }} ms{% endif %}
+            {% if call.request_bytes is defined %}<br>Request {{ call.request_bytes }} bytes · schema {{ call.schema_bytes }} bytes · prompt {{ call.prompt_chars }} characters · context {{ call.num_ctx }} · output budget {{ call.num_predict }}{% endif %}
+            {% if call.response_sha256 %}<br>Error response: {{ call.response_bytes }} bytes · SHA-256 <code>{{ call.response_sha256 }}</code>{% endif %}
+            </small></p>{% endfor %}</details>{% endif %}
           </td>
           <td>
             <span class="status-tag tag-{{ run.status }}">{{ run.status|capitalize }}</span>
