@@ -48,6 +48,9 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client,
     ):
         await login(client)
+        from app.core import body_deadline
+
+        monkeypatch.setattr(body_deadline, "FORM_BODY_SECONDS", 0.2)
         drafts = [seed(app, resume_payload, i) for i in range(3)]
         monkeypatch.setattr(app.state.pdf_generator, "fit_resume", lambda r, *a, **k: (r, []))
         monkeypatch.setattr(app.state.pdf_generator, "generate", pdf)
@@ -66,6 +69,9 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
             assert not any(t.done() for t in tasks)
             assert app.state.resource_budget.body_slots._value == 2
             assert (await asyncio.wait_for(client.get("/health"), 1)).status_code == 200
+            # The body is already cached: waiting for exports must not reuse
+            # the expired body-reception deadline when FastAPI parses the form.
+            await asyncio.sleep(0.25)
         finally:
             release.set()
         responses = await asyncio.wait_for(asyncio.gather(*tasks), 5)
