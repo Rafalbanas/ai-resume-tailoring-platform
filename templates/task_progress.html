@@ -20,6 +20,7 @@
       {% endif %}
     </p>
   </div>
+  <div class="actions"><a href="{{ app_root_path|default('') }}/history">Saved analyses</a>{% if job.get('job_url') %}<a href="{{ job.get('job_url') }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
   <div class="truth-badge" id="task-status-badge">
     <span class="{% if task.status not in ['failed', 'completed'] %}pulse-indicator{% endif %}" id="task-badge-icon">
       {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% else %}⚡{% endif %}

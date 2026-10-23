@@ -387,7 +387,7 @@ class OllamaProvider(AIProvider):
             if not pending or recovery_calls >= self.analysis_recovery_calls:
                 if pending:
                     raise coverage_error('Ollama analysis failed source coverage validation; incomplete analysis — review required.', pending)
-                raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues))
+                raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues + validated.classification_issues + validated.evidence_issues))
             for pid in pending:
                 inventory.passages[pid]["assessment_required"] = True
             rows[:] = [row for row in rows if row.p not in pending]

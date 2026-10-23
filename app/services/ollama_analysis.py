@@ -15,7 +15,7 @@ from app.models.job import RequirementPriority, RequirementStatus
 from app.services.ai_provider import AIProviderError
 from app.services.evidence_matching import EvidenceMatcher
 from app.services.fact_catalog import FactCatalog
-from app.services.job_sections import extract_sections
+from app.services.job_sections import clean_source_line, extract_sections
 
 
 class OllamaAnalysisError(AIProviderError):
@@ -109,7 +109,7 @@ class AnalysisInventory:
     @classmethod
     def build(cls, job, profile, bank=None):
         units, headings = extract_sections(job.job_description)
-        heading_keys = {h.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() for h in headings}
+        heading_keys = {clean_source_line(h).strip(" #:\t\r\n").casefold() for h in headings}
         passages = {}
         # Include unrecognized headings and all administrative/duty text, too.
         # A parser hint cannot silently remove a passage from model interpretation.
@@ -117,9 +117,7 @@ class AnalysisInventory:
             text = text.strip()
             if not text:
                 continue
-            import re
-
-            cleaned = re.sub(r"^(?:#{1,6}|->|[•*−–>-])\s*", "", text).strip()
+            cleaned = clean_source_line(text)
             related = [u for u in units if u.quote.strip() in {text, cleaned}] if position else []
             hints = sorted({u.category for u in related})
             section = related[0].section if related else ""

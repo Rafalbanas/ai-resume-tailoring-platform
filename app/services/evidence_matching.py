@@ -394,9 +394,21 @@ class EvidenceMatcher:
         if re.search(r'\bSaaS\b', name, re.I):
             saas = self._find(r'\bSaaS\b', practical=True)
             return self._qualified(name, saas, bool(saas), 'Application support does not by itself establish SaaS product experience.')
+        product = re.fullmatch(r'(?:(?:knowledge|experience|familiarity|proficiency) (?:of|in|with) |znajomość )?(M365|Microsoft 365|Entra ID|Intune)[.]?', name, re.I)
+        if product:
+            patterns = {'m365': r'\b(?:M365|Microsoft 365|Office 365|O365)\b',
+                        'microsoft 365': r'\b(?:M365|Microsoft 365|Office 365|O365)\b',
+                        'entra id': r'\b(?:Entra ID|Azure AD|Azure Active Directory)\b',
+                        'intune': r'\bIntune\b'}
+            entries = self._find(patterns[product[1].casefold()])
+            if re.search(r'experience', name, re.I):
+                entries = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
+            return self._qualified(name, entries, bool(entries), 'Only evidence for this specific product is used; related products do not establish this scope.')
         if key in {'troubleshooting', 'support', 'incident', 'documentation'}:
             if key == 'support':
-                entries = self._find(r'(?:support\w*.*(?:users?|partners?|application|windows|technical)|(?:technical|it|application|user|l[12]|tier [12]) support)', practical=True)
+                entries = self._find(r'(?:support\w*.*(?:users?|partners?|application|windows|technical)|(?:technical|it|application|user|l[12]|tier [12]) support|(?:resolv\w*|troubleshoot\w*|diagnos\w*|assist\w*).*(?:users?|użytkownik).*(?:Windows|Microsoft 365|Active Directory)|(?:resolv\w*|troubleshoot\w*|diagnos\w*).*(?:Windows|Microsoft 365|Active Directory).*(?:users?|użytkownik)|(?:wsparci\w*|pomoc\w*|diagnoz\w*).*(?:użytkownik).*(?:Windows|Microsoft 365|Active Directory))', practical=True)
+                entries = [e for e in entries if (':fact:' in e.source_id or e.kind == 'verified_skill')
+                           and not re.search(r'\b(?:never|not|no|nie|brak)\b', e.text, re.I)]
             if key == 'troubleshooting':
                 entries = self._find(r'troublesho(?:ot\w*|t)|investigat\w*.*incidents?|resolv\w*.*(?:incidents?|issues?|problems?)', practical=True)
                 scopes = [v for v in ('network', 'Windows', 'Linux', 'application') if re.search(r'\b' + v + r'\b', name, re.I)]

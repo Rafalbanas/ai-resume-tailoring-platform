@@ -152,6 +152,8 @@ class AnalysisValidator:
     """Makes match classifications provable against the active master profile."""
 
     def __init__(self, profile: CandidateProfile, skills_bank: SkillsBank | None = None):
+        self._classification_issues: list[str] = []
+        self._evidence_issues: list[str] = []
         self.catalog = FactCatalog(profile)
         self.skills_bank = skills_bank
         from app.services.evidence_matching import EvidenceMatcher

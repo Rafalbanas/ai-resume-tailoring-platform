@@ -127,6 +127,9 @@ class JobAnalysis(BaseModel):
     job_source: dict[str, str] = Field(default_factory=dict)
     source_context: list[dict[str, str]] = Field(default_factory=list)
     analysis_language: str = ""
+    validation_version: int = 0
+    classification_issues: list[str] = Field(default_factory=list)
+    evidence_issues: list[str] = Field(default_factory=list)
     completeness_issues: list[str] = Field(default_factory=list)
     unassessed_source_passages: list[str] = Field(default_factory=list)
     source_sections: list[str] = Field(default_factory=list)
