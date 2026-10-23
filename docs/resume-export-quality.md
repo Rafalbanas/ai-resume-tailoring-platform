@@ -46,3 +46,12 @@ priority even when analysis cited only a global skill. Employer details always
 come from that employer's own facts; global router configuration declarations
 cannot become an employer claim. Conditional fact rules and manual-edit
 preservation still apply, and one-page selection can omit optional details.
+
+Concurrent document export forms use a per-account bounded queue (four admitted
+requests including the active one). Forms are size-limited and CSRF-checked before
+waiting up to 180 seconds for the account write lock, without holding upload
+admission. Queue overflow/timeout returns browser users to their saved analysis
+with a retry notice. Other account updates retain fail-fast write protection.
+Document CPU operations, including previews, have a separate bounded queue of
+four and a 60-second admission deadline; native work still has its existing
+60-second execution budget. Cancellation and errors release queue admission.

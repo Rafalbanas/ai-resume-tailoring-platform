@@ -150,6 +150,9 @@ def test_generation_failure_explains_field_and_does_not_save_partial_cv(monkeypa
         assert result.status_code==422
         assert 'Select ATS Classic' in result.text
         assert list(app.state.storage.generated_dir.iterdir())==before
+        assert app.state.resource_budget.generation_slots._value == 4
+        assert app.state.resource_budget.mutation_slots._value == 1
+        assert app.state.resource_budget.cpu_queue_slots._value == 4
 
 
 def required_summary_fixture(profile, texts):

@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -177,6 +178,28 @@ async def lifespan(app: FastAPI):
                 del app.state.accounts
 
 
+GENERATION_WAIT_SECONDS = 180
+GENERATION_BUSY = "Document exports are busy. Please try again shortly."
+
+
+async def validate_mutation_body(request, settings):
+    submitted = request.headers.get("X-CSRF-Token", "")
+    if submitted:
+        validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ''), settings.csrf_secret)
+        if not secrets.compare_digest(submitted, request.session.get('csrf_token', '')):
+            raise HTTPException(403, 'Invalid CSRF token')
+    if not submitted and "form" in request.headers.get("content-type", ""):
+        await request.body()
+        async with request.form(max_files=20, max_fields=200, max_part_size=262144) as form:
+            submitted = str(form.get('csrf_token', ''))
+    validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ""), settings.csrf_secret)
+    if not secrets.compare_digest(submitted, request.session.get("csrf_token", "")):
+        raise HTTPException(403, "Invalid CSRF token")
+    # Read under admission before FastAPI's form parser, which
+    # otherwise masks receive-time limits as generic HTTP 400.
+    await request.body()
+
+
 async def request_context(request: Request, call_next):
     settings = request.app.state.settings
     processing_token = ENDPOINT.set((settings.processing_url, settings.processing_token))
@@ -193,11 +216,14 @@ async def request_context(request: Request, call_next):
     request.state.csp_nonce = secrets.token_urlsafe(18)
     admitted_body = False
     admitted_mutation = False
+    admitted_generation = False
+    generation = None
     try:
         path = request.url.path
         root_path = request.scope.get("root_path", "")
         if root_path and (path == root_path or path.startswith(root_path + "/")):
             path = path[len(root_path):] or "/"
+        generation = re.fullmatch(r"/generate/([a-f0-9]{32})", path) if request.method == "POST" else None
         public = path in {"/login", "/health", "/cookies"} or path.startswith("/static/")
         credential = request.app.state.auth_store.credential_version if not public else ""
         request.state.authenticated = bool(not public and request.app.state.sessions.valid(
@@ -213,44 +239,54 @@ async def request_context(request: Request, call_next):
                         request.app.state.limiter.check(request.client.host if request.client else 'unknown')
                         request.state.rate_checked = True
                     slots = request.app.state.resource_budget.body_slots
-                    if path != '/logout':
+                    if generation:
+                        # Generation has its own bounded pool of small forms, so
+                        # queued exports do not occupy upload/body admission.
+                        exports = request.app.state.resource_budget.generation_slots
+                        if exports.locked():
+                            raise HTTPException(429, GENERATION_BUSY)
+                        await exports.acquire()
+                        admitted_generation = True
+                        await validate_mutation_body(request, settings)
+                    elif path != '/logout':
                         if slots.locked():
                             raise HTTPException(429, 'Too many concurrent uploads or forms')
                         await slots.acquire()
                         admitted_body = True
                     if not public and path != '/logout':
                         mutations = request.app.state.resource_budget.mutation_slots
-                        if mutations.locked():
-                            raise HTTPException(429, 'An account update is already in progress')
-                        await mutations.acquire()
+                        if generation:
+                            try:
+                                async with asyncio.timeout(GENERATION_WAIT_SECONDS):
+                                    await mutations.acquire()
+                            except TimeoutError as exc:
+                                raise HTTPException(429, GENERATION_BUSY) from exc
+                        else:
+                            if mutations.locked():
+                                raise HTTPException(429, 'An account update is already in progress')
+                            await mutations.acquire()
                         admitted_mutation = True
                     # Deletions must stay available when an account is over quota.
                     if path not in {'/login', '/logout', '/account/password'} and not path.endswith(('/delete', '/remove', '/clear')):
                         await run_in_threadpool(request.app.state.resource_budget.check_disk)
-                    submitted = request.headers.get("X-CSRF-Token", "")
-                    if submitted:
-                        validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ''), settings.csrf_secret)
-                        if not secrets.compare_digest(submitted, request.session.get('csrf_token', '')):
-                            raise HTTPException(403, 'Invalid CSRF token')
-                    if not submitted and "form" in request.headers.get("content-type", ""):
-                        await request.body()
-                        async with request.form(max_files=20, max_fields=200, max_part_size=262144) as form:
-                            submitted = str(form.get('csrf_token', ''))
-                    validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ""), settings.csrf_secret)
-                    if not secrets.compare_digest(submitted, request.session.get("csrf_token", "")):
-                        raise HTTPException(403, "Invalid CSRF token")
-                    # Read under admission before FastAPI's form parser, which
-                    # otherwise masks receive-time limits as generic HTTP 400.
-                    await request.body()
+                    if not generation:
+                        await validate_mutation_body(request, settings)
                 response = await call_next(request)
             except StarletteHTTPException as exc:
-                response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+                if generation and exc.detail == GENERATION_BUSY and "text/html" in request.headers.get("accept", ""):
+                    response = RedirectResponse(f"/analysis/{generation[1]}?export_busy=1", status_code=303)
+                else:
+                    response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+                if exc.detail == GENERATION_BUSY:
+                    response.headers["Retry-After"] = "5"
 
     finally:
         if admitted_mutation:
             request.app.state.resource_budget.mutation_slots.release()
         if admitted_body:
             request.app.state.resource_budget.body_slots.release()
+        if admitted_generation:
+            request.app.state.resource_budget.generation_slots.release()
         request_id_var.reset(token)
         ENDPOINT.reset(processing_token)
         BROWSER_ENDPOINT.reset(browser_token)

@@ -1,4 +1,5 @@
 """Bounded, secret-free RPC for document processing; never deserialize pickle."""
+import asyncio
 import base64
 import json
 import logging
@@ -120,13 +121,21 @@ def local_process(request, *, timeout=60):
         SLOTS.release()
 
 
+CPU_QUEUE_WAIT_SECONDS = 60
+
+
 async def cpu_work(request, function, *args, **kwargs):
     from fastapi import HTTPException
     from starlette.concurrency import run_in_threadpool
     budget = request.app.state.resource_budget
-    if budget.cpu_slots.locked():
-        raise HTTPException(429, 'Document processing is busy. Try again shortly.')
-    async with budget.cpu_slots:
+    if budget.cpu_queue_slots.locked():
+        raise HTTPException(429, 'Document processing queue is full. Try again shortly.')
+    async with budget.cpu_queue_slots:
+        try:
+            async with asyncio.timeout(CPU_QUEUE_WAIT_SECONDS):
+                await budget.cpu_slots.acquire()
+        except TimeoutError as exc:
+            raise HTTPException(429, 'Document processing is busy. Try again shortly.') from exc
         token = DEADLINE.set(time.monotonic() + 60)
         try:
             return await run_in_threadpool(function, *args, **kwargs)
@@ -134,6 +143,7 @@ async def cpu_work(request, function, *args, **kwargs):
             raise HTTPException(422, str(exc)) from exc
         finally:
             DEADLINE.reset(token)
+            budget.cpu_slots.release()
 
 
 def reap_container_children():
