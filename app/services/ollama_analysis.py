@@ -125,7 +125,7 @@ class AnalysisInventory:
                 "text": related[0].quote if related else text,
                 "hints": hints,
                 "section": section,
-                "context_only": position == 0 or cleaned.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() in heading_keys or bool(hints) and set(hints) <= {"competency", "organization", "benefits", "employment", "recruitment"},
+                "context_only": position == 0 or cleaned.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() in heading_keys or bool(hints) and set(hints) <= {"competency", "organization", "benefits", "employment", "recruitment", "keywords"},
             }
         entries = EvidenceMatcher(FactCatalog(profile), bank).entries
         evidence = {f"F{i + 1}": e for i, e in enumerate(entries)}
@@ -438,7 +438,7 @@ def needs_assessment(passage):
     hints = set(passage["hints"])
     if hints & {"mandatory", "preferred", "nice_to_have"}:
         return True
-    if hints & {"organization", "responsibility", "benefits", "employment", "recruitment"}:
+    if hints & {"organization", "responsibility", "benefits", "employment", "recruitment", "keywords"}:
         return False
     text = passage["text"].strip()
     if text.endswith(":") or len(text.split()) < 3:
@@ -455,7 +455,7 @@ def needs_assessment(passage):
 def objective_condition(passage):
     import re
 
-    if set(passage["hints"]) & {"responsibility", "organization", "benefits", "employment", "recruitment"}:
+    if set(passage["hints"]) & {"responsibility", "organization", "benefits", "employment", "recruitment", "keywords"}:
         return False
     text = passage["text"].strip()
     tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+\+?\s*years?\b.*\bexperience\b", text, re.I)

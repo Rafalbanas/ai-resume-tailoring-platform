@@ -25,10 +25,15 @@ NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
     re.I,
 )
+QUALIFICATION_HEADING = re.compile(
+    r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
+    r'professional\s+requirements)\s*:?$', re.I,
+)
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
+    "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
     "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
@@ -45,11 +50,19 @@ WORK_CONDITION = re.compile(r"(?:full.time job|based and eligible for employment
 
 
 def clean_source_line(raw: str) -> str:
-    """Normalize presentation markers without changing the literal content quote."""
-    line = raw.strip().replace('\u200b', '').replace('\ufeff', '')
-    line = re.sub(r'^#{1,6}\s+|^(?:->|[•−–>\-]|\d+[.)])\s*', '', line).strip()
-    line = re.sub(r'^(?:[-*]\s+)', '', line).strip()
-    return re.sub(r'\*\*|__', '', line).strip()
+    """Remove presentation syntax while retaining technical punctuation and scope."""
+    line = re.sub(r"[\u200b\ufeff\u2060]", "", raw)
+    line = re.sub(r"\s+", " ", line).strip()
+    # Copied lists may nest quote, heading and bullet markers.
+    while True:
+        cleaned = re.sub(r"^(?:#{1,6}\s+|->\s*|[•●▪◦]\s*|>(?!\s*\d)\s*|[-*−–]\s+|\d+[.)]\s+)", "", line).strip()
+        if cleaned == line:
+            break
+        line = cleaned
+    # Paired markup only: do not erase underscores inside identifiers.
+    line = re.sub(r"(?<!\w)(\*\*|\*|`)(?=\S)(.+?)(?<=\S)\1(?!\w)", r"\2", line)
+    line = re.sub(r"(?<!\w)__([^\n]*?[\s:][^\n]*?)__(?!\w)", r"\1", line)
+    return line.strip()
 
 
 TECH_LIST = r'(?:JavaScript|TypeScript|Python|PowerShell|Bash|SQL|T-SQL|Linux|Windows|Mac|Docker|Kubernetes|Azure|AWS|Terraform|Java|C\+\+|C#)'
@@ -121,10 +134,12 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
         heading = line.rstrip(':').strip()
         if PREFERRED.fullmatch(line):
             category = 'preferred'
-        elif MANDATORY.fullmatch(heading) or NEEDED.fullmatch(heading):
+        elif MANDATORY.fullmatch(heading) or NEEDED.fullmatch(heading) or QUALIFICATION_HEADING.fullmatch(heading):
             category = 'mandatory'
         elif DUTY.fullmatch(line):
             category = 'responsibility'
+        elif re.fullmatch(r'role overview\s*:?', line, re.I):
+            category = 'unknown'
         elif ORG.fullmatch(line):
             category = 'organization'
         elif re.match(r'^why join [^?]+\?', line, re.I):
