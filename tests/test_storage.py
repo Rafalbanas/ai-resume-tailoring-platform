@@ -152,6 +152,9 @@ def test_draft_roundtrip_recovers_oversized_analysis_summary(tmp_path, resume_pa
     assert restored.analysis.reasoning_summary == "x" * 2000
     assert restored.analysis.recommendation == analysis.recommendation
     assert restored.resume._bullet_attestations == ["signed-test-attestation"]
+    assert storage.analysis_history()[0]["view_url"] == f"/analysis/{draft_id}"
+    # Legacy recovery remains read-only.
+    assert len(json.loads(path.read_text())["response"]["analysis"]["reasoning_summary"]) == 3062
 
 
 

@@ -397,8 +397,7 @@ class Storage:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding='utf-8'))
-                job = JobRequest.model_validate(payload['job'])
-                WorkflowResponse.model_validate(payload['response'])
+                job, _ = self._validate_draft(payload)
                 created = payload.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
                 drafts[path.stem] = (job, created)
             except (OSError, ValueError, KeyError, TypeError):
