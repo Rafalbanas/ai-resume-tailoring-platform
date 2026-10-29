@@ -201,17 +201,17 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | Component | Pinned Version | Category | Purpose |
 |---|---|---|---|
 | **Python** | `3.14` | Runtime | Container runtime & execution environment |
-| **FastAPI** | `0.143.2` | Backend | Asynchronous REST API framework & routing |
+| **FastAPI** | `0.161.1` | Backend | Asynchronous REST API framework & routing |
 | **Uvicorn** | `0.54.0` | Backend | High-performance ASGI production server |
 | **python-multipart** | `0.0.32` | Backend | Multipart form data & resume file upload streaming |
 | **Pydantic** | `2.14.1` | Core | Data validation, settings, and domain schemas |
-| **Pydantic Settings** | `2.16.0` | Core | Settings management and environment parsing |
+| **Pydantic Settings** | `2.16.1` | Core | Settings management and environment parsing |
 | **PyPDFium2** | `5.14.0` | Document Engine | PDF geometry, text layout & bounding box inspection |
 | **WeasyPrint** | `70.0` | Document Engine | Visual CSS / Paged Media PDF generation |
-| **pypdf** | `6.20.1` | Document Engine | PDF manipulation, stream extraction & structural checks |
+| **pypdf** | `6.21.2` | Document Engine | PDF manipulation, stream extraction & structural checks |
 | **python-docx** | `1.2.0` | Document Engine | ATS-friendly Microsoft Word document generation |
 | **BeautifulSoup4** | `4.15.0` | Job Extraction | Resilient HTML parsing & job posting sanitization |
-| **Playwright** | `1.64.0` | Job Extraction | Headless Chromium browser automation & SSR fallback |
+| **Playwright** | `1.64.1` | Job Extraction | Headless Chromium browser automation & SSR fallback |
 | **HTTPX** | `0.28.1` | Networking | Async HTTP client for MCP, Gemini, and external APIs |
 | **Jinja2** | `3.1.6` | Templates | Jinja2 HTML resume template rendering engine |
 | **Pillow** | `13.0.0` | Media | Profile photo validation, scaling, and cropping |
@@ -221,7 +221,7 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | **email-validator** | `2.3.0` | Validation | RFC-compliant email address validation |
 | **pytest** | `9.1.1` | Testing | Automated test runner and assertion framework |
 | **pytest-asyncio** | `1.4.0` | Testing | Asynchronous test execution for pytest |
-| **Ruff** | `0.17.1` | Tooling | Fast Python linter and code style enforcement |
+| **Ruff** | `0.17.2` | Tooling | Fast Python linter and code style enforcement |
 <!-- TECH_STACK:END -->
 
 ---

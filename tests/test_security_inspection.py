@@ -21,10 +21,11 @@ def test_environment_check_rejects_wrong_python_and_stale_pypdf():
             name, version = line.split('==')
             pinned[name.split('[')[0]] = version
     assert checker.check(python_version='3.14', package_version=pinned.__getitem__) == []
-    pinned['pypdf'] = '6.1.1'
+    expected_pypdf = pinned['pypdf']
+    pinned['pypdf'] = '0.0.0'
     problems = checker.check(python_version='3.12', package_version=pinned.__getitem__)
     assert len(problems) == 2
-    assert any('pypdf' in issue and '6.20.1' in issue for issue in problems)
+    assert f'pypdf: expected {expected_pypdf}, found 0.0.0' in problems
     assert any('Python' in issue and '3.14' in issue for issue in problems)
 
 
