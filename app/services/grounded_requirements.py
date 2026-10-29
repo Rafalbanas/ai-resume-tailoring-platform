@@ -185,6 +185,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result = candidate.model_copy(deep=True)
     result.validation_version = 2
     validator._classification_issues = []
+    validator._classification_corrections = []
     validator._evidence_issues = []
     from app.services.job_sections import (
         ORGANIZATION_SIGNAL,
@@ -411,6 +412,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     )
     result.classification_issues = list(dict.fromkeys(validator._classification_issues + [
         f'Unresolved source interpretation: {r.name}' for r in requirements if r.interpretation_uncertain]))
+    correction_prefix = 'Excluded model qualification from scoring: context passage '
+    prior_corrections = [note for note in candidate.validation_corrections
+                         if note.startswith(correction_prefix) and note[len(correction_prefix):] in job_text]
+    result.validation_corrections = list(dict.fromkeys(prior_corrections + validator._classification_corrections))
     result.evidence_issues = list(dict.fromkeys(validator._evidence_issues + [
         f'Conflicting evidence: {r.name}' for r in requirements if re.search(r'conflict|contradict', r.reason, re.I)]))
     result.is_reliable = bool(requirements or result.role_competencies or result.responsibilities) and not (

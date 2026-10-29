@@ -111,13 +111,20 @@ def language_check_name(name, level):
     return name + " " + level
 
 
-def _facts(validator, item, *, practical_scope=False, ml_context=""):
+def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=False):
     from app.services.competency_scope import scoped_match
-    scoped = scoped_match(validator.matcher, item.name)
     from app.services.evidence_strength import CI
-    if scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Entra ID|Intune)\b', item.name, re.I)):
+    scoped = None if aggregate else scoped_match(validator.matcher, item.name)
+    if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Entra ID|Intune)\b', item.name, re.I)):
         scoped = validator.matcher.match(item.name)
     original_status, original_ids = item.status, list(item.source_fact_ids)
+    if aggregate and item.status == Status.STRONG:
+        parent_scope = scoped_match(validator.matcher, item.name)
+        if parent_scope is not None and parent_scope.status != Status.STRONG:
+            # Preserve whole-requirement level/scope ceilings without replacing
+            # the component evidence used to establish the AND/OR result.
+            item.status = parent_scope.status
+            item.reason += " " + parent_scope.reason
     if scoped is not None:
         item.status = scoped.status
         item.source_fact_ids = [e.source_id for e in scoped.entries]
@@ -189,7 +196,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context=""):
 
 
 def validated_model_requirements(validator, candidate, job_text, units, fallback):
-    from app.services.job_sections import clean_source_line, extract_sections
+    from app.services.job_sections import REQUIREMENT_SIGNAL, clean_source_line, extract_sections
 
     def heading_key(value):
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
@@ -214,7 +221,11 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             and not any(u.category in qualification_categories and clean_source_line(quote) in clean_source_line(u.quote) for u in units)
             for quote in quotes
         ):
-            validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
+            if any(REQUIREMENT_SIGNAL.search(quote) for quote in quotes):
+                # A section label must not silently suppress qualification wording.
+                validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
+            else:
+                validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
             # Preserve the passage in source_context; it cannot enter qualification
             # arithmetic just because an earlier section was preferred.
             continue
@@ -247,7 +258,10 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             if not component.reason and not component.source_fact_ids:
                 from app.services.grounded_requirements import verify_requirement
                 component.status, component.evidence, component.source_fact_ids, component.reason = verify_requirement(validator, component.name)
-        entries = _facts(validator, req)
+        compound = bool(req.components and req.operator in {"all", "any"})
+        # The combined row is established by its separately validated components.
+        # A broader single-scope matcher must not discard a component's evidence.
+        entries = [] if compound else _facts(validator, req)
         if not req.reason.strip():
             req.interpretation_uncertain = True
             req.reason = "Model interpretation requires an explanation of scope and evidence."
@@ -337,6 +351,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.source_fact_ids = list(dict.fromkeys(i for c in req.components for i in c.source_fact_ids))
             req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
             req.evidence = [s["fact"] for s in req.evidence_sources]
+            entries = _facts(validator, req, aggregate=True)
         elif explicit_list(req.name) and req.status == Status.STRONG:
             # A whole AND condition cannot be proved by citing only one item.
             req.interpretation_uncertain = True

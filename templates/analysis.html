@@ -41,6 +41,7 @@
 {% endif %}
 {% if analysis.validation_version|default(0) < 2 %}<p class="alert alert-warning">Saved report uses older validation rules. Run a new analysis to check sections, evidence and compound requirements. Saved reports and CVs are unchanged.</p>{% endif %}
 {% if analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
+{% if analysis.validation_corrections %}<details class="card"><summary>Corrections applied during validation</summary>{% for correction in analysis.validation_corrections %}<p>{{ correction }}</p>{% endfor %}</details>{% endif %}
 <section class="card">
   <h2>Adjust job tailoring before export</h2>
   {% set tailoring_source_type = 'draft' %}

@@ -129,6 +129,7 @@ class JobAnalysis(BaseModel):
     analysis_language: str = ""
     validation_version: int = 0
     classification_issues: list[str] = Field(default_factory=list)
+    validation_corrections: list[str] = Field(default_factory=list)
     evidence_issues: list[str] = Field(default_factory=list)
     completeness_issues: list[str] = Field(default_factory=list)
     unassessed_source_passages: list[str] = Field(default_factory=list)

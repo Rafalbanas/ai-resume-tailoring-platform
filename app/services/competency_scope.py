@@ -11,7 +11,7 @@ SCOPES = {
     'configuration management': (r'configuration management|\bansible\b', r'configuration management|\b(?:ansible|puppet|chef|saltstack)\b'),
 }
 THEORY = re.compile(r'awareness|familiarity|basic knowledge|understanding|theoret\w*|training|course|studied|rozumie|szkoleni', re.I)
-PRACTICE = re.compile(r'hands.on|practical|professional|\bexperience\b|proficien\w*|working|administer|implement|deploy|perform', re.I)
+PRACTICE = re.compile(r'\b(?:hands.on|practical|professional|experience|proficien\w*|working|administer\w*|implement\w*|deploy\w*|perform\w*)\b', re.I)
 ACTIVITY = re.compile(r'\b(?:used|uses|using|configured|managed|administered|performed|implemented|maintained|troubleshoot\w*|diagnos\w*|worked|practical|hands.on)\b', re.I)
 NEGATIVE_SCOPE = re.compile(r'no (?:prior )?(?:practical |professional |hands.on )?(?:experience|knowledge)|never (?:used|performed|worked)|have not (?:used|performed)|without (?:practical |professional )?(?:experience|practice)', re.I)
 
@@ -43,6 +43,13 @@ def scoped_match(matcher, name):
     from app.models.job import RequirementStatus as Status
     from app.services.evidence_matching import EvidenceMatch
     key = scope_key(name)
+    from app.services.evidence_strength import CI
+    if (key == 'configuration management' and CI.search(name)
+            and not re.search(r'\bconfiguration management\b', name, re.I) and re.search(
+        r'\bsuch as\b|\bfor example\b|\bor similar\b|\blub podobne\b|\bnp\.', name, re.I
+    )):
+        # Optional example products do not replace the requested CI/CD scope.
+        return None
     if not key or (key == 'security' and re.search(r'endpoint|compliance|monitoring|gpo|patch|identity', name, re.I)):
         return None
     pattern = SCOPES[key][1]
