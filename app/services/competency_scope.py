@@ -44,9 +44,10 @@ def scoped_match(matcher, name):
     from app.services.evidence_matching import EvidenceMatch
     key = scope_key(name)
     from app.services.evidence_strength import CI
-    if key == 'configuration management' and CI.search(name) and re.search(
+    if (key == 'configuration management' and CI.search(name)
+            and not re.search(r'\bconfiguration management\b', name, re.I) and re.search(
         r'\bsuch as\b|\bfor example\b|\bor similar\b|\blub podobne\b|\bnp\.', name, re.I
-    ):
+    )):
         # Optional example products do not replace the requested CI/CD scope.
         return None
     if not key or (key == 'security' and re.search(r'endpoint|compliance|monitoring|gpo|patch|identity', name, re.I)):

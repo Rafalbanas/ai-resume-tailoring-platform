@@ -64,6 +64,8 @@ def test_compound_networking_does_not_infer_advanced_proficiency():
 
 def test_ci_cd_examples_do_not_reclassify_requirement_as_ansible():
     p = profile()
+    # An explicit configuration-management requirement remains a distinct scope.
+    assert AnalysisValidator(p).matcher.match("Configuration management (such as Ansible) for CI/CD").status == "missing"
     quote = "Wiedza o CI/CD (Ansible, GitLab lub podobne)."
     row = JobRequirement(name="CI/CD (Ansible, GitLab or similar)", source_quote=quote, priority="preferred",
         status="strong", source_fact_ids=[fact_id(p, "GitHub Actions")], reason="Documented successful CI/CD execution.")
