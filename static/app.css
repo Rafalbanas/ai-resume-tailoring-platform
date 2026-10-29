@@ -29,6 +29,13 @@
 .badge-active{background:#daf4ed;color:#087c68}
 .badge-inactive{background:#f1f5f9;color:#64748b}
 
+.history-filters{display:grid;grid-template-columns:minmax(220px,2fr) repeat(2,minmax(170px,1fr));gap:.8rem;align-items:end;padding:1rem;margin:1rem 0 1.5rem;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+.history-filters label{margin:0}
+.history-filters input,.history-filters select{display:block;width:100%;margin-top:.35rem}
+.history-filters p{grid-column:1/-1;margin:0}
+[data-history-item][hidden]{display:none!important}
+@media(max-width:700px){.history-filters{grid-template-columns:1fr}}
+
 
 /* AI Provider and Model Selection */
 .provider-select {

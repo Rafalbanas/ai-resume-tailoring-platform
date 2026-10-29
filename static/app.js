@@ -22,6 +22,35 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  const historySearch = document.getElementById("history-search");
+  const historyType = document.getElementById("history-type");
+  const historyMatch = document.getElementById("history-match");
+  if (historySearch && historyType && historyMatch) {
+    const items = [...document.querySelectorAll("[data-history-item]")];
+    const count = document.getElementById("history-filter-count");
+    const empty = document.getElementById("history-filter-empty");
+    const filterHistory = () => {
+      const query = historySearch.value.trim().toLocaleLowerCase();
+      const type = historyType.value;
+      const match = historyMatch.value;
+      let visible = 0;
+      for (const item of items) {
+        const show = (!query || item.dataset.search.includes(query))
+          && (type === "all" || item.dataset.entryType === type)
+          && (match === "all" || item.dataset.match === match);
+        item.hidden = !show;
+        if (show) visible += 1;
+      }
+      historyMatch.disabled = type === "analysis";
+      count.textContent = `Showing ${visible} of ${items.length} entries`;
+      empty.hidden = visible !== 0;
+    };
+    historySearch.addEventListener("input", filterHistory);
+    historyType.addEventListener("change", filterHistory);
+    historyMatch.addEventListener("change", filterHistory);
+    filterHistory();
+  }
+
   const resumePreview = document.getElementById("resume-preview");
   const previewEnlarge = document.getElementById("preview-enlarge");
   const previewFit = document.getElementById("preview-fit");
