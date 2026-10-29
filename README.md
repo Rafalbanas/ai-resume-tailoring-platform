@@ -213,7 +213,7 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | **Playwright** | `1.64.0` | Job Extraction | Headless Chromium browser automation & SSR fallback |
 | **HTTPX** | `0.28.1` | Networking | Async HTTP client for MCP, Gemini, and external APIs |
 | **Jinja2** | `3.1.6` | Templates | Jinja2 HTML resume template rendering engine |
-| **Pillow** | `12.3.0` | Media | Profile photo validation, scaling, and cropping |
+| **Pillow** | `13.0.0` | Media | Profile photo validation, scaling, and cropping |
 | **pillow-heif** | `1.8.1` | Media | HEIF / HEIC photo decoding for mobile camera uploads |
 | **Argon2-cffi** | `25.1.0` | Security | Argon2id password hashing & credential storage |
 | **itsdangerous** | `2.2.0` | Security | Cryptographic signing & HMAC summary review attestation |
