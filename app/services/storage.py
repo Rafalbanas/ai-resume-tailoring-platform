@@ -9,8 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
+
+
+class DraftDataError(ValueError):
+    """A stored draft exists, but cannot be safely used."""
 
 
 def safe_filename(value: str, fallback: str = "item") -> str:
@@ -85,16 +91,59 @@ class Storage:
         payload = {"job": job.model_dump(mode="json"), "response": response.model_dump(mode="json"),
                    "created_at": datetime.now(timezone.utc).isoformat()}
         payload["bullet_attestations"] = response.resume._bullet_attestations
-        (self.drafts_dir / f"{draft_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._bound_draft_summary(payload)
+        self._validate_draft(payload)
+        destination = self.drafts_dir / f"{draft_id}.json"
+        # Publish only complete files, on the same filesystem as the destination.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.drafts_dir,
+                                         suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            try:
+                json.dump(payload, stream, indent=2, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            except BaseException:
+                temporary.unlink(missing_ok=True)
+                raise
+        try:
+            os.replace(temporary, destination)
+            self.load_draft(draft_id)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            destination.unlink(missing_ok=True)
+            raise
         return draft_id
 
     def load_draft(self, draft_id: str) -> tuple[JobRequest, WorkflowResponse]:
         if not re.fullmatch(r"[a-f0-9]{32}", draft_id):
             raise FileNotFoundError(draft_id)
-        payload = json.loads((self.drafts_dir / f"{draft_id}.json").read_text(encoding="utf-8"))
-        response = WorkflowResponse.model_validate(payload["response"])
-        response.resume._bullet_attestations = payload.get("bullet_attestations", [])
-        return JobRequest.model_validate(payload["job"]), response
+        try:
+            payload = json.loads((self.drafts_dir / f"{draft_id}.json").read_text(encoding="utf-8"))
+            return self._validate_draft(payload)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise DraftDataError("Draft data could not be validated") from exc
+
+    @classmethod
+    def _validate_draft(cls, payload: dict) -> tuple[JobRequest, WorkflowResponse]:
+        try:
+            cls._bound_draft_summary(payload)
+            response = WorkflowResponse.model_validate(payload["response"])
+            response.resume._bullet_attestations = payload.get("bullet_attestations", [])
+            return JobRequest.model_validate(payload["job"]), response
+        except (ValidationError, KeyError, TypeError, AttributeError) as exc:
+            raise DraftDataError("Draft data could not be validated") from exc
+
+    @staticmethod
+    def _bound_draft_summary(payload: dict) -> None:
+        # Older analyses may have been mutated beyond the model's field limit.
+        # Keep the complete issue lists while bounding their display summary.
+        analysis = payload.get("response", {}).get("analysis", {})
+        summary = analysis.get("reasoning_summary")
+        limit = JobAnalysis.model_fields["reasoning_summary"].metadata
+        maximum = next(item.max_length for item in limit if hasattr(item, "max_length"))
+        if isinstance(summary, str):
+            analysis["reasoning_summary"] = summary[:maximum]
+
 
     def save_application(
         self,
@@ -348,8 +397,7 @@ class Storage:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding='utf-8'))
-                job = JobRequest.model_validate(payload['job'])
-                WorkflowResponse.model_validate(payload['response'])
+                job, _ = self._validate_draft(payload)
                 created = payload.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
                 drafts[path.stem] = (job, created)
             except (OSError, ValueError, KeyError, TypeError):

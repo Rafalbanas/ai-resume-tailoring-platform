@@ -26,7 +26,7 @@ from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
 from app.services.resume_export import prepare_resume
-from app.services.storage import compute_pre_fit_diff
+from app.services.storage import DraftDataError, compute_pre_fit_diff
 from app.services.summary_confirmation import account_context, confirmation_token, require_confirmation, summary_review
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 from app.services.ui_language import ui_text
@@ -60,6 +60,24 @@ def limit_request(request):
 
 def guard(request: Request) -> None:
     require_session(request)
+
+
+def draft_error_response(request: Request, *, missing: bool):
+    return request.app.state.templates.TemplateResponse(
+        request=request, name="draft_error.html", status_code=404 if missing else 422,
+        context=context(request, draft_missing=missing),
+    )
+
+
+async def ollama_model_options(request: Request) -> dict:
+    provider = getattr(request.app.state.provider, "providers", {}).get("ollama")
+    if provider is None:
+        return {"ollama_models": [], "ollama_models_unavailable": True}
+    try:
+        return {"ollama_models": await provider.available_models(), "ollama_models_unavailable": False}
+    except Exception:
+        logger.warning("Ollama model listing unavailable")
+        return {"ollama_models": [], "ollama_models_unavailable": True}
 
 
 def _skill_id(name: str) -> str:
@@ -132,6 +150,8 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
         "job_url": "",
         "llm_provider": default_provider,
         "tailoring_level": 0.0,
+        "selected_ollama_model": "",
+        "ollama_context": 65536,
     }
     if from_task:
         task = request.app.state.task_manager.get_task(from_task)
@@ -143,6 +163,8 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             form_data["job_url"] = job_payload.get("job_url", "")
             form_data["tailoring_level"] = job_payload.get("tailoring_level", 0.0)
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
+            form_data["selected_ollama_model"] = task.payload.get("ollama_model", "")
+            form_data["ollama_context"] = task.payload.get("ollama_context", 32768)
 
     elif from_draft:
         try:
@@ -151,6 +173,7 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             raise HTTPException(status_code=404, detail="Analysis draft not found") from None
         form_data.update(job.model_dump(mode='json'))
 
+    form_data.update(await ollama_model_options(request))
     return request.app.state.templates.TemplateResponse(
         request=request, name="index.html", context=context(request, **form_data)
     )
@@ -165,6 +188,8 @@ async def analyze(
     csrf_token: Annotated[str, Form()],
     job_url: Annotated[str, Form()] = "",
     llm_provider: Annotated[str, Form()] = "auto",
+    ollama_model: Annotated[str, Form(max_length=200)] = "",
+    ollama_context: Annotated[int, Form(ge=32768, le=131072)] = 65536,
     tailoring_level: Annotated[float, Form(ge=0, le=1)] = 0.0,
 ):
     guard(request)
@@ -172,6 +197,8 @@ async def analyze(
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if len(job_description) > request.app.state.settings.max_job_description_chars:
         raise HTTPException(status_code=413, detail="Job description is too long")
+    if ollama_context not in {32768, 65536, 98304, 131072}:
+        raise HTTPException(status_code=422, detail="Choose a context of 32768, 65536, 98304 or 131072 tokens")
     try:
         job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description,
                          tailoring_level=tailoring_level)
@@ -187,6 +214,9 @@ async def analyze(
                 job_url=job_url,
                 llm_provider=llm_provider,
                 tailoring_level=tailoring_level,
+                selected_ollama_model=ollama_model,
+                ollama_context=ollama_context,
+                **await ollama_model_options(request),
             ),
             status_code=422,
         )
@@ -199,6 +229,8 @@ async def analyze(
         job_description=job_description.strip(),
         job_url=job_url.strip(),
         llm_provider=llm_provider.strip(),
+        ollama_model=ollama_model if llm_provider in {"auto", "ollama"} else "",
+        ollama_context=ollama_context if llm_provider in {"auto", "ollama"} else 32768,
         tailoring_level=tailoring_level,
     )
 
@@ -209,6 +241,8 @@ async def analyze(
             payload={
                 "job": job.model_dump(mode="json"),
                 "llm_provider": llm_provider,
+                "ollama_model": ollama_model,
+                "ollama_context": ollama_context,
             },
             idempotency_key=key,
         )
@@ -359,8 +393,11 @@ async def analysis_view(request: Request, draft_id: str):
     guard(request)
     try:
         job, response = request.app.state.storage.load_draft(draft_id)
-    except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=404, detail="Draft not found") from exc
+    except FileNotFoundError:
+        return draft_error_response(request, missing=True)
+    except (DraftDataError, json.JSONDecodeError, ValidationError):
+        logger.exception("Could not open saved draft %s", draft_id)
+        return draft_error_response(request, missing=False)
     checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis,
         review_key=request.app.state.settings.csrf_secret).validate(response.resume, job).resume
     review = summary_review(checked, request.app.state.profile, request.app.state.settings.csrf_secret,
@@ -421,8 +458,11 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
         job, response = request.app.state.storage.load_draft(draft_id)
-    except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=404, detail="Draft not found") from exc
+    except FileNotFoundError:
+        return draft_error_response(request, missing=True)
+    except (DraftDataError, json.JSONDecodeError, ValidationError):
+        logger.exception("Could not open saved draft %s", draft_id)
+        return draft_error_response(request, missing=False)
     started = time.perf_counter()
     validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
     result = validator.validate(response.resume, job)

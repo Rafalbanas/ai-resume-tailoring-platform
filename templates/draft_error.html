@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Draft unavailable · CVTailor{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>{% if draft_missing %}Draft not found{% else %}This draft could not be opened{% endif %}</h1>
+  <p>{% if draft_missing %}The draft may have been removed. Open your saved analyses or start a new analysis.{% else %}The saved analysis contains invalid data. Your profile and existing exports are unaffected. Open your saved analyses to edit and retry this job.{% endif %}</p>
+  <div class="actions">
+    <a href="{{ app_root_path }}/history">Saved analyses</a>
+    <a href="{{ app_root_path }}/">New analysis</a>
+  </div>
+</section>
+{% endblock %}

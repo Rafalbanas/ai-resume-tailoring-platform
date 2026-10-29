@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -84,6 +85,42 @@ class OllamaProvider(AIProvider):
         self.skills_bank = skills_bank
         self.semaphore = semaphore or asyncio.Semaphore(getattr(settings, "ollama_max_concurrency", 1))
 
+    async def available_models(self) -> list[str]:
+        async with httpx.AsyncClient(transport=self.transport, timeout=3.0) as client:
+            response = await client.get(f"{self.base_url}/api/tags")
+            response.raise_for_status()
+        return sorted({row["name"] for row in response.json().get("models", [])
+                       if isinstance(row.get("name"), str)})
+
+
+    async def for_model(self, model: str, context: int):
+        """Isolate each task's choice while retaining the shared inference semaphore."""
+        if context not in {32768, 65536, 98304, 131072}:
+            raise AIProviderError("Choose a context of 32768, 65536, 98304 or 131072 tokens.")
+        if model not in await self.available_models():
+            raise AIProviderError("Selected Ollama model is no longer available on the server.")
+        async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
+            response = await client.post(f"{self.base_url}/api/show", json={"model": model})
+            response.raise_for_status()
+        info = response.json().get("model_info", {})
+        limits = [value for key, value in info.items()
+                  if key.endswith(".context_length") and isinstance(value, int) and value > 0]
+        if not limits or context > min(limits):
+            raise AIProviderError("Selected model does not advertise support for this context length.")
+        selected = self.with_selection(model, context)
+        selected._verify_selected_model = False
+        return selected
+
+    def with_selection(self, model: str, context: int):
+        if context not in {32768, 65536, 98304, 131072}:
+            raise AIProviderError("Choose a supported context length.")
+        selected = copy.copy(self)
+        selected.model, selected.num_ctx = model, context
+        selected.call_metrics = []
+        selected._run_metrics = ContextVar("ollama_selected_run_metrics", default=None)
+        selected._verify_selected_model = True
+        return selected
+
     async def _chat(
         self,
         response_model: type[ModelT],
@@ -99,6 +136,12 @@ class OllamaProvider(AIProvider):
         _reasoning_only: bool = False,
     ) -> ModelT:
         from app.services.bounded_http import bounded_post, model_call
+        if getattr(self, "_verify_selected_model", False):
+            try:
+                await self.for_model(self.model, self.num_ctx)
+            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                raise AIProviderError("Cannot verify the selected model on the Ollama server.") from exc
+            self._verify_selected_model = False
         schema = _schema or response_model.model_json_schema()
         if response_model is JobAnalysis and self.skills_bank:
             properties = schema["properties"]
