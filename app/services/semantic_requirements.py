@@ -196,7 +196,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
 
 
 def validated_model_requirements(validator, candidate, job_text, units, fallback):
-    from app.services.job_sections import clean_source_line, extract_sections
+    from app.services.job_sections import REQUIREMENT_SIGNAL, clean_source_line, extract_sections
 
     def heading_key(value):
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
@@ -221,7 +221,11 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             and not any(u.category in qualification_categories and clean_source_line(quote) in clean_source_line(u.quote) for u in units)
             for quote in quotes
         ):
-            validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
+            if any(REQUIREMENT_SIGNAL.search(quote) for quote in quotes):
+                # A section label must not silently suppress qualification wording.
+                validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
+            else:
+                validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
             # Preserve the passage in source_context; it cannot enter qualification
             # arithmetic just because an earlier section was preferred.
             continue

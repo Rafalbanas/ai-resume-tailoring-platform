@@ -91,3 +91,12 @@ def test_corrected_responsibility_stays_auditable_but_does_not_block_report():
     again = AnalysisValidator(p).validate(result, "RESPONSIBILITIES\n" + duty + "\nREQUIREMENTS\nLinux")
     assert again.is_reliable
     assert again.validation_corrections == result.validation_corrections
+
+
+def test_responsibility_heading_cannot_silently_hide_explicit_qualification():
+    p = profile()
+    quote = "Must have Linux knowledge."
+    row = JobRequirement(name="Linux knowledge", source_quote=quote, status="strong",
+                         source_fact_ids=[fact_id(p, "Linux")], reason="Declared Linux knowledge.")
+    result = validate(p, "RESPONSIBILITIES\n" + quote, [row])
+    assert any(r.source_quote == quote for r in result.requirements) or not result.is_reliable
