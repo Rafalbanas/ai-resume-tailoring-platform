@@ -189,6 +189,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     from app.services.job_sections import (
         ORGANIZATION_SIGNAL,
         REQUIREMENT_SIGNAL,
+        clean_source_line,
         extract_sections,
         role_competency_units,
         semantic_key,
@@ -197,7 +198,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     source = source_lines(job_text)
     result.source_sections = sections
     result.analysis_method = 'llm_validated' if semantic and candidate.requirements else 'source_review'
-    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','unknown'}]
+    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','keywords','unknown'}]
     result.analysis_language = "en"
     result.responsibilities = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "responsibility"]
     # Responsibility overlap is indicative, not proof of the full duty or an
@@ -259,7 +260,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
-        if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "unknown"}
+        if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "keywords", "unknown"}
                and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
             continue
         if re.fullmatch(r'\s*(?:B[12]|C[12]|Advanced|Expert|Intermediate|Basic)\s*', raw, re.I) and index and not any(u.level == raw.strip() and u.name == job_lines[index-1].strip() for u in units):
@@ -380,7 +381,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result.unsupported_keywords = [k for k in candidate.unsupported_keywords if boundary_contains(k, job_text) and not validator.catalog.direct_sources(k)]
     visibly_truncated = bool(re.search(r"\b(?:and|or|i|oraz)\s*$", job_text.strip(), re.I))
     expected = {u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
-    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(r.source_quote == u.quote or r.source_quote in u.quote or u.quote in r.source_quote for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
+    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(clean_source_line(r.source_quote) in clean_source_line(u.quote) or clean_source_line(u.quote) in clean_source_line(r.source_quote) for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
         result.unassessed_source_passages.extend(u.quote for u in units if u.name in omitted)
         result.completeness_issues.append("Some source requirements were not assessed.")
@@ -388,11 +389,12 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     # Organization context and duties are represented separately, not scored.
     covered_quotes = [u.quote for u in units] + [r.source_quote for r in requirements + result.role_competencies]
     covered_quotes += [r.get("source_quote", "") for r in result.responsibilities if r.get("source_quote")]
+    heading_keys = {clean_source_line(section).rstrip(':').strip().casefold() for section in sections}
     uncovered = [line.strip() for line in job_text.splitlines()
                  if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line) and not INJECTION.search(line)
-                 and line.strip().rstrip(':') not in sections
+                 and clean_source_line(line).rstrip(':').strip().casefold() not in heading_keys
                  and not re.search(r'knowledge with:\s*$', line, re.I)
-                 and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
+                 and not any(clean_source_line(quote) in clean_source_line(line) or clean_source_line(line) in clean_source_line(quote) for quote in covered_quotes)]
     if uncovered:
         result.unassessed_source_passages.extend(uncovered)
         result.completeness_issues.append("Requirement-bearing source passages are not covered by the analysis.")

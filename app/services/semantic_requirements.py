@@ -11,6 +11,7 @@ import re
 from app.models.job import RequirementStatus as Status
 from app.services.evidence_matching import NEGATIVE, required_level, required_years, scoring_key
 from app.services.fact_catalog import normalized_tokens
+from app.services.job_sections import clean_source_line
 
 
 def source_components(text):
@@ -65,6 +66,13 @@ def resolve_source_quotes(quote, job_text):
         return [quote]
     if resolved := resolve(quote):
         return [resolved]
+    # Recover an entire original line only when presentation cleanup is exact.
+    # Return the original span for auditing; never use fuzzy content matching.
+    cleaned = clean_source_line(quote).rstrip(".;")
+    if cleaned:
+        for line in job_text.splitlines():
+            if clean_source_line(line).rstrip(".;") == cleaned:
+                return [line.strip()]
     parts = re.split(r"(?<=[.;])\s+(?=[A-Z])", quote.strip())
     resolved = [resolve(part) for part in parts]
     return resolved if resolved and all(resolved) else []
@@ -188,7 +196,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
 
     headings = {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
-    excluded = {"benefits", "employment", "recruitment", "organization", "responsibility", "competency"}
+    excluded = {"benefits", "employment", "recruitment", "organization", "keywords", "responsibility", "competency"}
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
@@ -202,8 +210,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if all(
-            (any(u.category in excluded and quote in u.quote for u in units) or " ".join(quote.split()) in context_text)
-            and not any(u.category in qualification_categories and quote in u.quote for u in units)
+            (any(u.category in excluded and clean_source_line(quote) in clean_source_line(u.quote) for u in units) or clean_source_line(quote) in context_text)
+            and not any(u.category in qualification_categories and clean_source_line(quote) in clean_source_line(u.quote) for u in units)
             for quote in quotes
         ):
             validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
@@ -216,7 +224,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         req.source_quotes = list(dict.fromkeys(quotes))
         req.interpretation_origin = "llm"
         req.source_section = req.source_section or next(
-            (u.section for u in units if req.source_quote in u.quote), "Unsectioned source"
+            (u.section for u in units if clean_source_line(req.source_quote) in clean_source_line(u.quote)), "Unsectioned source"
         )
         req.required_level = quoted_language_level(req.name, " ".join(quotes)) or req.required_level
         from app.models.job import RequirementComponent
@@ -245,7 +253,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.reason = "Model interpretation requires an explanation of scope and evidence."
             if req.status == Status.STRONG:
                 req.status = Status.PARTIAL if entries else Status.MISSING
-        source_units = [u for u in units if any(quote in u.quote for quote in quotes)]
+        source_units = [u for u in units if any(clean_source_line(quote) in clean_source_line(u.quote) for quote in quotes)]
         qualifications = [u for u in source_units if u.category in {"mandatory", "preferred", "nice_to_have"}]
         preferred = [u for u in qualifications if u.category in {"preferred", "nice_to_have"}]
         boilerplate = {
@@ -391,7 +399,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
     # Missing model passages remain visible and are explicitly identified as
     # source review. They do not silently replace the model's valid interpretation.
     for req in fallback:
-        if any(req.source_quote == model.source_quote or req.name == model.name for model in requirements):
+        if any(clean_source_line(req.source_quote) == clean_source_line(model.source_quote) or req.name == model.name for model in requirements):
             continue
         req.interpretation_origin = "source_review"
         requirements.append(req)
