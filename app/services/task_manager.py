@@ -311,6 +311,14 @@ class TaskManager:
     async def _execute_tailor(self, task: TaskRecord, app_state: Any) -> None:
         job = JobRequest.model_validate(task.payload["job"])
         llm_provider = task.payload.get("llm_provider", "auto")
+        provider = app_state.provider
+        selected_model = task.payload.get("ollama_model")
+        if ((selected_model or "ollama_context" in task.payload)
+                and provider.resolve_chain(llm_provider)[0] == "ollama"):
+            provider = copy(provider)
+            provider.providers = dict(provider.providers)
+            provider.providers["ollama"] = provider.providers["ollama"].with_selection(
+                selected_model or provider.providers["ollama"].model, task.payload.get("ollama_context", 32768))
         wall_start = time.perf_counter()
 
         def on_stage_cb(stage_name: str) -> None:
@@ -327,10 +335,10 @@ class TaskManager:
 
         try:
             if reused_analysis is not None:
-                response = await app_state.provider.retailor(
+                response = await provider.retailor(
                     job, app_state.profile, reused_analysis, requested_provider=llm_provider, on_stage=on_stage_cb)
             else:
-                response = await app_state.provider.tailor(
+                response = await provider.tailor(
                     job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
                 )
         except AIProviderError as exc:
@@ -347,11 +355,11 @@ class TaskManager:
             if reused_analysis is not None:
                 raise
             try:
-                response = await app_state.provider.tailor(
+                response = await provider.tailor(
                     job, app_state.profile, requested_provider=llm_provider
                 )
             except TypeError:
-                response = await app_state.provider.tailor(job, app_state.profile)
+                response = await provider.tailor(job, app_state.profile)
 
         on_stage_cb("Validating Truth Lock...")
 

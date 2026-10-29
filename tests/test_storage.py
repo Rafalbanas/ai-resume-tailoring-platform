@@ -1,11 +1,12 @@
 import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from app.models.job import JobAnalysis, JobRequest
-from app.models.resume import TailoredResume
-from app.services.storage import Storage, safe_filename
+from app.models.resume import TailoredResume, WorkflowResponse
+from app.services.storage import DraftDataError, Storage, safe_filename
 
 
 def test_safe_filename():
@@ -127,3 +128,68 @@ def test_history_stores_only_safe_photo_setting(tmp_path, resume_payload):
     assert metadata["photo_enabled"] is True
     assert metadata["template_name"] == "modern_sidebar"
     assert "base64" not in str(metadata).casefold()
+
+
+def test_draft_roundtrip_recovers_oversized_analysis_summary(tmp_path, resume_payload):
+    storage = Storage(tmp_path)
+    job = JobRequest(company="Acme", role="Engineer", job_description="A complete job description for testing.")
+    analysis = JobAnalysis(
+        company="Acme", role="Engineer", strong_matches=[], partial_matches=[], missing_requirements=[],
+        supported_keywords=[], unsupported_keywords=[], recommendation="RETRY", match_level="UNRELIABLE",
+        reasoning_summary="Review required.",
+    )
+    analysis.reasoning_summary = "x" * 3062
+    response = WorkflowResponse(analysis=analysis, resume=TailoredResume.model_validate(resume_payload))
+    response.resume._bullet_attestations = ["signed-test-attestation"]
+    draft_id = storage.save_draft(job, response)
+    path = storage.drafts_dir / f"{draft_id}.json"
+    payload = json.loads(path.read_text())
+    assert len(payload["response"]["analysis"]["reasoning_summary"]) == 2000
+    payload["response"]["analysis"]["reasoning_summary"] = "x" * 3062
+    path.write_text(json.dumps(payload))
+    restored_job, restored = storage.load_draft(draft_id)
+    assert restored_job == job
+    assert restored.analysis.reasoning_summary == "x" * 2000
+    assert restored.analysis.recommendation == analysis.recommendation
+    assert restored.resume._bullet_attestations == ["signed-test-attestation"]
+
+
+
+@pytest.mark.parametrize("content", ['{', '[]', '{}', '{"response": null}',
+                                      '{"response": {"analysis": []}}'])
+def test_invalid_draft_is_distinct_from_missing_draft(tmp_path, content):
+    storage = Storage(tmp_path)
+    draft_id = "a" * 32
+    with pytest.raises(FileNotFoundError):
+        storage.load_draft(draft_id)
+    path = storage.drafts_dir / f"{draft_id}.json"
+    path.write_text(content)
+    with pytest.raises(DraftDataError):
+        storage.load_draft(draft_id)
+    assert path.read_text() == content
+
+
+
+@pytest.mark.parametrize("failure", ["invalid_model", "readback", "replace"])
+def test_draft_save_does_not_publish_failed_results(tmp_path, resume_payload, monkeypatch, failure):
+    storage = Storage(tmp_path)
+    job = JobRequest(company="Acme", role="Engineer", job_description="A complete job description for testing.")
+    analysis = JobAnalysis(
+        company="Acme", role="Engineer", strong_matches=[], partial_matches=[], missing_requirements=[],
+        supported_keywords=[], unsupported_keywords=[], recommendation="RETRY", match_level="UNRELIABLE",
+        reasoning_summary="Review required.",
+    )
+    response = WorkflowResponse(analysis=analysis, resume=TailoredResume.model_validate(resume_payload))
+    if failure == "invalid_model":
+        response.resume.headline = "x" * 141
+    elif failure == "readback":
+        def fail_readback(_):
+            raise DraftDataError("Simulated unreadable draft")
+        monkeypatch.setattr(storage, "load_draft", fail_readback)
+    else:
+        def fail_replace(*_):
+            raise OSError("Simulated disk error")
+        monkeypatch.setattr("app.services.storage.os.replace", fail_replace)
+    with pytest.raises((DraftDataError, OSError)):
+        storage.save_draft(job, response)
+    assert list(storage.drafts_dir.iterdir()) == []
