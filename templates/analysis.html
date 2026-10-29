@@ -177,9 +177,10 @@
   <a class="secondary button" href="{{ app_root_path|default('') }}/compare?draft_id={{ draft_id }}">Compare models</a>
   <form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post" data-document-export>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if not analysis.is_reliable %}<p class="alert" role="alert">The match report still requires review. You can export this CV after reviewing its content and completing any summary confirmation below.</p>{% endif %}
     {% if summary_review %}{% include '_summary_review.html' %}{% endif %}
     <label>Resume layout<select name="template_name"><option value="ats_classic">ATS Classic</option><option value="modern_sidebar">Modern Sidebar</option></select></label>
-    <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Export this draft as PDF / DOCX</button>
+    <button class="primary" type="submit">Export this draft as PDF / DOCX</button>
   </form>
 </div>
 {% endblock %}
