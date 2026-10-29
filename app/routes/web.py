@@ -423,8 +423,6 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
         job, response = request.app.state.storage.load_draft(draft_id)
     except (FileNotFoundError, json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=404, detail="Draft not found") from exc
-    if not response.analysis.is_reliable:
-        raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     started = time.perf_counter()
     validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
     result = validator.validate(response.resume, job)
