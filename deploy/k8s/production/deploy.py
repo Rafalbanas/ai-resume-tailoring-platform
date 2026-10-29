@@ -62,13 +62,25 @@ def drain(timeout=900):
         raise
 
 
+def ready_production_pod(pods):
+    # Failed/evicted and completed pods remain in the API after replacement.
+    # Pending/unknown/unready live pods still prevent a successful release.
+    active = [pod for pod in pods if not pod['metadata'].get('deletionTimestamp')
+              and pod.get('status', {}).get('phase') not in {'Failed', 'Succeeded'}]
+    assert len(active) == 1, 'Exactly one active production pod is required'
+    pod = active[0]
+    status = pod.get('status', {})
+    assert status.get('phase') == 'Running' and any(
+        condition.get('type') == 'Ready' and condition.get('status') == 'True'
+        for condition in status.get('conditions', [])
+    ), 'Production pod must be running and ready'
+    return pod
+
+
 def healthy():
     with urllib.request.urlopen('http://127.0.0.1:18000/health', timeout=10) as response:
         assert response.status == 200
-    pods = object_get('pods', '-l', 'app=cvtailor')['items']
-    ready = [pod for pod in pods if not pod['metadata'].get('deletionTimestamp') and
-             any(condition['type'] == 'Ready' and condition['status'] == 'True' for condition in pod.get('status', {}).get('conditions', []))]
-    assert len(ready) == 1, 'Exactly one ready production pod is required'
+    return ready_production_pod(object_get('pods', '-l', 'app=cvtailor')['items'])
 
 
 def pull_and_validate(image, revision, token):
@@ -109,12 +121,10 @@ def deploy(revision, digest):
     previous_environment = previous['spec']['template']['spec']['containers'][0].get('env', [])
     previous_revision = previous['metadata'].get('annotations', {}).get('cvtailor.dev/revision', '')
     if previous_image == image and previous_revision == revision:
-        healthy()
+        pod = healthy()
         information = json.loads(command(['k3s', 'crictl', 'inspecti', image]))['status']
         valid_ids = [information['id'], *information.get('repoDigests', [])]
-        pods = object_get('pods', '-l', 'app=cvtailor')['items']
-        running = [pod for pod in pods if not pod['metadata'].get('deletionTimestamp')]
-        assert len(running) == 1 and running[0]['status']['containerStatuses'][0]['imageID'] in valid_ids
+        assert pod['status']['containerStatuses'][0]['imageID'] in valid_ids
         print('Exact approved image is already healthy in Kubernetes; no rollout required.')
         return
     # The short-lived identity can only get/patch/watch this one Deployment.
@@ -142,15 +152,12 @@ def deploy(revision, digest):
                         'env': [{'$patch': 'replace'}, *environment]}]}}}}
                 command(cli + ['patch', 'deployment', 'cvtailor', '--type=strategic', '--patch-file=/dev/stdin'], json.dumps(patch))
                 command(cli + ['rollout', 'status', 'deployment/cvtailor', '--timeout=240s'])
-                healthy()
+                pod = healthy()
                 current = object_get('deployment', 'cvtailor')
                 assert current['spec']['template']['spec']['containers'][0]['image'] == target_image
                 information = json.loads(command(['k3s', 'crictl', 'inspecti', target_image]))['status']
                 valid_ids = [information['id'], *information.get('repoDigests', [])]
-                running = object_get('pods', '-l', 'app=cvtailor')['items']
-                ready = [pod for pod in running if not pod['metadata'].get('deletionTimestamp')]
-                assert len(ready) == 1
-                assert ready[0]['status']['containerStatuses'][0]['imageID'] in valid_ids, 'Running image differs from validated image'
+                assert pod['status']['containerStatuses'][0]['imageID'] in valid_ids, 'Running image differs from validated image'
 
             try:
                 update_processors({name: image for name in processors})

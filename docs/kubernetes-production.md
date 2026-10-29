@@ -137,6 +137,12 @@ a dopiero potem wymienia pod. Odczyty działają. Przekroczenie limitu przerywa
 wdrożenie i zwalnia blokadę. Błąd odbioru przywraca poprzedni obraz i ustawienia
 wersji. Ponowne wskazanie już działającego obrazu sprawdza stan bez restartu.
 
+Kontrola odbioru, ponownego wdrożenia i rollbacku pomija zakończone rekordy
+podów (`Failed`, w tym eksmisje, oraz `Succeeded`). Wymaga dokładnie jednego
+nieusuwanego, aktywnego poda w stanie `Running` z warunkiem `Ready=True`.
+Pod `Pending`, `Unknown` lub dodatkowa aktywna instancja nadal blokuje odbiór;
+digest działającego kontenera musi odpowiadać zweryfikowanemu obrazowi.
+
 Przećwiczono zmianę obrazu, wymuszony błąd odbioru i automatyczny rollback w
 odrębnym namespace na tym samym K3s. Produkcyjny wrapper, komenda `status` przez
 ograniczonego użytkownika i idempotentne wdrożenie przypiętego obrazu także przeszły.
