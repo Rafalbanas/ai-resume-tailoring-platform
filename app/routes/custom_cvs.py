@@ -62,7 +62,8 @@ async def import_cv(request: Request):
             if len(content) > maximum:
                 raise ValueError("The CV file is too large. Paste its text instead.")
             text = await cpu_work(request, process, 'reference', {'suffix': suffix, 'content': encoded(content)}, timeout=20)
-        identifier = store(request).create(str(form.get("cv_name", "")) or "Imported CV", text)
+        identifier = store(request).create(str(form.get("cv_name", "")) or "Imported CV", text,
+                                           template_name=str(form.get("template_name", "ats_classic")))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     if 'application/json' in request.headers.get('accept', ''):
@@ -75,10 +76,30 @@ async def edit_generated_cv(request: Request, slug: str):
     await form_data(request)
     try:
         job, resume, _, metadata = request.app.state.storage.load_application(slug)
+        template = metadata.get("template_name", "modern_sidebar")
         markup = await cpu_work(request, request.app.state.pdf_generator.render_html, resume,
-                                request.app.state.profile, template_name="ats_classic", photo_enabled=False)
-        text = BeautifulSoup(markup, "html.parser").body.get_text("\n", strip=True)
-        identifier = store(request).create(metadata.get("cv_name") or job.role, text)
+                                request.app.state.profile, template_name=template, photo_enabled=False)
+        soup = BeautifulSoup(markup, "html.parser")
+        ats_contact = soup.select_one('.ats-contact')
+        contact_text = ats_contact.get_text(' ', strip=True) if ats_contact else ''
+        if ats_contact:
+            ats_contact.decompose()
+        # Keep logical blocks apart without breaking every inline span onto a new line.
+        blocks = [soup.select_one('main header'), *soup.select('aside section'),
+                  *soup.select('.main-sections > section'), soup.select_one('.consent-footer')]
+        chunks = []
+        for index, block in enumerate(filter(None, blocks)):
+            for element in block.select('h1, h2, h3, p, li, .entry-head'):
+                if element.find_parent(class_='entry-head'):
+                    continue
+                chunks.append(element.get_text(' ', strip=True))
+            if block.name == 'footer':
+                chunks.append(block.get_text(' ', strip=True))
+            chunks.append('')
+            if index == 0 and contact_text:
+                chunks.extend(['Contact', contact_text, ''])
+        text = '\n'.join(chunks)
+        identifier = store(request).create(metadata.get("cv_name") or job.role, text, template_name=template)
     except OSError as exc:
         raise HTTPException(404, "Saved CV not found") from exc
     except ValueError as exc:
@@ -143,16 +164,18 @@ async def update_cv(request: Request, identifier: str, action: str):
             store(request).delete(identifier)
             return redirect(request)
         store(request).update(identifier, int(str(form.get("revision", "-1"))), action,
-                              text=str(form.get("text", "")), name=str(form.get("name", "")))
+                               text=str(form.get("text", "")), name=str(form.get("name", "")),
+                               template_name=str(form.get("template_name", "")))
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return redirect(request, identifier)
 
 
 @router.get("/custom-cvs/{identifier}/export/{kind}")
-async def export_cv(request: Request, identifier: str, kind: str, template: str = "ats_classic"):
+async def export_cv(request: Request, identifier: str, kind: str, template: str | None = None):
     guard(request)
     doc = load(request, identifier)
+    template = template or doc['template_name']
     if kind not in {"pdf", "docx"} or template not in {"ats_classic", "modern_sidebar"}:
         raise HTTPException(422, "Choose PDF or DOCX and an existing CV template.")
     try:
@@ -162,4 +185,12 @@ async def export_cv(request: Request, identifier: str, kind: str, template: str 
         raise HTTPException(422, "Export failed. Your CV was kept; try again or use the other format.") from exc
     mime = "application/pdf" if kind == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return Response(decoded(output), media_type=mime,
-                    headers={"Content-Disposition": f'attachment; filename="{safe_filename(doc["name"])}.{kind}"'})
+                     headers={"Content-Disposition": f'attachment; filename="{safe_filename(doc["name"])}.{kind}"'})
+
+
+@router.get("/custom-cvs/{identifier}/preview")
+async def preview_cv(request: Request, identifier: str):
+    """Exact accepted PDF, through the same isolated renderer as downloads."""
+    response = await export_cv(request, identifier, 'pdf')
+    response.headers['Content-Disposition'] = 'inline; filename="preview.pdf"'
+    return response

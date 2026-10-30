@@ -1,0 +1,70 @@
+Ada Example
+Technical Support Engineer (L2)
+SaaS Support & API Integrations
+Application target: Technical Implementation Specialist
+
+Contact
+Location
+Example City, Poland
+Email
+ada@example.test
+Phone
++48 000 000 000
+LinkedIn
+linkedin.com/in/ada-example
+Website
+example.test
+GitHub
+github.com/example
+
+Core Skills
+SaaS / Application Support
+Incident Investigation & L2 Support
+Partner Communication
+REST APIs · JSON · Webhooks
+Python · FastAPI · HTTPX
+SQL / T-SQL
+Linux · Windows · AD
+Networking · TCP/IP · VPN
+Jira · Salesforce
+Docker · Kubernetes / K3s
+GitHub Actions · CI/CD
+Technical Documentation
+
+Languages
+Polish — Native
+English — B2, daily professional use
+
+Interests
+Gravel cycling · Running
+
+Professional Summary
+Technical Support Engineer with three years of experience in IT operations and L1/L2 support. Supports a cloud-based communications platform and international partners, investigating incidents and coordinating engineering escalations. Builds personal Python/FastAPI projects integrating REST APIs, JSON, webhooks and AI services. Focused on progressing toward SaaS implementation and technical integrations.
+
+Experience
+Technical Support Engineer (Tier 2) · Example Communications | Apr 2026 – Present
+Provide Tier 2 support for a cloud platform to international partners, investigating application, connectivity and network incidents.
+Manage support cases in Salesforce, coordinate engineering escalations through Jira and communicate technical updates in English.
+Troubleshoot Windows and application issues during service disruptions and platform updates.
+IT Specialist · Example Foods | Oct 2025 – Jan 2026
+Troubleshot TCP/IP, DNS, DHCP, VPN, hardware and peripheral issues; supported Windows, Microsoft 365 and Active Directory.
+IT Specialist · Example Medical | Jun 2024 – Aug 2025
+Provided L1/L2 support, administered Active Directory access and coordinated vendor escalations during incident investigations.
+IT Specialist · Example Manufacturing | Mar 2023 – May 2024
+Used SQL queries for operational troubleshooting and data validation; assisted with VPN and firewall issues.
+
+Projects
+Resume Tools — Personal Resume Platform
+Developed a Python/FastAPI application that analyzes job postings and exports tailored PDF/DOCX CVs. Integrated local and cloud AI via HTTP APIs, with JSON/Pydantic validation and authenticated webhooks. Added source-backed content validation, automated tests and GitHub Actions CI/CD; documented a single-node deployment.
+Python · FastAPI · HTTPX · REST/JSON · Pydantic
+Local AI Gateway
+Built a Python gateway for self-hosted AI models with request validation, rate limiting, access restrictions and resource coordination.
+Research — Cycling Prediction
+Developed a Python data pipeline to compare machine-learning models on cycling telemetry using scikit-learn and SHAP.
+
+Education
+MSc Computer Science · Example University | 2026
+Intelligent Systems Programming
+BEng Automation & Robotics · Example Technical University | 2022
+Mechatronics · Example Technical School | 2018
+I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).
