@@ -90,6 +90,7 @@ class Storage:
         draft_id = uuid4().hex
         payload = {"job": job.model_dump(mode="json"), "response": response.model_dump(mode="json"),
                    "created_at": datetime.now(timezone.utc).isoformat()}
+        payload["bullet_attestations"] = response.resume._bullet_attestations
         self._bound_draft_summary(payload)
         self._validate_draft(payload)
         destination = self.drafts_dir / f"{draft_id}.json"
@@ -126,7 +127,9 @@ class Storage:
     def _validate_draft(cls, payload: dict) -> tuple[JobRequest, WorkflowResponse]:
         try:
             cls._bound_draft_summary(payload)
-            return JobRequest.model_validate(payload["job"]), WorkflowResponse.model_validate(payload["response"])
+            response = WorkflowResponse.model_validate(payload["response"])
+            response.resume._bullet_attestations = payload.get("bullet_attestations", [])
+            return JobRequest.model_validate(payload["job"]), response
         except (ValidationError, KeyError, TypeError, AttributeError) as exc:
             raise DraftDataError("Draft data could not be validated") from exc
 
@@ -140,6 +143,7 @@ class Storage:
         maximum = next(item.max_length for item in limit if hasattr(item, "max_length"))
         if isinstance(summary, str):
             analysis["reasoning_summary"] = summary[:maximum]
+
 
     def save_application(
         self,
@@ -210,6 +214,8 @@ class Storage:
             "pre_fit_available": pre_fit_resume is not None,
             "summary_attestation": resume.summary_attestation,
             "generated_summary_attestation": resume.summary_attestation,
+            "bullet_attestations": resume._bullet_attestations,
+            "generated_bullet_attestations": resume._bullet_attestations,
         }
         (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return slug, folder
@@ -230,6 +236,27 @@ class Storage:
         metadata['summary_confirmation'] = token
         metadata['summary_confirmed_at'] = datetime.now(timezone.utc).isoformat()
         fd, temporary = tempfile.mkstemp(dir=folder, prefix='.summary-confirmation-')
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(metadata, stream, indent=2)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    def set_truth_lock(self, slug: str, enabled: bool, *, level: float | None = None) -> None:
+        level = float(enabled) if level is None else level
+        if not 0 <= level <= 1:
+            raise ValueError('Truth Lock level must be between 0 and 1')
+        folder = self.application_folder(slug)
+        path = folder / 'metadata.json'
+        metadata = json.loads(path.read_text())
+        metadata['truth_lock_enabled'] = level > 0
+        metadata['truth_lock_level'] = level
+        metadata['candidate_data_status'] = ('Source validation enabled' if level == 1 else
+            'Manual skills — other sections source-validated' if level > 0 else
+            'Manual content — source validation disabled')
+        metadata['truth_lock_changed_at'] = datetime.now(timezone.utc).isoformat()
+        fd, temporary = tempfile.mkstemp(dir=folder, prefix='.truth-lock-')
         try:
             with os.fdopen(fd, 'w') as stream:
                 json.dump(metadata, stream, indent=2)
@@ -317,6 +344,8 @@ class Storage:
             )
         resume.summary_attestation = metadata.get('summary_attestation', '')
         generated.summary_attestation = metadata.get('generated_summary_attestation', '')
+        resume._bullet_attestations = metadata.get('bullet_attestations', [])
+        generated._bullet_attestations = metadata.get('generated_bullet_attestations', [])
         return job, resume, generated, metadata
 
     def save_current_resume(
@@ -339,6 +368,7 @@ class Storage:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["warnings"] = warnings
         metadata['summary_attestation'] = resume.summary_attestation
+        metadata['bullet_attestations'] = resume._bullet_attestations
         if truth_lock_warnings is not None:
             metadata["truth_lock_warnings"] = truth_lock_warnings
         if layout_warnings is not None:
@@ -424,8 +454,7 @@ class Storage:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding='utf-8'))
-                job = JobRequest.model_validate(payload['job'])
-                WorkflowResponse.model_validate(payload['response'])
+                job, _ = self._validate_draft(payload)
                 created = payload.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
                 drafts[path.stem] = (job, created)
             except (OSError, ValueError, KeyError, TypeError):

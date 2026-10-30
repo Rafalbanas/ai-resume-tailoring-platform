@@ -4,7 +4,9 @@ import json
 import logging
 import time
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from typing import Callable, TypeVar
+from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -95,6 +97,7 @@ class OllamaProvider(AIProvider):
             from app.services.ollama_tokens import QwenTokenCounter
             self.token_counter = QwenTokenCounter(settings.ollama_tokenizer_path, self.model)
         self.analysis_recovery_calls = settings.ollama_analysis_recovery_calls
+        self.draft_review_enabled = getattr(settings, "ollama_draft_review_enabled", True)
         self.transport = transport
         self.reference_library = reference_library
         self.skills_bank = skills_bank
@@ -106,6 +109,7 @@ class OllamaProvider(AIProvider):
             response.raise_for_status()
         return sorted({row["name"] for row in response.json().get("models", [])
                        if isinstance(row.get("name"), str)})
+
 
     async def for_model(self, model: str, context: int):
         """Isolate each task's choice while retaining the shared inference semaphore."""
@@ -121,6 +125,13 @@ class OllamaProvider(AIProvider):
                   if key.endswith(".context_length") and isinstance(value, int) and value > 0]
         if not limits or context > min(limits):
             raise AIProviderError("Selected model does not advertise support for this context length.")
+        selected = self.with_selection(model, context)
+        selected._verify_selected_model = False
+        return selected
+
+    def with_selection(self, model: str, context: int):
+        if context not in {32768, 65536, 98304, 131072}:
+            raise AIProviderError("Choose a supported context length.")
         selected = copy.copy(self)
         selected.model, selected.num_ctx = model, context
         selected.call_metrics = []
@@ -128,6 +139,7 @@ class OllamaProvider(AIProvider):
         # A verified tokenizer for one model must not be reused for another.
         if model != self.model:
             selected.token_counter = None
+        selected._verify_selected_model = True
         return selected
 
     async def _chat(
@@ -141,10 +153,18 @@ class OllamaProvider(AIProvider):
         allowed_skill_ids: list[str] | None = None,
         _completion_budget: int | None = None,
         _schema: dict | None = None,
+        _think: bool = False,
+        _reasoning_only: bool = False,
     ) -> ModelT:
         from app.services.bounded_http import bounded_post, model_call
         if _completion_budget is None and payload.get("stage") == "review_summary":
             _completion_budget = min(self.num_predict, 1024)
+        if getattr(self, "_verify_selected_model", False):
+            try:
+                await self.for_model(self.model, self.num_ctx)
+            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                raise AIProviderError("Cannot verify the selected model on the Ollama server.") from exc
+            self._verify_selected_model = False
         schema = _schema or response_model.model_json_schema()
         if response_model is JobAnalysis and self.skills_bank:
             properties = schema["properties"]
@@ -171,13 +191,11 @@ class OllamaProvider(AIProvider):
         request = {
             "model": self.model,
             "stream": False,
-            # Thinking shares num_predict with the JSON response and can exhaust
-            # the bounded analysis/recovery budget before producing usable rows.
-            "think": False,
+            "think": _think,
             "format": schema,
             "keep_alive": self.keep_alive,
             "options": {
-                "temperature": 0,
+                "temperature": 0.6 if _think else 0,
                 "num_predict": _completion_budget or self.num_predict,
                 "num_ctx": self.num_ctx,
             },
@@ -190,12 +208,24 @@ class OllamaProvider(AIProvider):
             prompt_count = self.token_counter.prompt(request["messages"][0]["content"], payload)
             if prompt_count + request["options"]["num_predict"] + 512 > self.num_ctx:
                 raise OllamaAnalysisError("context_budget", "Exact input plus completion budget exceeds context; facts were not truncated.")
+        if _reasoning_only:
+            # A bounded reasoning prefix is a hint for a separate non-thinking
+            # verdict, never a partially parsed decision or an approval.
+            request.pop("format")
+        call_id = uuid4().hex
         progress_id = new_call(self.name, self.model)
         call_start = time.perf_counter()
         metrics = {"provider": self.name, "model": self.model, "stage": payload.get("stage"),
                    "prompt_tokens": None, "completion_tokens": None, "reasoning_tokens": None,
                    "total_ms": None, "done_reason": None, "num_predict": _completion_budget or self.num_predict,
-                   "num_ctx": self.num_ctx, "thinking_present": False, "error_kind": None}
+                   "num_ctx": self.num_ctx, "thinking_requested": _think, "thinking_present": False, "error_kind": None}
+        metrics.update(
+            call_id=call_id, started_at=datetime.now(timezone.utc).isoformat(),
+            endpoint="/api/chat", http_status=None,
+            request_bytes=len(json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()),
+            schema_bytes=len(json.dumps(request["format"], ensure_ascii=False, separators=(",", ":")).encode()) if "format" in request else 0,
+            prompt_chars=sum(len(message["content"]) for message in request["messages"]),
+        )
         self.call_metrics.append(metrics)
         del self.call_metrics[:-128]
         if self._run_metrics.get() is not None:
@@ -208,9 +238,15 @@ class OllamaProvider(AIProvider):
                     follow_redirects=False,
                     transport=self.transport,
                 ) as client:
-                    response = await bounded_post(client, "/api/chat", json=request)
+                    response = await bounded_post(client, "/api/chat", json=request, headers={"X-Request-ID": call_id})
+                    metrics["http_status"] = response.status_code
+                    metrics["response_bytes"] = len(response.content)
                     response.raise_for_status()
                     envelope = response.json()
+        except asyncio.CancelledError:
+            metrics.update(error_kind="cancelled", total_ms=(time.perf_counter() - call_start) * 1000)
+            report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
+            raise
         except httpx.TimeoutException as exc:
             metrics["error_kind"] = "timeout"
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
@@ -222,14 +258,23 @@ class OllamaProvider(AIProvider):
             metrics["client_ms"] = (time.perf_counter()-call_start)*1000
             raise OllamaAnalysisError("unavailable", "Cannot connect to Ollama. Check that the local Ollama service is running.") from exc
         except httpx.HTTPStatusError as exc:
-            kind = "context_budget" if any(w in exc.response.text.casefold() for w in ("context", "prompt too long")) else "http"
-            metrics["error_kind"] = kind
+            from app.services.provider_diagnostics import http_error_details
+            details = http_error_details(exc.response)
+            kind = "context_budget" if details['error_code'] == 'context_budget' else "http"
+            metrics.update(details, error_kind=kind)
+            logger.warning("Ollama call failed (call_id=%s, HTTP=%s, error_code=%s)",
+                           call_id, details['http_status'], details['error_code'])
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
-            raise OllamaAnalysisError(kind, "Ollama rejected the request (context budget or HTTP error).") from exc
+            raise OllamaAnalysisError(
+                kind, f"Ollama HTTP {details['http_status']} ({details['error_code']}): "
+                f"{details['error_summary']} Call ID: {call_id}."
+            ) from exc
         except ValueError as exc:
             metrics["error_kind"] = "envelope"
             report(progress_id, phase="done", total_tokens=None, tokens_per_second=None)
             raise OllamaAnalysisError("envelope", "Ollama returned an invalid HTTP JSON envelope.") from exc
+        finally:
+            metrics["client_ms"] = (time.perf_counter() - call_start) * 1000
 
         if not isinstance(envelope, dict) or not isinstance(envelope.get("message"), dict):
             metrics["error_kind"] = "envelope"
@@ -261,6 +306,16 @@ class OllamaProvider(AIProvider):
             eval_tokens if envelope.get("eval_count") is not None else "unavailable",
             total_ms,
         )
+
+        if _reasoning_only:
+            message = envelope["message"]
+            notes = message.get("thinking") or message.get("content")
+            if envelope.get("done") is False or not isinstance(notes, str) or not notes.strip():
+                metrics["error_kind"] = "incomplete_response"
+                raise OllamaAnalysisError("incomplete_response", "Ollama returned no review reasoning.")
+            metrics["reasoning_budget_exhausted"] = envelope.get("done_reason") == "length"
+            record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", {}, notes, metrics)
+            return response_model.model_validate({"notes": notes[:6000]})
 
         try:
             content = envelope["message"]["content"]
@@ -460,13 +515,19 @@ class OllamaProvider(AIProvider):
         wire_payload = compact_generation(payload)
         resume = await self._chat(
             TailoredResume,
-            resume_system_prompt(job) + "\nInclude every employment and education owner exactly once. Bullet citations must belong to that employment. Never turn a missing requirement into expertise in the summary.",
+            resume_system_prompt(job) + "\nInclude every employment and education owner exactly once. Bullet citations must belong to that employment. Never turn a missing requirement into expertise in the summary. "
+            "For experience bullets, select facts relevant to the advertised duties. Write concise CV statements, not diagnostic anecdotes. "
+            "Preserve one-off scope, actual responsibility and proficiency; never imply repeated or advanced work from a single task. Respect tailoring_policy.",
             wire_payload,
             _completion_budget=self.resume_output,
             source_catalog=payload["source_catalog"],
             allowed_skills=allowed_skills,
             allowed_skill_ids=allowed_skill_ids,
         )
+
+        if self.draft_review_enabled:
+            from app.services.ollama_draft_review import review_draft
+            resume = await review_draft(self, resume, analysis, job, profile)
 
         from app.services.summary_review import review_summary
         resume = await review_summary(self, resume, profile)

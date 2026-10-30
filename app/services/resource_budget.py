@@ -18,6 +18,8 @@ class ResourceBudget:
         os.chmod(self.path, 0o600)
         self.ai_slots = asyncio.Semaphore(1)
         self.cpu_slots = asyncio.Semaphore(1)
+        self.cpu_queue_slots = asyncio.Semaphore(4)
+        self.generation_slots = asyncio.Semaphore(4)
         self.mutation_slots = asyncio.Semaphore(1)
         self.body_slots = asyncio.Semaphore(2)
 

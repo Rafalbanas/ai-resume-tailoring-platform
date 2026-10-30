@@ -70,6 +70,17 @@ def test_custom_payload_and_truth_boundary(profile):
     assert truth_rules({"stage": "tailor_resume"}).startswith("MASTER PROFILE")
 
 
+def test_custom_instructions_control_existing_employment_fact_conditions(profile):
+    from app.services.cv_content_policy import cv_catalog
+    fact = profile.experience[0].facts[0]
+    profile.experience[0].cv_fact_conditions[fact] = ['migrations']
+    job = custom_job()
+    assert job.job_description == ''
+    assert not any(e.kind == 'experience' and e.text == fact for e in cv_catalog(profile, job).prompt_entries)
+    job.custom_instructions += ' Emphasize migrations.'
+    assert any(e.kind == 'experience' and e.text == fact for e in cv_catalog(profile, job).prompt_entries)
+
+
 @pytest.mark.parametrize("provider_type", [OllamaProvider, GeminiProvider])
 async def test_custom_generation_skips_job_analysis(profile, monkeypatch, provider_type):
     provider = provider_type(Settings(_env_file=None))
@@ -220,6 +231,58 @@ async def test_section_editor_fallback_preserves_payload():
     assert await provider.edit_cv(payload) == summary_edit()
     first.edit_cv.assert_awaited_once_with(payload)
     second.edit_cv.assert_awaited_once_with(payload)
+
+
+async def test_custom_task_keeps_lazy_model_selection_and_generation_only_fallback(profile, resume_payload, tmp_path, monkeypatch):
+    from app.services.storage import Storage
+
+    def unavailable(request):
+        raise httpx.ConnectError('Synthetic Ollama discovery failure', request=request)
+    primary = OllamaProvider(Settings(_env_file=None), transport=httpx.MockTransport(unavailable))
+    fallback = GeminiProvider(Settings(_env_file=None, gemini_api_key='synthetic'))
+    monkeypatch.setattr(fallback, 'tailor_resume', AsyncMock(return_value=TailoredResume.model_validate(resume_payload)))
+    for target in (primary, fallback):
+        monkeypatch.setattr(target, 'analyze_job', AsyncMock(side_effect=AssertionError('Custom CV has no job analysis')))
+    provider = ResilientAIProvider({'ollama': primary, 'gemini': fallback})
+    state = SimpleNamespace(profile=profile, skills_bank=None, provider=provider,
+        settings=SimpleNamespace(csrf_secret='synthetic-review-key'), storage=Storage(tmp_path))
+    manager = TaskManager(tmp_path)
+    task = manager.create_task(TaskKind.TAILOR, {'job': custom_job().model_dump(mode='json'),
+        'llm_provider': 'ollama', 'ollama_model': 'synthetic-selected', 'ollama_context': 65536}, 'custom-lazy-selection')
+    await manager._execute_tailor(task, state)
+    completed = manager.get_task(task.task_id)
+    assert completed.status == TaskStatus.COMPLETED
+    assert completed.result['fallback_used'] and completed.result['provider_used'] == 'gemini'
+    job, response = state.storage.load_draft(completed.result['draft_id'])
+    assert job.workflow == 'custom' and job.job_description == ''
+    assert not response.analysis.requirements
+    fallback.tailor_resume.assert_awaited_once()
+    assert primary.model != 'synthetic-selected'  # shared provider was not mutated
+
+
+async def test_custom_generation_final_review_uses_instructions_not_a_job_description(profile):
+    import json
+
+    from app.services.ollama_draft_review import review_draft, valid_bullet_attestation
+    from tests.test_ollama_draft_review import inputs, review_response
+    job = custom_job()
+    _, _, resume = inputs(profile)
+    calls = []
+    def respond(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        return review_response(body)
+    provider = OllamaProvider(Settings(_env_file=None, csrf_secret='synthetic-review-key'),
+                              transport=httpx.MockTransport(respond))
+    checked = await review_draft(provider, resume, custom_analysis(job), job, profile)
+    assert len(calls) == 2
+    for body in calls:
+        payload = json.loads(body['messages'][1]['content'])
+        assert payload['workflow'] == 'custom'
+        assert payload['custom_instructions'] == job.custom_instructions
+        assert payload['job_description'] == ''
+    assert 'custom_instructions' in calls[-1]['messages'][0]['content']
+    assert valid_bullet_attestation(checked.experience[0].bullets[0], checked, profile, 'synthetic-review-key')
 
 
 def test_version_accept_discard_undo_restore_and_duplicate(tmp_path):
@@ -409,6 +472,9 @@ def test_custom_draft_accept_save_reopen_export_and_regenerate(resume_payload):
         assert preview.status_code == 200, preview.text
         assert 'Accept and save CV' in preview.text
         soup = BeautifulSoup(preview.text, 'html.parser')
+        assert soup.select_one('form[data-document-export]') is not None
+        busy = client.get(f'/analysis/{draft}?export_busy=1')
+        assert busy.status_code == 200 and 'Your draft is saved' in busy.text
         token = soup.select_one('[name="summary_token"]')
         data = {'csrf_token': client.cookies.get('csrf_token'), 'cv_name': 'Accepted custom CV',
                 'template_name': 'ats_classic', 'summary_confirmed': 'on'}

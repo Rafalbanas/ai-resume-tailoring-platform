@@ -99,8 +99,9 @@ class ResilientAIProvider(AIProvider):
                 metric_context = getattr(target, '_run_metrics', None)
                 token = metric_context.set(metrics) if metric_context else None
                 try:
-                    resume = await target.tailor_resume(job, profile, reuse_analysis.model_copy(deep=True))
-                    return WorkflowResponse(analysis=reuse_analysis.model_copy(deep=True), resume=resume,
+                    reviewed_analysis = reuse_analysis.model_copy(deep=True)
+                    resume = await target.tailor_resume(job, profile, reviewed_analysis)
+                    return WorkflowResponse(analysis=reviewed_analysis, resume=resume,
                                             call_metrics=metrics)
                 except AIProviderError as exc:
                     exc.call_metrics = metrics
@@ -249,9 +250,12 @@ class ResilientAIProvider(AIProvider):
                     fallback_name,
                     fallback_err,
                 )
-                raise AIProviderError(
+                error = AIProviderError(
                     f"Both AI providers failed. {primary_name}: {primary_err}; {fallback_name}: {fallback_err}"
-                ) from fallback_err
+                )
+                error.call_metrics = getattr(primary_err, "call_metrics", []) + getattr(fallback_err, "call_metrics", [])
+                error.fallback_used = True
+                raise error from fallback_err
 
         except (ProviderUnavailableError, GeminiQuotaError, ProviderResponseError, AIProviderError) as primary_err:
             if not fallback_name or fallback_name not in self.providers:
@@ -294,9 +298,12 @@ class ResilientAIProvider(AIProvider):
                     fallback_name,
                     fallback_err,
                 )
-                raise AIProviderError(
+                error = AIProviderError(
                     f"Both AI providers failed. {primary_name}: {primary_err}; {fallback_name}: {fallback_err}"
-                ) from fallback_err
+                )
+                error.call_metrics = getattr(primary_err, "call_metrics", []) + getattr(fallback_err, "call_metrics", [])
+                error.fallback_used = True
+                raise error from fallback_err
 
     async def retailor(self, job, profile, analysis, requested_provider='auto', on_stage=None):
         return await self.tailor(job, profile, requested_provider=requested_provider,

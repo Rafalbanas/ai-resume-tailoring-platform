@@ -121,6 +121,8 @@ class PDFGenerator:
         come from the same PDF. The export itself remains searchable vector text.
         """
         if self.isolated:
+            from app.services.cv_content_policy import check_export_content
+            check_export_content(resume)
             contacts(profile)
             from app.services.processing import process
             payload = self._processing_payload(resume, profile, layout_guide, template_name=template_name,
@@ -202,6 +204,8 @@ class PDFGenerator:
         photo_enabled: bool | None = None,
     ) -> None:
         if self.isolated:
+            from app.services.cv_content_policy import check_export_content
+            check_export_content(resume)
             contacts(profile)
             from app.services.processing import decoded, process
             output.write_bytes(decoded(process('pdf', self._processing_payload(resume, profile, layout_guide,

@@ -185,6 +185,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result = candidate.model_copy(deep=True)
     result.validation_version = 2
     validator._classification_issues = []
+    validator._classification_corrections = []
     validator._evidence_issues = []
     from app.services.job_sections import (
         ORGANIZATION_SIGNAL,
@@ -197,7 +198,11 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     units, sections = extract_sections(job_text)
     semantic_source = False
     source_issues = []
-    if semantic:
+    # A normalized parser-backed report already contains derived context/duties.
+    # Do not reinterpret those fields as a complete model disposition map on
+    # revalidation: parser reports retain headings, model-backed maps do not.
+    parser_report = candidate.validation_version >= 2 and bool(candidate.source_sections)
+    if semantic and not parser_report:
         from app.services.source_classification import model_source_units
         model_units, source_issues = model_source_units(candidate, job_text)
         if model_units is not None:
@@ -387,7 +392,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result.unsupported_keywords = [k for k in candidate.unsupported_keywords if boundary_contains(k, job_text) and not validator.catalog.direct_sources(k)]
     visibly_truncated = bool(re.search(r"\b(?:and|or|i|oraz)\s*$", job_text.strip(), re.I))
     expected = {u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
-    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(r.source_quote == u.quote or r.source_quote in u.quote or u.quote in r.source_quote for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
+    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(clean_source_line(r.source_quote) in clean_source_line(u.quote) or clean_source_line(u.quote) in clean_source_line(r.source_quote) for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
         result.unassessed_source_passages.extend(u.quote for u in units if u.name in omitted)
         result.completeness_issues.append("Some source requirements were not assessed.")
@@ -400,7 +405,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
                  if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line) and not INJECTION.search(line)
                  and clean_source_line(line).rstrip(':').strip().casefold() not in heading_keys
                  and not re.search(r'knowledge with:\s*$', line, re.I)
-                 and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
+                 and not any(clean_source_line(quote) in clean_source_line(line) or clean_source_line(line) in clean_source_line(quote) for quote in covered_quotes)]
     if uncovered:
         result.unassessed_source_passages.extend(uncovered)
         result.completeness_issues.append("Requirement-bearing source passages are not covered by the analysis.")
@@ -417,6 +422,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     )
     result.classification_issues = list(dict.fromkeys(validator._classification_issues + [
         f'Unresolved source interpretation: {r.name}' for r in requirements if r.interpretation_uncertain]))
+    correction_prefix = 'Excluded model qualification from scoring: context passage '
+    prior_corrections = [note for note in candidate.validation_corrections
+                         if note.startswith(correction_prefix) and note[len(correction_prefix):] in job_text]
+    result.validation_corrections = list(dict.fromkeys(prior_corrections + validator._classification_corrections))
     result.evidence_issues = list(dict.fromkeys(validator._evidence_issues + [
         f'Conflicting evidence: {r.name}' for r in requirements if re.search(r'conflict|contradict', r.reason, re.I)]))
     result.is_reliable = bool(requirements or result.role_competencies or result.responsibilities) and not (

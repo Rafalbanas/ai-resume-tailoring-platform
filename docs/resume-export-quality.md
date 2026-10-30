@@ -21,3 +21,39 @@ Synthetic regressions cover visible/searchable contacts and link targets in both
 The saved control offer is regenerated once with the existing Ollama model. The raw output and validated CV remain private. PDF text and link annotations, DOCX XML and relationships, PDF page rendering, and LibreOffice DOCX-to-PDF conversion are checked before publication. ATS Classic uses one column for systems that infer reading order from page geometry. Modern Sidebar has coherent source/tag order, but geometry-based extractors can choose a different order for sidebar and main sections; no universal ATS guarantee or hiring prediction is made.
 
 Candidate contacts, source profile, model output and exported files stay outside Git. Export changes require no profile migration or LLM configuration change.
+
+Experience facts may define `cv_fact_conditions` in the private master profile:
+map an exact fact sentence to a list of posting terms. At least one term must
+appear as a complete word or phrase in the original role or description. An empty
+list excludes the fact; an absent key keeps normal selection. These presentation
+conditions apply before retrieval (including index failure) and again during
+validation, including chronological fallbacks. Analysis can still assess the fact.
+
+Model approval cannot bypass checks for internal evidence annotations, unrelated
+citations, or new cited technologies/acronyms. Export also refuses visible internal
+annotations in PDF and DOCX content. Evidence labels resolve to canonical profile
+facts instead of administrative descriptions whenever a source is available.
+
+CV generation and review distinguish static routes and network services from
+routing protocols. A named routing-protocol list containing static routes, NAT,
+DHCP or VPN is rejected at export, and a model summary approval cannot bypass the
+check. Valid mentions of OSPF/BGP followed by separate NAT/DHCP configuration remain
+allowed. This targeted check does not establish experience with any dynamic
+routing protocol.
+
+For integration-oriented offers, source-only fallback summaries introduce the
+actual dated occupation before selecting technical details. Relevant networking
+and collaboration/escalation facts from employment receive a small presentation
+priority even when analysis cited only a global skill. Employer details always
+come from that employer's own facts; global router configuration declarations
+cannot become an employer claim. Conditional fact rules and manual-edit
+preservation still apply, and one-page selection can omit optional details.
+
+Concurrent document export forms use a per-account bounded queue (four admitted
+requests including the active one). Forms are size-limited and CSRF-checked before
+waiting up to 180 seconds for the account write lock, without holding upload
+admission. Queue overflow/timeout returns browser users to their saved analysis
+with a retry notice. Other account updates retain fail-fast write protection.
+Document CPU operations, including previews, have a separate bounded queue of
+four and a 60-second admission deadline; native work still has its existing
+60-second execution budget. Cancellation and errors release queue admission.

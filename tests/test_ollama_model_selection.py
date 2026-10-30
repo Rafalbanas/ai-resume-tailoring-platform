@@ -1,4 +1,6 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -7,6 +9,7 @@ from pydantic import BaseModel
 from app.core.config import Settings
 from app.services.ai_provider import AIProviderError
 from app.services.ollama_provider import OllamaProvider
+from app.services.resilient_provider import ResilientAIProvider
 
 
 def provider_with_models(limit=131072):
@@ -67,3 +70,37 @@ async def test_selected_model_and_context_are_sent_to_ollama(context):
     assert result.text == "ok"
     assert sent[0]["model"] == "ISTA/Qwen:IQ2_XS"
     assert sent[0]["options"]["num_ctx"] == context
+
+
+@pytest.mark.asyncio
+async def test_discovery_failure_still_uses_configured_fallback(resume_payload):
+    from app.models.job import JobAnalysis, JobRequest
+    from app.models.resume import TailoredResume, WorkflowResponse
+
+    job = JobRequest(company="Test", role="Engineer", job_description="A complete synthetic job description.")
+    result = WorkflowResponse(
+        analysis=JobAnalysis(company=job.company, role=job.role, strong_matches=[], partial_matches=[],
+                             missing_requirements=[], recommendation="RETRY", match_level="UNRELIABLE"),
+        resume=TailoredResume.model_validate(resume_payload),
+    )
+    def unavailable(request):
+        raise httpx.ConnectError("Offline", request=request)
+    provider = provider_with_models()
+    provider.transport = httpx.MockTransport(unavailable)
+    selected = provider.with_selection(provider.model, 65536)
+
+    class Answer(BaseModel):
+        text: str
+
+    async def attempt(*args, **kwargs):
+        await selected._chat(Answer, "test", {})
+        raise AssertionError("Unreachable")
+    selected.tailor = attempt
+    fallback = SimpleNamespace(name="gemini", model="test-fallback", api_key="test",
+                               tailor=AsyncMock(return_value=result))
+    router = ResilientAIProvider({"ollama": selected, "gemini": fallback})
+    response = await router.tailor(job, None, requested_provider="ollama")
+    assert response.fallback_used
+    assert response.provider_used == "gemini"
+    fallback.tailor.assert_awaited_once()
+    assert provider.num_ctx == 32768

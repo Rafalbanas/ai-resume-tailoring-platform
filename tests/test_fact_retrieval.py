@@ -138,7 +138,8 @@ async def test_both_providers_send_retrieved_catalog_and_keep_trace(candidate, m
     from app.services.ollama_provider import OllamaProvider
 
     candidate.projects[0].facts += [f"Unrelated sentinel detail {i}." for i in range(40)]
-    provider = (GeminiProvider if provider_name == "gemini" else OllamaProvider)(Settings(_env_file=None))
+    provider = (GeminiProvider if provider_name == "gemini" else OllamaProvider)(
+        Settings(_env_file=None, ollama_draft_review_enabled=False))
     seen = {}
     async def chat(model, prompt, payload, **kwargs):
         seen.update(payload=payload, kwargs=kwargs)

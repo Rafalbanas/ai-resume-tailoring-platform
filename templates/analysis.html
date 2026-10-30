@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Match report · CV Tailor{% endblock %}
 {% block content %}
+{% if request.query_params.get('export_busy') %}<div class="alert" role="alert">Several document exports are already waiting. Your draft is saved. Please try exporting again shortly.</div>{% endif %}
 <div class="report-head">
   <div>
     <p class="eyebrow">MATCH REPORT</p>
@@ -41,6 +42,7 @@
 {% endif %}
 {% if analysis.validation_version|default(0) < 2 %}<p class="alert alert-warning">Saved report uses older validation rules. Run a new analysis to check sections, evidence and compound requirements. Saved reports and CVs are unchanged.</p>{% endif %}
 {% if analysis.completeness_issues or analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.completeness_issues + analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
+{% if analysis.validation_corrections %}<details class="card"><summary>Corrections applied during validation</summary>{% for correction in analysis.validation_corrections %}<p>{{ correction }}</p>{% endfor %}</details>{% endif %}
 <section class="card">
   <h2>Adjust job tailoring before export</h2>
   {% set tailoring_source_type = 'draft' %}
@@ -177,11 +179,12 @@
 <div class="actions">
   <a class="secondary button" href="{{ app_root_path|default('') }}/">Edit job</a>
   <a class="secondary button" href="{{ app_root_path|default('') }}/compare?draft_id={{ draft_id }}">Compare models</a>
-  <form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post">
+  <form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post" data-document-export>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if not analysis.is_reliable %}<p class="alert" role="alert">The match report still requires review. You can export this CV after reviewing its content and completing any summary confirmation below.</p>{% endif %}
     {% if summary_review %}{% include '_summary_review.html' %}{% endif %}
     <label>Resume layout<select name="template_name"><option value="ats_classic">ATS Classic</option><option value="modern_sidebar">Modern Sidebar</option></select></label>
-    <button class="primary" type="submit"{% if not analysis.is_reliable %} disabled{% endif %}>Export this draft as PDF / DOCX</button>
+    <button class="primary" type="submit">Export this draft as PDF / DOCX</button>
   </form>
 </div>
 {% endblock %}

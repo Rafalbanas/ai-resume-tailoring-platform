@@ -52,6 +52,7 @@ class TailoredResume(BaseModel):
     professional_summary: str = Field(max_length=700)
     summary_source_fact_ids: list[str] = Field(default_factory=list)
     _summary_attestation: str = PrivateAttr(default="")
+    _bullet_attestations: list[str] = PrivateAttr(default_factory=list)
     _retrieval_trace: dict = PrivateAttr(default_factory=dict)
 
     @property

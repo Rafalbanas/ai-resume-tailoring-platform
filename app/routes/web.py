@@ -506,8 +506,6 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except (DraftDataError, json.JSONDecodeError, ValidationError):
         logger.exception("Could not generate from draft %s", draft_id)
         return draft_error_response(request, missing=False)
-    if not response.analysis.is_reliable:
-        raise HTTPException(status_code=409, detail="Analysis has no verified requirements. Review the job and retry before generating a tailored CV.")
     if job.workflow == "custom" and cv_name.strip():
         job.cv_name = cv_name.strip()
     started = time.perf_counter()

@@ -115,7 +115,7 @@ class JobExtraction(BaseModel):
     job_description: str = ""
     source: str
     extraction_method: Literal["jsonld", "html", "playwright", "manual_required"]
-    failure_reason: Literal["blocked", "timeout", "fetch_failed", "description_unavailable", "unsafe_url"] | None = None
+    failure_reason: Literal["blocked", "timeout", "fetch_failed", "description_unavailable", "unsafe_url", "unsupported_browser"] | None = None
 
 
 class JobAnalysis(BaseModel):
@@ -146,6 +146,7 @@ class JobAnalysis(BaseModel):
     analysis_language: str = ""
     validation_version: int = 0
     classification_issues: list[str] = Field(default_factory=list)
+    validation_corrections: list[str] = Field(default_factory=list)
     evidence_issues: list[str] = Field(default_factory=list)
     completeness_issues: list[str] = Field(default_factory=list)
     unassessed_source_passages: list[str] = Field(default_factory=list)

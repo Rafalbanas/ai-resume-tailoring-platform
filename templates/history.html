@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{% block title %}History · CV Tailor<p id="history-filter-empty" class="empty-hint" hidden>No entries match these filters.</p>
-{% endblock %}
+{% block title %}History · CV Tailor{% endblock %}
 {% block content %}
 <p><a href="{{ app_root_path|default('') }}/custom-cvs/">Saved pasted CVs / AI Editor</a></p>
 <div class="page-head"><div><p class="eyebrow">APPLICATION ARCHIVE</p><h1>History</h1></div><div class="actions"><form action="{{ app_root_path|default('') }}/history/clear" method="post" data-confirm="Delete all generated CV history?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger" type="submit">Clear generated CVs</button></form><a class="primary button" href="{{ app_root_path|default('') }}/">New match</a></div></div>
@@ -28,4 +27,5 @@
 {% else %}<p>No unfinished analyses.</p>{% endfor %}
 </div>
 </section>
+<p id="history-filter-empty" class="empty-hint" hidden>No entries match these filters.</p>
 {% endblock %}

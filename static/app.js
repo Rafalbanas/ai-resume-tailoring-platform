@@ -7,6 +7,18 @@ window.cvAppUrl = function(path) {
 document.addEventListener("submit", (event) => {
   const message = event.target.dataset.confirm;
   if (message && !window.confirm(message)) event.preventDefault();
+  if (!event.defaultPrevented && event.target.hasAttribute("data-document-export")) {
+    const form = event.target;
+    if (form.dataset.exportPending) {
+      event.preventDefault();
+      return;
+    }
+    form.dataset.exportPending = "1";
+    const button = form.querySelector('button[type="submit"]');
+    button.dataset.originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Waiting / generating PDF and DOCX…";
+  }
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -524,6 +536,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function offerFailureMessage(reason) {
     const messages = {
       blocked: "The job website rejected automatic fetching (HTTP 403/429).",
+      unsupported_browser: "The job website returned an unsupported-browser page instead of the offer.",
       timeout: "Fetching the job website timed out.",
       fetch_failed: "The job website could not be downloaded.",
       description_unavailable: "The page was downloaded, but a complete job description could not be extracted.",
@@ -742,5 +755,16 @@ document.querySelectorAll('.truth-lock-form').forEach(form => {
 document.querySelectorAll('input[name="tailoring_level"]').forEach(slider => {
   slider.addEventListener('input', () => {
     slider.form.querySelector('.tailoring-value').value = slider.value;
+  });
+});
+
+window.addEventListener("pageshow", () => {
+  document.querySelectorAll("form[data-document-export]").forEach((form) => {
+    delete form.dataset.exportPending;
+    const button = form.querySelector('button[type="submit"]');
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      button.disabled = false;
+    }
   });
 });

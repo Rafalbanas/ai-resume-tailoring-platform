@@ -61,6 +61,8 @@ class FactValidator:
                             if self.catalog.get(evidence.source_id) and self.skills_bank.evidence_supports(skill, evidence):
                                 self.fact_priorities[evidence.source_id] = max(weight, self.fact_priorities.get(evidence.source_id, 0))
 
+        self._analysis_priorities = self.fact_priorities.copy()
+
     def validate_manual_edit(self, original: TailoredResume, edited: TailoredResume, job: JobRequest, *, allow_manual_skills: bool = False):
         from app.services.resume_edit_validation import validate_manual_edit
         return validate_manual_edit(self, original, edited, job, allow_manual_skills=allow_manual_skills)
@@ -68,6 +70,19 @@ class FactValidator:
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
         from app.services.cv_content_policy import cv_catalog
         self.catalog = cv_catalog(self.profile, job)
+        self.fact_priorities = self._analysis_priorities.copy()
+        if self.analysis is not None and not preserve_skills:
+            from app.services.job_sections import relevance_text
+            posting = relevance_text(f"{job.role}\n{job.relevance_text}")
+            # Rank attested employment details even when analysis cited only a
+            # global skill. This never transfers global claims into an employer.
+            topics = [r"\bnetworks?\b|\bnetworking\b", r"\bcollaborat\w*\b", r"\bescalat\w*\b"]
+            for entry in self.catalog.prompt_entries:
+                if entry.kind != "experience":
+                    continue
+                shared = sum(bool(re.search(t, posting, re.I) and re.search(t, entry.text, re.I)) for t in topics)
+                if shared:
+                    self.fact_priorities[entry.source_id] = max(self.fact_priorities.get(entry.source_id, 0), 0.25 * shared)
         draft = deepcopy(candidate)
         if job.workflow != 'custom':
             draft.section_order = []
@@ -171,11 +186,16 @@ class FactValidator:
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
         from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues, unfinished
+        from app.services.cv_content_policy import internal_annotation, networking_terminology_issue
         from app.services.summary_review import sign_source_summary, sign_summary, valid_summary_attestation
-        reviewed = valid_summary_attestation(draft, self.profile, self.review_key)
+        reviewed = (all(self.catalog.get(i) for i in draft.summary_source_fact_ids)
+                    and not internal_annotation(draft.professional_summary)
+                    and not networking_terminology_issue(draft.professional_summary)
+                    and valid_summary_attestation(draft, self.profile, self.review_key))
         if reviewed:
             model_ids = [e.source_id for e in summary_entries]
-        if (unfinished(draft.professional_summary) or (sentence_count > 5 and not reviewed)
+        if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
+                or (sentence_count > 5 and not reviewed)
                 or not (reviewed or self.catalog.supports_paraphrase(draft.professional_summary, model_ids))):
             if draft.professional_summary != summary:
                 warnings.append("Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement")
@@ -194,6 +214,7 @@ class FactValidator:
             # its provenance separately from a semantic model verdict.
             draft.summary_attestation = sign_source_summary(draft, self.profile, self.review_key)
         clean_experience: list[ResumeExperience] = []
+        accepted_bullet_attestations = []
         for exp in draft.experience:
             bullets = []
             exp_index: int | None = None
@@ -209,13 +230,18 @@ class FactValidator:
                     continue
                 exp_index = bullet_index
                 valid_ids = [entry.source_id for entry in entries]
-                if (not self.catalog.supports_paraphrase(bullet.text, valid_ids)
+                from app.services.ollama_draft_review import sign_bullet, valid_bullet_attestation
+                reviewed_bullet = (all(self.catalog.get(i) for i in bullet.source_fact_ids)
+                                   and valid_bullet_attestation(bullet, draft, self.profile, self.review_key))
+                if (not reviewed_bullet and not self.catalog.supports_paraphrase(bullet.text, valid_ids)
                         and not any(bullet.text == self._experience_wording(entry.text) for entry in entries)
                         and bullet.text != self._experience_wording(" ".join(entry.text for entry in entries))):
                     warnings.append(f"Unsupported AI bullet replaced in {self.profile.experience[exp_index].company}")
                     bullet.text = " ".join(entry.text for entry in entries)
                 bullet.text = self._experience_wording(bullet.text)
                 bullet.source_fact_ids = valid_ids
+                if reviewed_bullet:
+                    accepted_bullet_attestations.append(sign_bullet(bullet, self.profile, self.review_key))
                 bullets.append(bullet)
             if exp_index is None or not bullets:
                 warnings.append(f"Unsupported AI experience removed: {exp.company} — {exp.title}")
@@ -269,6 +295,7 @@ class FactValidator:
         order = {(e.company, e.title): i for i, e in enumerate(self.profile.experience)}
         clean_experience.sort(key=lambda e: order.get((e.company, e.title), len(order)))
         draft.experience = clean_experience
+        draft._bullet_attestations = accepted_bullet_attestations
 
         clean_projects: list[ResumeProject] = []
         for project in draft.projects:

@@ -101,6 +101,7 @@ def provider(transport: httpx.AsyncBaseTransport, reference_library=None) -> Oll
         ai_provider="ollama",
         ollama_base_url="http://ollama.test:11434",
         ollama_model="qwen3.5:9b",
+        ollama_draft_review_enabled=False,
         ollama_timeout_seconds=30,
     )
     return OllamaProvider(settings, transport=transport, reference_library=reference_library)
@@ -255,6 +256,7 @@ async def test_ollama_passes_keep_alive_and_configurable_timeouts(profile):
 
     custom_settings = Settings(
         ollama_connect_timeout_seconds=5.0,
+        ollama_draft_review_enabled=False,
         ollama_read_timeout_seconds=120.0,
         ollama_keep_alive="20m",
     )

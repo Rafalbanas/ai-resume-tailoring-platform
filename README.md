@@ -153,7 +153,7 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 - **The Protocol (`theprotocol.it`)**: Extracts employer, title, requirements, preferences, responsibilities, project context and employment conditions from offer HTML or full pages copied from the browser. Required technology tags remain mandatory, while optional technologies remain preferences. Company advertising, benefits, repeated offer summaries and application forms are discarded. Copied pages are recognized without a URL when both technology section headings are present. If URL fetching returns an unsupported-browser page, paste the offer into the description field and use **Clean pasted job offer**; cleaning works without network access.
 - **JustJoin.it & NoFluffJobs**: Custom HTML and JSON-LD Schema.org adapters capturing salary ranges, contract types, seniority levels, and tech stacks.
 - **Workday & Enterprise ATS**: JSON-LD Schema.org and Workday-specific layout extractors with Playwright headless fallback.
-- **Universal Copied Offer Cleaning**: The **Clean pasted job offer** button works with any job board or corporate career site without network overhead, detecting Polish and English section headers, removing boilerplate controls, and extracting role/company metadata.
+- **Universal Copied Offer Cleaning**: The **Clean pasted job offer** button works with any job board or corporate career site without network overhead, detecting Polish and English section headers, removing boilerplate controls, and extracting role/company metadata. Shared source normalization handles Markdown headings, paired emphasis, list markers, non-breaking spaces and invisible copy/paste characters while preserving technical punctuation, identifiers and required levels. Technical/professional requirements remain qualifications; ATS keyword lists remain context. When a normalized model quote matches an entire source line, validation retains the original line for review.
 
 ### 6. Document Export & Hyperlink Integrity
 - **PDF Export**: Pixel-accurate WeasyPrint rendering with native hyperlink annotations (`mailto:`, `https://`) and Poppler-verified geometry.
@@ -172,6 +172,7 @@ For an extended breakdown of pipeline stages and architectural decisions, see [A
 - **History retention**: Automatic cleanup of analysis tasks and unsaved drafts is disabled by default (`AUTO_DELETE_HISTORY=false`). Set it to `true` to keep the latest 100 task records; saved CV history is never automatically deleted. Storage limits reject new work rather than deleting old CVs.
 - **Processing isolation & budgets**: PDF/DOCX/photo work runs in bounded child processes outside the event loop. Production isolation requires deploying the separate owner/demo workers without account mounts or AI keys; shared concurrency, persistent AI budgets, task/storage quotas and early body limits protect resources. [Limits, live inspection and migration](docs/processing-security.md).
 - **Summary export review**: Model-approved natural summaries require explicit user confirmation of the displayed text and profile sources before export. Confirmation is bound to the exact summary, facts, account and document; changes invalidate it. Deterministic source-composed summaries need no extra confirmation. [Audit evidence and limitations](docs/security-audit-2026-10-17-followup.md).
+- **CV export with an incomplete match report**: A match report requiring review keeps its warnings and status. Export remains available after CV fact validation and any required summary confirmation; saved metadata preserves the incomplete assessment. Reusing that analysis for another tailoring run still requires a reliable analysis.
 - **Diagnostics & History**: `/diagnostics` dashboard for health metrics, active model status, and build metadata; `/compare` view for side-by-side CV comparison; atomic file staging and version backups under `data/generated/`.
 
 ---
@@ -209,27 +210,27 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | Component | Pinned Version | Category | Purpose |
 |---|---|---|---|
 | **Python** | `3.14` | Runtime | Container runtime & execution environment |
-| **FastAPI** | `0.143.2` | Backend | Asynchronous REST API framework & routing |
+| **FastAPI** | `0.161.1` | Backend | Asynchronous REST API framework & routing |
 | **Uvicorn** | `0.54.0` | Backend | High-performance ASGI production server |
 | **python-multipart** | `0.0.32` | Backend | Multipart form data & resume file upload streaming |
 | **Pydantic** | `2.14.1` | Core | Data validation, settings, and domain schemas |
-| **Pydantic Settings** | `2.16.0` | Core | Settings management and environment parsing |
+| **Pydantic Settings** | `2.16.1` | Core | Settings management and environment parsing |
 | **PyPDFium2** | `5.14.0` | Document Engine | PDF geometry, text layout & bounding box inspection |
 | **WeasyPrint** | `70.0` | Document Engine | Visual CSS / Paged Media PDF generation |
-| **pypdf** | `6.20.1` | Document Engine | PDF manipulation, stream extraction & structural checks |
+| **pypdf** | `6.21.2` | Document Engine | PDF manipulation, stream extraction & structural checks |
 | **python-docx** | `1.2.0` | Document Engine | ATS-friendly Microsoft Word document generation |
 | **BeautifulSoup4** | `4.15.0` | Job Extraction | Resilient HTML parsing & job posting sanitization |
-| **Playwright** | `1.64.0` | Job Extraction | Headless Chromium browser automation & SSR fallback |
+| **Playwright** | `1.64.1` | Job Extraction | Headless Chromium browser automation & SSR fallback |
 | **HTTPX** | `0.28.1` | Networking | Async HTTP client for MCP, Gemini, and external APIs |
 | **Jinja2** | `3.1.6` | Templates | Jinja2 HTML resume template rendering engine |
-| **Pillow** | `12.3.0` | Media | Profile photo validation, scaling, and cropping |
+| **Pillow** | `13.0.0` | Media | Profile photo validation, scaling, and cropping |
 | **pillow-heif** | `1.8.1` | Media | HEIF / HEIC photo decoding for mobile camera uploads |
 | **Argon2-cffi** | `25.1.0` | Security | Argon2id password hashing & credential storage |
 | **itsdangerous** | `2.2.0` | Security | Cryptographic signing & HMAC summary review attestation |
 | **email-validator** | `2.3.0` | Validation | RFC-compliant email address validation |
 | **pytest** | `9.1.1` | Testing | Automated test runner and assertion framework |
 | **pytest-asyncio** | `1.4.0` | Testing | Asynchronous test execution for pytest |
-| **Ruff** | `0.17.1` | Tooling | Fast Python linter and code style enforcement |
+| **Ruff** | `0.17.2` | Tooling | Fast Python linter and code style enforcement |
 | **Jsonschema** | `4.25.1` | Dependency | Application dependency |
 | **Tokenizers** | `0.22.2` | Dependency | Application dependency |
 <!-- TECH_STACK:END -->
@@ -419,6 +420,7 @@ All configurable environment variables correspond to `.env.example`:
 | `OLLAMA_MAX_CONCURRENCY` | `1` | Maximum concurrent Ollama requests allowed |
 | `OLLAMA_NUM_PREDICT` | `8192` | Maximum generated tokens per Ollama call |
 | `OLLAMA_NUM_CTX` | `32768` | Context window size for Ollama requests |
+| `OLLAMA_DRAFT_REVIEW_ENABLED` | `true` | One optional thinking review of gaps and experience wording after the initial draft; 4096 tokens / 90 seconds, no retries |
 | `GEMINI_API_KEY` | — | Google AI Studio API key (leave empty if not using Gemini) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Gemini model identifier |
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com` | Google Generative Language API base URL |

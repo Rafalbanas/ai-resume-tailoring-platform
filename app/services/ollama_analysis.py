@@ -131,7 +131,9 @@ class AnalysisInventory:
                 "text": related[0].quote if related else text,
                 "hints": hints,
                 "section": section,
-                "context_only": position == 0,
+                # Keyword lists are presentation metadata, not qualifications.
+                # Explicit candidate conditions still override this hint below.
+                "context_only": position == 0 or bool(hints) and set(hints) <= {"keywords"},
             }
         matcher = EvidenceMatcher(FactCatalog(profile), bank)
         entries = matcher.entries

@@ -26,8 +26,8 @@ message.
 Before inference, `/api/tags` rechecks availability and `/api/show` checks the
 advertised model context limit. Each selected model gets an isolated provider
 copy, metrics, and context-local run state, sharing the original inference
-semaphore. A tokenizer verified only for the default model is not reused for
-a different model. Existing conservative planning remains available.
+semaphore. A tokenizer verified only for the default model is not reused for a
+different model. Context planning retains the existing conservative estimator.
 The actual model/context are sent to `/api/chat`. Existing automatic fallback
 settings still apply; a failed selected model can fall back when enabled.
 Model downloads and Ollama connection setup are not performed by this UI.
@@ -38,7 +38,9 @@ Validation:
 .venv/bin/python -m pytest tests/test_storage.py tests/test_ollama_model_selection.py tests/test_draft_errors.py tests/test_draft_pipeline.py tests/test_ollama_provider.py -q
 ```
 
-48 tests passed. Tests use synthetic profiles and mocked Ollama responses;
+49 targeted tests passed. Tests use synthetic profiles and mocked Ollama responses;
 they do not establish quality, speed, or GPU memory requirements of a real
 27B model. Production's configured Ollama endpoint refused connections during
 implementation, so live model selection and generation remain unverified.
+Selection validation is lazy inside the resilient provider call, preserving
+automatic Gemini fallback when Ollama discovery is unavailable.

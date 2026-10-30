@@ -355,10 +355,11 @@ class TaskManager:
         llm_provider = task.payload.get("llm_provider", "auto")
         provider = app_state.provider
         selected_model = task.payload.get("ollama_model")
-        if (selected_model or "ollama_context" in task.payload) and llm_provider in {"auto", "ollama"}:
+        if ((selected_model or "ollama_context" in task.payload)
+                and provider.resolve_chain(llm_provider)[0] == "ollama"):
             provider = copy(provider)
             provider.providers = dict(provider.providers)
-            provider.providers["ollama"] = await provider.providers["ollama"].for_model(
+            provider.providers["ollama"] = provider.providers["ollama"].with_selection(
                 selected_model or provider.providers["ollama"].model, task.payload.get("ollama_context", 32768))
         wall_start = time.perf_counter()
 
@@ -386,8 +387,9 @@ class TaskManager:
             if hasattr(app_state, "diagnostics"):
                 last_call = (getattr(exc, "call_metrics", []) or [{}])[-1]
                 app_state.diagnostics.record(
-                    company=job.company, role=job.role, requested_provider=llm_provider,
-                    provider_used=last_call.get("provider", llm_provider), model_used=last_call.get("model", "unknown"), fallback_occurred=False,
+                    company=job.company, role=job.role, requested_provider=llm_provider, task_id=task.task_id,
+                    provider_used=last_call.get("provider", llm_provider), model_used=last_call.get("model", "unknown"),
+                    fallback_occurred=bool(getattr(exc, "fallback_used", False)) or len({call.get("provider") for call in getattr(exc, "call_metrics", []) if call.get("provider")}) > 1,
                     status="error", duration_ms=int((time.perf_counter()-wall_start)*1000),
                     error_message=str(exc), call_metrics=getattr(exc, "call_metrics", []))
             raise
@@ -426,6 +428,7 @@ class TaskManager:
             app_state.diagnostics.record(
                 company=job.company,
                 role=job.role,
+                task_id=task.task_id,
                 requested_provider=llm_provider,
                 provider_used=getattr(response, "provider_used", "unknown"),
                 model_used=getattr(response, "model_used", "unknown"),

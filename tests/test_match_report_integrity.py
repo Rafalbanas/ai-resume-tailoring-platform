@@ -105,7 +105,7 @@ def test_saas_keyword_list_cannot_be_promoted_by_model():
         name='Webhooks', source_quote=quote, status='missing', reason='Not documented',
     )])
     assert not any(r.source_quote == quote for r in result.requirements)
-    assert result.classification_issues
+    assert result.validation_corrections
 
 
 def test_full_lancesoft_markdown_source_preserves_overview_for_assessment():

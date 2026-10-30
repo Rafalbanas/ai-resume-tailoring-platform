@@ -41,6 +41,7 @@ def body_rows(body):
 
 
 def make_provider(handler, **options):
+    options.setdefault("ollama_draft_review_enabled", False)
     return OllamaProvider(Settings(_env_file=None, **options), transport=httpx.MockTransport(handler))
 
 

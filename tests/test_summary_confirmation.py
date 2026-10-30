@@ -54,9 +54,11 @@ def test_deterministic_source_provenance_cannot_be_forged_from_model_approval(pr
     assert not valid_source_summary(checked, profile, 'test-secret')
 
 
-def analysis():
+def analysis(reliable=True):
     return JobAnalysis(company='Synthetic', role='Python support', strong_matches=['Python'], partial_matches=[],
-        missing_requirements=[], match_level='HIGH', recommendation='APPLY')
+        missing_requirements=[], match_level='HIGH' if reliable else 'UNRELIABLE',
+        recommendation='APPLY' if reliable else 'RETRY', is_reliable=reliable,
+        classification_issues=[] if reliable else ['Role overview classification requires review.'])
 
 
 async def login(client):
@@ -76,7 +78,8 @@ def token(html):
 
 @pytest.mark.parametrize('provider_name', ['gemini', 'ollama'])
 @pytest.mark.parametrize('hostile', ATTACKS)
-async def test_fooled_judge_cannot_export_without_user_confirmation(provider_name, hostile, resume_payload, monkeypatch):
+@pytest.mark.parametrize('match_reliable', [True, False])
+async def test_fooled_judge_cannot_export_without_user_confirmation(provider_name, hostile, match_reliable, resume_payload, monkeypatch):
     import app.main as main
     app = create_app(main.get_settings())
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
@@ -106,14 +109,15 @@ async def test_fooled_judge_cannot_export_without_user_confirmation(provider_nam
             if provider_name == 'gemini':
                 return httpx.Response(200, json={'candidates': [{'content': {'parts': [{'text': content}]}}]})
             return httpx.Response(200, json={'done': True, 'message': {'content': content}})
-        settings = app.state.settings.model_copy(update={'gemini_api_key': 'synthetic-key'})
+        settings = app.state.settings.model_copy(update={
+            'gemini_api_key': 'synthetic-key', 'ollama_draft_review_enabled': False})
         provider = (GeminiProvider if provider_name == 'gemini' else OllamaProvider)(settings, transport=httpx.MockTransport(handler))
         draft = await provider.tailor_resume(job, profile, analysis())
         assert stages == ['tailor_resume', 'review_summary']
         assert valid_summary_attestation(draft, profile, settings.csrf_secret)
         checked = FactValidator(profile, review_key=settings.csrf_secret).validate(draft, job).resume
         assert hostile == checked.professional_summary  # The old trust boundary alone accepted this simulated false verdict.
-        draft_id = app.state.storage.save_draft(job, WorkflowResponse(analysis=analysis(), resume=draft))
+        draft_id = app.state.storage.save_draft(job, WorkflowResponse(analysis=analysis(match_reliable), resume=draft))
         page = await client.get('/analysis/' + draft_id)
         assert page.status_code == 200
         assert hostile in page.text and 'Reviewed by AI' in page.text and 'personal projects only' in page.text
@@ -125,10 +129,12 @@ async def test_fooled_judge_cannot_export_without_user_confirmation(provider_nam
                      csrf(client) | {'summary_confirmed': 'on', 'summary_token': 'forged'}):
             result = await client.post('/generate/' + draft_id, data=data)
             assert result.status_code == 409
+            assert 'explicitly confirm' in result.json()['detail']
         assert not list(app.state.storage.generated_dir.iterdir())
 
 
-async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidates_after_edit(resume_payload):
+@pytest.mark.parametrize('match_reliable', [True, False])
+async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidates_after_edit(resume_payload, match_reliable):
     import app.main as main
     app = create_app(main.get_settings())
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
@@ -138,10 +144,16 @@ async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidat
         resume.summary_attestation = sign_summary(resume, app.state.profile, app.state.settings.csrf_secret)
         job = JobRequest(company='Synthetic', role='Python support', job_description='Requirements\nPython support and automation.')
         from app.services.fact_retrieval import retrieve_facts
-        trace = retrieve_facts(job, app.state.profile, analysis(), app.state.skills_bank).trace
+        match = analysis(match_reliable)
+        trace = retrieve_facts(job, app.state.profile, match, app.state.skills_bank).trace
         draft_id = app.state.storage.save_draft(job, WorkflowResponse(
-            analysis=analysis(), resume=resume, retrieval_context=trace))
+            analysis=match, resume=resume, retrieval_context=trace))
         page = await client.get('/analysis/' + draft_id)
+        button = BeautifulSoup(page.text, 'html.parser').select_one('form[data-document-export] button[type=submit]')
+        assert not button.has_attr('disabled')
+        if not match_reliable:
+            assert 'The match report still requires review.' in page.text
+            assert 'Role overview classification requires review.' in page.text
         result = await client.post('/generate/' + draft_id, data=csrf(client) | {
             'summary_confirmed': 'on', 'summary_token': token(page.text), 'template_name': 'ats_classic'})
         assert result.status_code == 303, result.text
@@ -154,8 +166,12 @@ async def test_confirmed_natural_summary_exports_real_pdf_and_docx_and_invalidat
         metadata = app.state.storage.load_application(slug)[3]
         assert metadata['summary_confirmed_at']
         assert metadata['retrieval_context'] == trace
+        assert metadata['analysis_reliable'] is match_reliable
         folder = app.state.storage.application_folder(slug)
+        saved_analysis = json.loads((folder / 'analysis.json').read_text())
+        assert saved_analysis['is_reliable'] is match_reliable
         payload = json.loads((folder / 'resume.json').read_text())
+        assert 'Kubernetes' not in payload['core_skills']
         payload['professional_summary'] = text + ' I have ten years of commercial experience.'
         (folder / 'resume.json').write_text(json.dumps(payload))
         assert (await client.get(f'/download/{slug}/pdf')).status_code == 409

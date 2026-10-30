@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     ollama_analysis_output_tokens: int = Field(default=6144, ge=512, le=32768)
     ollama_resume_output_tokens: int = Field(default=4096, ge=512, le=32768)
     ollama_analysis_recovery_calls: int = Field(default=4, ge=0, le=8)
+    ollama_draft_review_enabled: bool = True
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_base_url: str = "https://generativelanguage.googleapis.com"

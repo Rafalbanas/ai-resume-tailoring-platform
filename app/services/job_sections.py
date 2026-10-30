@@ -20,7 +20,7 @@ class SourceUnit:
 
 
 PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
-MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
+MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
 NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
     re.I,
@@ -29,14 +29,14 @@ QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
     r'professional\s+requirements)\s*:?$', re.I,
 )
-DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
-ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
+DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
+ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
-    "keywords": re.compile(r'^(?:ATS keywords|ATS keyword list|keywords)\s*:?$', re.I),
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what we offer|dla ciebie|oferujemy|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
+    "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
-    "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
+    "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }
 END = re.compile(r'^(?:benefits|we offer|what we offer|tech stack|travel requirements|relocation provided|position type|referral payment plan|company|eeo statement|equal opportunity.*)\s*:?$', re.I)
 REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wymagan\w*|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity)\b', re.I)
@@ -50,11 +50,19 @@ WORK_CONDITION = re.compile(r"(?:full.time job|based and eligible for employment
 
 
 def clean_source_line(raw: str) -> str:
-    """Normalize presentation markers without changing the literal content quote."""
-    line = raw.strip().replace('\u200b', '').replace('\ufeff', '')
-    line = re.sub(r'^#{1,6}\s+|^(?:->|[•−–>\-]|\d+[.)])\s*', '', line).strip()
-    line = re.sub(r'^(?:[-*]\s+)', '', line).strip()
-    return re.sub(r'\*\*|__', '', line).strip()
+    """Remove presentation syntax while retaining technical punctuation and scope."""
+    line = re.sub(r"[\u200b\ufeff\u2060]", "", raw)
+    line = re.sub(r"\s+", " ", line).strip()
+    # Copied lists may nest quote, heading and bullet markers.
+    while True:
+        cleaned = re.sub(r"^(?:#{1,6}\s+|->\s*|[•●▪◦]\s*|>(?!\s*\d)\s*|[-*−–]\s+|\d+[.)]\s+)", "", line).strip()
+        if cleaned == line:
+            break
+        line = cleaned
+    # Paired markup only: do not erase underscores inside identifiers.
+    line = re.sub(r"(?<!\w)(\*\*|\*|`)(?=\S)(.+?)(?<=\S)\1(?!\w)", r"\2", line)
+    line = re.sub(r"(?<!\w)__([^\n]*?[\s:][^\n]*?)__(?!\w)", r"\1", line)
+    return line.strip()
 
 
 TECH_LIST = r'(?:JavaScript|TypeScript|Python|PowerShell|Bash|SQL|T-SQL|Linux|Windows|Mac|Docker|Kubernetes|Azure|AWS|Terraform|Java|C\+\+|C#)'
@@ -130,7 +138,11 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
             category = 'mandatory'
         elif DUTY.fullmatch(line):
             category = 'responsibility'
+        elif re.fullmatch(r'role overview\s*:?', line, re.I):
+            category = 'unknown'
         elif ORG.fullmatch(line):
+            category = 'organization'
+        elif re.match(r'^why join [^?]+\?', line, re.I):
             category = 'organization'
         elif STACK.fullmatch(line):
             category = 'competency'
@@ -170,6 +182,8 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
                 units[-1].level = line
                 units[-1].supporting_quotes.append(line)
                 continue
+            if re.match(r'^we work in (?:a )?(?:hybrid|remote|on.site) (?:model|mode)\b', line, re.I):
+                category, section = 'employment', 'Employment conditions'
             group = f'source_{len(units) + 1}'
             # Semicolons delimit independently qualified clauses. Retain the
             # entire source sentence on every row for review.

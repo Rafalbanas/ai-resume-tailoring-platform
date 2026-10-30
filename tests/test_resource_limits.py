@@ -25,7 +25,8 @@ from app.services.task_manager import TaskKind, TaskManager, TaskStatus
 
 
 @pytest.mark.parametrize('path,setting', [('/login', 'AUTH_BODY_SECONDS'),
-    ('/settings/fallback', 'FORM_BODY_SECONDS'), ('/profile/photo', 'UPLOAD_BODY_SECONDS')])
+    ('/settings/fallback', 'FORM_BODY_SECONDS'), ('/profile/photo', 'UPLOAD_BODY_SECONDS'),
+    ('/generate/' + 'a' * 32, 'FORM_BODY_SECONDS')])
 async def test_body_deadline_stops_slow_drip_and_releases_admission(path, setting, monkeypatch):
     import app.main as main
     from app.core import body_deadline
@@ -47,6 +48,7 @@ async def test_body_deadline_stops_slow_drip_and_releases_admission(path, settin
         assert consumed < 100
         assert app.state.resource_budget.body_slots._value == 2
         assert app.state.resource_budget.mutation_slots._value == 1
+        assert app.state.resource_budget.generation_slots._value == 4
         assert (await client.get('/profile')).status_code == 200
         await login(client)
 

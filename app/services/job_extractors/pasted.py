@@ -3,10 +3,21 @@
 import re
 
 from app.services.job_extractors.base import ExtractionCandidate
+from app.services.job_extractors.builtin import BuiltInExtractor
 from app.services.job_extractors.eldorado import EldoradoExtractor
 from app.services.job_extractors.pracuj import HEADINGS, PracujExtractor, _line
 from app.services.job_extractors.theprotocol import TheProtocolExtractor
-from app.services.job_sections import CONTEXT_HEADINGS, DUTY, MANDATORY, NEEDED, ORG, PREFERRED, STACK
+from app.services.job_sections import (
+    CONTEXT_HEADINGS,
+    DUTY,
+    MANDATORY,
+    NEEDED,
+    ORG,
+    PREFERRED,
+    QUALIFICATION_HEADING,
+    STACK,
+    clean_source_line,
+)
 
 NOISE = {
     "apply", "apply now", "save", "save job", "share", "share this job", "sign in", "log in",
@@ -24,6 +35,8 @@ SECTION_PATTERNS = (
     (PREFERRED, "NICE TO HAVE"),
     (MANDATORY, "REQUIREMENTS"),
     (NEEDED, "REQUIREMENTS"),
+    (QUALIFICATION_HEADING, "REQUIREMENTS"),
+    (CONTEXT_HEADINGS["keywords"], "ATS KEYWORDS"),
     (DUTY, "RESPONSIBILITIES"),
     (ORG, "OFFER DESCRIPTION"),
     (STACK, "PORTAL TECHNOLOGY TAGS"),
@@ -36,7 +49,7 @@ def clean_generic_text(text: str) -> ExtractionCandidate:
     skipping = False
     company = role = ""
     for raw in text.splitlines():
-        line = _line(raw.replace("\u200b", "").replace("\ufeff", ""))
+        line = clean_source_line(_line(raw))
         if not line:
             continue
         folded = line.casefold().rstrip(":").strip()
@@ -70,6 +83,9 @@ def clean_generic_text(text: str) -> ExtractionCandidate:
 
 
 def clean_pasted_offer(text: str, url: str = "") -> ExtractionCandidate:
+    builtin = BuiltInExtractor()
+    if builtin.matches(url) or builtin.recognizes_text(text):
+        return builtin.extract_text(text)
     theprotocol = TheProtocolExtractor()
     if theprotocol.matches(url) or theprotocol.recognizes_text(text):
         return theprotocol.extract_text(text)
