@@ -1,6 +1,6 @@
 """Opt-in audit prototype. Never changes a live provider or persistent settings."""
-from copy import deepcopy
 import json
+from copy import deepcopy
 
 
 def compact_generation(payload):
@@ -10,7 +10,8 @@ def compact_generation(payload):
     for key,value in payload['candidate_facts'].items():
         if isinstance(value,list) and all(isinstance(e,dict) and 'source_id'in e for e in value):
             remaining=[e for e in value if json.dumps(e,sort_keys=True,ensure_ascii=False) not in catalog]
-            if remaining:grouped[key]=remaining
+            if remaining:
+                grouped[key]=remaining
         else:
             grouped[key]=value
     result['candidate_facts']=grouped
@@ -23,7 +24,8 @@ def compact_generation(payload):
         summary.pop('key_requirements',None)
     if result.get('layout_constraints')==result.get('layout_guide'):
         result.pop('layout_constraints',None)
-    if not result.get('reference_cvs_style_only'):result.pop('reference_cvs_style_only',None)
+    if not result.get('reference_cvs_style_only'):
+        result.pop('reference_cvs_style_only',None)
     assert result['source_catalog']==payload['source_catalog']
     assert result['analysis_summary'].get('requirements_with_evidence')==payload['analysis_summary'].get('requirements_with_evidence')
     assert result['analysis_summary'].get('role_competencies')==payload['analysis_summary'].get('role_competencies')
@@ -45,7 +47,7 @@ def compact_analysis(payload):
     # Keep the explicit requires_assessment flag and all actual section hints.
     result['passages']=[{k:v for k,v in p.items() if k!='context_only'} for p in payload['passages']]
     assert {fid:row[:-1]+[result['evidence_strengths'][row[-1]]] for fid,row in result['evidence'].items()}==payload['evidence']
-    assert {oid:dict(zip(result['evidence_owner_fields'],row)) for oid,row in result['evidence_owners'].items()}==payload['evidence_owners']
+    assert {oid:dict(zip(result['evidence_owner_fields'],row,strict=False)) for oid,row in result['evidence_owners'].items()}==payload['evidence_owners']
     assert result['employment_dates']==payload['employment_dates']
     assert result['passages']==[{k:v for k,v in p.items() if k!='context_only'} for p in payload['passages']]
     return result
@@ -70,13 +72,19 @@ def install_test_prototype(provider_module, tokenizer, result):
             qualification=any(h in {'mandatory','preferred','nice_to_have','competency'} for h in passage['hints'])
             row_cost=160+min(1200,len(passage['text'])//6) if qualification else 100 if not passage['hints'] else 40
             proposed=current+[pid]
-            def fits(ids):return tokens(compact_analysis(inventory.payload(ids)))+reserve+output_limit<=context_limit
+            def fits(ids):
+                return tokens(compact_analysis(inventory.payload(ids)))+reserve+output_limit<=context_limit
             if current and (cost+row_cost>int(output_limit*0.75) or not fits(proposed)):
-                batches.append(current);current=[];cost=0;proposed=[pid]
+                batches.append(current)
+                current=[]
+                cost=0
+                proposed=[pid]
             if not fits(proposed):
                 raise RuntimeError('Full candidate evidence exceeds the measured context budget; facts cannot be dropped')
-            current=proposed;cost+=row_cost
-        if current:batches.append(current)
+            current=proposed
+            cost+=row_cost
+        if current:
+            batches.append(current)
         assert [pid for batch in batches for pid in batch]==list(inventory.passages)
         result['exact_planner']={'batches':[len(b) for b in batches],'facts':len(inventory.evidence),
             'tokens':[tokens(compact_analysis(inventory.payload(b)))+reserve for b in batches],
@@ -85,7 +93,8 @@ def install_test_prototype(provider_module, tokenizer, result):
 
     async def compact_chat(self,response_model,system_prompt,payload,**kwargs):
         original=payload
-        if payload.get('stage')=='tailor_resume':payload=compact_generation(payload)
+        if payload.get('stage')=='tailor_resume':
+            payload=compact_generation(payload)
         elif payload.get('stage')=='analyze_job':
             payload=compact_analysis(payload)
             system_prompt+=ANALYSIS_LEGEND
