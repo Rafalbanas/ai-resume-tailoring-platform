@@ -10,24 +10,21 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
 from app.models.candidate import CandidateProfile
-from app.models.interpretation import JobInterpretation
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import (
-    JOB_ANALYSIS_SYSTEM_PROMPT,
-    RESUME_TAILOR_SYSTEM_PROMPT,
     AIProvider,
     AIProviderError,
     GeminiAuthError,
     GeminiQuotaError,
     ProviderResponseError,
     ProviderUnavailableError,
-    build_compact_analysis_payload,
     build_compact_tailor_payload,
+    resume_system_prompt,
 )
 from app.services.analysis_validator import AnalysisValidator
 from app.services.comparison_capture import record_call
-from app.services.ollama_provider import TRUTH_RULES
+from app.services.ollama_provider import truth_rules
 from app.services.reference_cvs import ReferenceCVLibrary
 from app.services.skills_bank import SkillsBank
 
@@ -113,6 +110,10 @@ def to_gemini_schema(schema: dict) -> dict:
 class GeminiProvider(AIProvider):
     name = "gemini"
 
+    async def edit_cv(self, payload: dict):
+        from app.services.cv_editor import edit_with_chat
+        return await edit_with_chat(self._chat, payload)
+
     def __init__(
         self,
         settings: Settings,
@@ -147,6 +148,7 @@ class GeminiProvider(AIProvider):
         system_prompt: str,
         payload: dict,
         *,
+        _schema: dict | None = None,
         source_catalog: list[dict[str, str]] | None = None,
         allowed_skills: list[str] | None = None,
         allowed_skill_ids: list[str] | None = None,
@@ -155,7 +157,7 @@ class GeminiProvider(AIProvider):
             raise GeminiAuthError("Gemini API key is not configured. Set GEMINI_API_KEY in your environment.")
 
         from app.services.bounded_http import bounded_post, model_call
-        schema = response_model.model_json_schema()
+        schema = _schema or response_model.model_json_schema()
         gemini_schema = to_gemini_schema(schema)
 
         generation_config: dict[str, Any] = {
@@ -178,7 +180,7 @@ class GeminiProvider(AIProvider):
                 }
             ],
             "systemInstruction": {
-                "parts": [{"text": f"{TRUTH_RULES}\n\n{system_prompt}"}],
+                "parts": [{"text": f"{truth_rules(payload)}\n\n{system_prompt}"}],
             },
             "generationConfig": generation_config,
         }
@@ -292,7 +294,7 @@ class GeminiProvider(AIProvider):
         except (KeyError, IndexError, ValueError) as exc:
             raise ProviderResponseError("Gemini returned invalid or missing response envelope.") from exc
 
-        record_call(self.name, payload, f"{TRUTH_RULES}\n\n{system_prompt}", gemini_schema, raw_text, usage)
+        record_call(self.name, payload, f"{truth_rules(payload)}\n\n{system_prompt}", gemini_schema, raw_text, usage)
 
         # Validate against response_model
         try:
@@ -315,12 +317,10 @@ class GeminiProvider(AIProvider):
                 raise ProviderResponseError("Gemini returned invalid structured JSON. Try again.") from exc
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
-        payload = build_compact_analysis_payload(job, profile, self.skills_bank)
-        interpretation = await self._chat(
-            JobInterpretation,
-            JOB_ANALYSIS_SYSTEM_PROMPT,
-            payload,
-        )
+        from app.services.indexed_analysis import indexed_interpretation
+        from app.services.ollama_analysis import AnalysisInventory
+        inventory = AnalysisInventory.build(job, profile, self.skills_bank)
+        interpretation = await indexed_interpretation(self, inventory)
         analysis = interpretation.to_analysis(job)
         validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
         import hashlib
@@ -336,12 +336,12 @@ class GeminiProvider(AIProvider):
         analysis: JobAnalysis,
     ) -> TailoredResume:
         references = (
-            self.reference_library.select(job.role, job.job_description)[:1]
+            self.reference_library.select(job.role, job.relevance_text)[:1]
             if self.reference_library
             else []
         )
         layout_guide = self.reference_library.layout_guide() if self.reference_library else {}
-        job_text = f"{job.role}\n{job.job_description}".casefold()
+        job_text = f"{job.role}\n{job.relevance_text}".casefold()
         if self.skills_bank:
             relevant = [
                 s for s in self.skills_bank.skills
@@ -362,7 +362,7 @@ class GeminiProvider(AIProvider):
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         resume = await self._chat(
             TailoredResume,
-            RESUME_TAILOR_SYSTEM_PROMPT,
+            resume_system_prompt(job),
             payload,
             source_catalog=payload["source_catalog"],
             allowed_skills=allowed_skills,
@@ -385,7 +385,11 @@ class GeminiProvider(AIProvider):
     ) -> WorkflowResponse:
         if on_stage:
             on_stage("Analyzing job requirements (Gemini)...")
-        analysis = await self.analyze_job(job, profile)
+        if job.workflow == 'custom':
+            from app.services.custom_cv import custom_analysis
+            analysis = custom_analysis(job)
+        else:
+            analysis = await self.analyze_job(job, profile)
         if on_stage:
             on_stage("Generating tailored CV (Gemini)...")
         resume = await self.tailor_resume(job, profile, analysis)

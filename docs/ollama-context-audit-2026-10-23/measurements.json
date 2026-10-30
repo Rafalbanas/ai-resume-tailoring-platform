@@ -1,0 +1,1083 @@
+[
+  {
+    "model": "qwen3.8-27b-iq2s",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-no-review",
+    "ok": false,
+    "error": "Ollama analysis failed source validation; review the source: Unclassified source passage needs review: Przeglądami i audytami bezpieczeństwa tenantów M365 oraz wdrażaniem zaleceń Unclassified source passage needs review: Konfiguracją DNS dla poczty i domen (MX, SPF, DKIM, DMARC) Unclassified source passage needs review: Bezpośrednim kontaktem z klientami: telefon, zdalny pulpit, system zgłoszeń Unclassified source passage needs review: Wykształcenie kierunkowe: IT lub pokrewne Unclassified source passage needs review: Podstaw PowerShella – umiesz napisać prosty skrypt lub dostosować gotowy Unclassified source passage needs review: Samodzielności, dokładności i dobrej komunikacji z użytkownikami Unclassified source passage needs review: Nawyku dokumentowania pracy Unresolved source interpretation: Min. 2 lat doświadczenia we wsparciu IT, najlepiej w firmie obsługującej wielu klientów Unresolved source interpretation: Praktycznej znajomości Exchange Online, Entra ID i Intune Unresolved source interpretation: Dobrej znajomości Windows 10/11 Invalid or irrelevant evidence removed: Microsoft 365 administration (Exchange Online, SharePoint, OneDrive, Teams, licenses). Invalid or irrelevant evidence removed: Entra ID identity management (MFA, Conditional Access, roles, guest access). Invalid or irrelevant evidence removed: Intune device management (enrollment, compliance policies, Win32 app packages). Unsupported model confirmation corrected: Minimum 2 years of IT support experience, preferably in multi-client environment. Invalid or irrelevant evidence removed: Minimum 2 years of IT support experience, preferably in multi-client environment. Invalid or irrelevant evidence removed: Entra ID.",
+    "wall_seconds": 262.4705223739147,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-current-new-baseline.json",
+    "schema_calls": 2,
+    "schema_errors": [],
+    "load_seconds": [
+      6.683,
+      0.031
+    ],
+    "prompt_seconds": 41.32,
+    "rates": [
+      17.31,
+      17.36
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 219993.36966872215,
+        "total_ms": 219783.826765,
+        "prompt_tokens": 10187,
+        "completion_tokens": 3301,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 39319.72645968199,
+        "total_ms": 39189.71287,
+        "prompt_tokens": 8636,
+        "completion_tokens": 337,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 18823,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.8-27b-iq2s",
+    "context": 16384,
+    "output_limit": 4096,
+    "mode": "full-optimized-no-review",
+    "ok": false,
+    "error": "Ollama analysis failed source validation; review the source: Unclassified source passage needs review: Wykształcenie kierunkowe: IT lub pokrewne Unclassified source passage needs review: Podstaw PowerShella – umiesz napisać prosty skrypt lub dostosować gotowy Unclassified source passage needs review: Samodzielności, dokładności i dobrej komunikacji z użytkownikami Unclassified source passage needs review: Nawyku dokumentowania pracy Unresolved source interpretation: Min. 2 lat doświadczenia we wsparciu IT, najlepiej w firmie obsługującej wielu klientów Unresolved source interpretation: Praktycznej znajomości Exchange Online, Entra ID i Intune Unresolved source interpretation: Dobrej znajomości Windows 10/11 Unsupported model confirmation corrected: Minimum 2 years of IT support experience, preferably in a multi-client environment. Invalid or irrelevant evidence removed: Minimum 2 years of IT support experience, preferably in a multi-client environment.",
+    "wall_seconds": 246.1051528379321,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-current-new-optimized.json",
+    "schema_calls": 2,
+    "schema_errors": [],
+    "load_seconds": [
+      5.039,
+      0.003
+    ],
+    "prompt_seconds": 37.15,
+    "rates": [
+      20.17,
+      20.27
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 197171.16341739893,
+        "total_ms": 197029.3861,
+        "prompt_tokens": 9404,
+        "completion_tokens": 3469,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 43718.394845724106,
+        "total_ms": 43589.336902,
+        "prompt_tokens": 8048,
+        "completion_tokens": 519,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 17452,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-no-review",
+    "ok": false,
+    "error": "Ollama omitted a capability label or evidence explanation.",
+    "wall_seconds": 105.08298537135124,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-current-old-baseline.json",
+    "schema_calls": 1,
+    "schema_errors": [],
+    "load_seconds": [
+      4.487
+    ],
+    "prompt_seconds": 6.24,
+    "rates": [
+      51.02
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 103670.29157280922,
+        "total_ms": 103453.625435,
+        "prompt_tokens": 10187,
+        "completion_tokens": 4728,
+        "done_reason": "stop",
+        "error_kind": "schema",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 10187,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 16384,
+    "output_limit": 4096,
+    "mode": "full-optimized-no-review",
+    "ok": false,
+    "error": "Ollama analysis failed source validation; review the source: Model qualification rejected: context passage Microsoft 365 Model qualification rejected: context passage Windows 10/11 Model qualification rejected: context passage Intune Model qualification rejected: context passage Entra ID Model qualification rejected: context passage Powershell Unresolved source interpretation: Min. 2 lat doświadczenia we wsparciu IT, najlepiej w firmie obsługującej wielu klientów Unresolved source interpretation: Praktycznej znajomości Exchange Online, Entra ID i Intune Unresolved source interpretation: Dobrej znajomości Windows 10/11 Invalid or irrelevant evidence removed: Microsoft 365 Administration (Exchange Online, SharePoint, OneDrive, Teams, Licenses). Invalid or irrelevant evidence removed: Identity Management in Entra ID (MFA, Conditional Access, Roles, Guest Access). Invalid or irrelevant evidence removed: Device Management in Intune (Registration, Compliance, Win32 Packages). Invalid or irrelevant evidence removed: IT Support Experience (Minimum 2 years, Multi-client environment preferred). Invalid or irrelevant evidence removed: Entra ID.",
+    "wall_seconds": 102.08900946378708,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-current-old-optimized.json",
+    "schema_calls": 1,
+    "schema_errors": [],
+    "load_seconds": [
+      4.023
+    ],
+    "prompt_seconds": 5.66,
+    "rates": [
+      51.23
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 95922.54547029734,
+        "total_ms": 95740.626968,
+        "prompt_tokens": 9404,
+        "completion_tokens": 4406,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 9404,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.8-27b-iq2s",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-no-review",
+    "ok": true,
+    "error": null,
+    "wall_seconds": 311.91885163635015,
+    "generation_seconds": 296.5743812099099,
+    "export_seconds": 9.9014353454113,
+    "export_check_seconds": 5.050604224205017,
+    "reliable": true,
+    "summary_attested": false,
+    "bullet_attestations": 0,
+    "file": "cvtailor-new-full-32768-1.json",
+    "schema_calls": 3,
+    "schema_errors": [],
+    "load_seconds": [
+      7.015,
+      0.029,
+      0.041
+    ],
+    "prompt_seconds": 67.9,
+    "rates": [
+      17.36,
+      17.48,
+      17.28
+    ],
+    "raw_counts": {
+      "experience": 4,
+      "education": 0,
+      "projects": 0
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "ats_raw": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "ats_final": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [
+      "Unsupported AI fact removed: Active Directory administration",
+      "Unsupported or non-deterministic headline was replaced with verified role and skills",
+      "Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement",
+      "Unsupported AI bullet replaced in source_owner_2",
+      "Unsupported AI bullet replaced in source_owner_3",
+      "Unsupported AI bullet replaced in source_owner_4",
+      "Unsupported AI bullet replaced in source_owner_1"
+    ],
+    "obvious_quote_mismatches": [
+      {
+        "name": "Minimum 2 years of IT support experience, preferably in a multi-client environment",
+        "quote": "Znajomość programów Comarch Optima, Płatnik, Symfonia"
+      },
+      {
+        "name": "IT or related degree",
+        "quote": "Podstawy sieci i VPN (Fortinet, OpenVPN, MikroTik, pfSense)"
+      },
+      {
+        "name": "Practical knowledge of Exchange Online, Entra ID and Intune",
+        "quote": "Znajomość macOS"
+      },
+      {
+        "name": "Good knowledge of Windows 10/11",
+        "quote": "Nie masz wszystkiego z tej listy? Aplikuj – resztę nadrobisz u nas."
+      },
+      {
+        "name": "Basic PowerShell skills",
+        "quote": "Oferujemy:"
+      },
+      {
+        "name": "Independence, accuracy and good communication with users",
+        "quote": "Różnorodne środowiska i realny wpływ na ich bezpieczeństwo"
+      },
+      {
+        "name": "Habit of documenting work",
+        "quote": "Budżet i czas pracy na szkolenia oraz certyfikaty"
+      }
+    ],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 170221.52999043465,
+        "total_ms": 170047.632613,
+        "prompt_tokens": 10156,
+        "completion_tokens": 2443,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 30355.662994086742,
+        "total_ms": 30229.588184,
+        "prompt_tokens": 8397,
+        "completion_tokens": 192,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 1
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": 90257.79106467962,
+        "total_ms": 90142.329339,
+        "prompt_tokens": 12290,
+        "completion_tokens": 1075,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": {
+      "resume.docx": 38670,
+      "resume.pdf": 21888
+    },
+    "export_text_chars": {
+      ".docx": 3419,
+      ".pdf": 3429
+    },
+    "cross_owner_bullets": 0,
+    "api_reported_prompt_sum": 30843,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.8-27b-iq2s",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-review",
+    "ok": true,
+    "error": null,
+    "wall_seconds": 326.43685878813267,
+    "generation_seconds": 312.992828078568,
+    "export_seconds": 8.88636077940464,
+    "export_check_seconds": 4.247894920408726,
+    "reliable": true,
+    "summary_attested": false,
+    "bullet_attestations": 0,
+    "file": "cvtailor-new-full-32768-2.json",
+    "schema_calls": 3,
+    "schema_errors": [],
+    "load_seconds": [
+      0.036,
+      0.038,
+      0.04,
+      0.002
+    ],
+    "prompt_seconds": 18.91,
+    "rates": [
+      17.39,
+      17.55,
+      17.3,
+      17.58
+    ],
+    "raw_counts": {
+      "experience": 4,
+      "education": 0,
+      "projects": 0
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "ats_raw": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "ats_final": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [
+      "Unsupported AI fact removed: Active Directory administration",
+      "Unsupported or non-deterministic headline was replaced with verified role and skills",
+      "Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement",
+      "Unsupported AI bullet replaced in source_owner_2",
+      "Unsupported AI bullet replaced in source_owner_3",
+      "Unsupported AI bullet replaced in source_owner_4",
+      "Unsupported AI bullet replaced in source_owner_1"
+    ],
+    "obvious_quote_mismatches": [
+      {
+        "name": "Minimum 2 years of IT support experience, preferably in a multi-client environment",
+        "quote": "Znajomość programów Comarch Optima, Płatnik, Symfonia"
+      },
+      {
+        "name": "IT or related degree",
+        "quote": "Podstawy sieci i VPN (Fortinet, OpenVPN, MikroTik, pfSense)"
+      },
+      {
+        "name": "Practical knowledge of Exchange Online, Entra ID and Intune",
+        "quote": "Znajomość macOS"
+      },
+      {
+        "name": "Good knowledge of Windows 10/11",
+        "quote": "Nie masz wszystkiego z tej listy? Aplikuj – resztę nadrobisz u nas."
+      },
+      {
+        "name": "Basic PowerShell skills",
+        "quote": "Oferujemy:"
+      },
+      {
+        "name": "Independence, accuracy and good communication with users",
+        "quote": "Różnorodne środowiska i realny wpływ na ich bezpieczeństwo"
+      },
+      {
+        "name": "Habit of documenting work",
+        "quote": "Budżet i czas pracy na szkolenia oraz certyfikaty"
+      }
+    ],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 141974.6612086892,
+        "total_ms": 141794.956266,
+        "prompt_tokens": 10156,
+        "completion_tokens": 2443,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 12251.675494015217,
+        "total_ms": 12134.214763,
+        "prompt_tokens": 8397,
+        "completion_tokens": 192,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 1
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": 63370.525024831295,
+        "total_ms": 63254.742206,
+        "prompt_tokens": 12290,
+        "completion_tokens": 1075,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "review_draft_thinking",
+        "client_ms": 77408.57896208763,
+        "total_ms": 77271.091103,
+        "prompt_tokens": 8321,
+        "completion_tokens": 1024,
+        "done_reason": "length",
+        "error_kind": null,
+        "thinking_requested": true,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "review_draft",
+        "client_ms": null,
+        "total_ms": 12601.894162595272,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "done_reason": null,
+        "error_kind": "cancelled",
+        "thinking_requested": false,
+        "review_outcome": "timeout",
+        "recovery_calls": null
+      }
+    ],
+    "exports": {
+      "resume.docx": 38670,
+      "resume.pdf": 21888
+    },
+    "export_text_chars": {
+      ".docx": 3419,
+      ".pdf": 3429
+    },
+    "cross_owner_bullets": 0,
+    "api_reported_prompt_sum": 39164,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.8-27b-iq2s",
+    "context": 16384,
+    "output_limit": 4096,
+    "mode": "full-optimized-no-review",
+    "ok": true,
+    "error": null,
+    "wall_seconds": 352.0096740350127,
+    "generation_seconds": 339.78167700767517,
+    "export_seconds": 7.880025528371334,
+    "export_check_seconds": 3.998469576239586,
+    "reliable": true,
+    "summary_attested": true,
+    "bullet_attestations": 0,
+    "file": "cvtailor-new-optimized-16384.json",
+    "schema_calls": 5,
+    "schema_errors": [],
+    "load_seconds": [
+      4.799,
+      0.126,
+      0.003,
+      0.003,
+      0.002
+    ],
+    "prompt_seconds": 75.88,
+    "rates": [
+      20.19,
+      20.33,
+      20.27,
+      20.36,
+      20.99
+    ],
+    "raw_counts": {
+      "experience": 4,
+      "education": 0,
+      "projects": 1
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "ats_raw": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "ats_final": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [
+      "Unsupported or non-deterministic headline was replaced with verified role and skills",
+      "Unsupported AI bullet replaced in source_owner_1",
+      "Unsupported AI bullet removed from source_owner_1",
+      "Unsupported AI bullet removed from source_owner_1",
+      "Unsupported AI bullet removed from source_owner_1",
+      "Unsupported AI bullet replaced in source_owner_2",
+      "Unsupported AI bullet replaced in source_owner_3",
+      "Unsupported AI bullet replaced in source_owner_4",
+      "Project wording replaced with verified description: source_owner_5"
+    ],
+    "obvious_quote_mismatches": [
+      {
+        "name": "Minimum 2 years of IT support experience, preferably in a multi-client environment",
+        "quote": "Znajomość programów Comarch Optima, Płatnik, Symfonia"
+      },
+      {
+        "name": "IT or related degree",
+        "quote": "Podstawy sieci i VPN (Fortinet, OpenVPN, MikroTik, pfSense)"
+      },
+      {
+        "name": "Practical knowledge of Exchange Online, Entra ID, and Intune",
+        "quote": "Znajomość macOS"
+      },
+      {
+        "name": "Good knowledge of Windows 10/11",
+        "quote": "Nie masz wszystkiego z tej listy? Aplikuj – resztę nadrobisz u nas."
+      },
+      {
+        "name": "Basic PowerShell skills for simple scripts",
+        "quote": "Oferujemy:"
+      },
+      {
+        "name": "Independence, accuracy, and good communication with users",
+        "quote": "Różnorodne środowiska i realny wpływ na ich bezpieczeństwo"
+      },
+      {
+        "name": "Habit of documenting work",
+        "quote": "Budżet i czas pracy na szkolenia oraz certyfikaty"
+      }
+    ],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 121950.87483525276,
+        "total_ms": 121757.64922,
+        "prompt_tokens": 9783,
+        "completion_tokens": 1940,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 28385.694600641727,
+        "total_ms": 28261.309731,
+        "prompt_tokens": 8397,
+        "completion_tokens": 192,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 49234.671749174595,
+        "total_ms": 49109.600447,
+        "prompt_tokens": 8570,
+        "completion_tokens": 612,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 1
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": 112695.8274319768,
+        "total_ms": 112523.302843,
+        "prompt_tokens": 7356,
+        "completion_tokens": 1960,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "review_summary",
+        "client_ms": 18613.561533391476,
+        "total_ms": 18496.571804,
+        "prompt_tokens": 1473,
+        "completion_tokens": 306,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": {
+      "resume.docx": 38767,
+      "resume.pdf": 22260
+    },
+    "export_text_chars": {
+      ".docx": 3859,
+      ".pdf": 3866
+    },
+    "cross_owner_bullets": 3,
+    "api_reported_prompt_sum": 35579,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-no-review",
+    "ok": false,
+    "error": "Ollama rejected the request (context budget or HTTP error).",
+    "wall_seconds": 110.59810999780893,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-old-full-32768-1.json",
+    "schema_calls": 1,
+    "schema_errors": [],
+    "load_seconds": [
+      4.67,
+      0.0
+    ],
+    "prompt_seconds": 6.18,
+    "rates": [
+      50.94
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 105986.925072968,
+        "total_ms": 105760.031151,
+        "prompt_tokens": 10156,
+        "completion_tokens": 4832,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 0
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": null,
+        "total_ms": null,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "done_reason": null,
+        "error_kind": "http",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 10156,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-review",
+    "ok": false,
+    "error": "Ollama rejected the request (context budget or HTTP error).",
+    "wall_seconds": 98.68783617764711,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-old-full-32768-2.json",
+    "schema_calls": 1,
+    "schema_errors": [],
+    "load_seconds": [
+      0.03,
+      0.0
+    ],
+    "prompt_seconds": 0.09,
+    "rates": [
+      50.93
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 95266.45040512085,
+        "total_ms": 95037.66968,
+        "prompt_tokens": 10156,
+        "completion_tokens": 4832,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 0
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": null,
+        "total_ms": null,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "done_reason": null,
+        "error_kind": "http",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 10156,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 32768,
+    "output_limit": 8192,
+    "mode": "full-review",
+    "ok": false,
+    "error": "Ollama rejected the request (context budget or HTTP error).",
+    "wall_seconds": 99.00439793616533,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "reliable": null,
+    "summary_attested": null,
+    "bullet_attestations": null,
+    "file": "cvtailor-old-full-32768-3.json",
+    "schema_calls": 1,
+    "schema_errors": [],
+    "load_seconds": [
+      0.032,
+      0.0
+    ],
+    "prompt_seconds": 0.09,
+    "rates": [
+      50.9
+    ],
+    "raw_counts": null,
+    "final_counts": null,
+    "ats_raw": [],
+    "ats_final": [],
+    "unsupported_raw": [],
+    "unsupported_final": [],
+    "warnings": [],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 95352.58895158768,
+        "total_ms": 95109.947706,
+        "prompt_tokens": 10156,
+        "completion_tokens": 4832,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 0
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": null,
+        "total_ms": null,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "done_reason": null,
+        "error_kind": "http",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": null,
+    "export_text_chars": {},
+    "cross_owner_bullets": null,
+    "api_reported_prompt_sum": 10156,
+    "dataset_identity_checked": true
+  },
+  {
+    "model": "qwen3.5:9b",
+    "context": 16384,
+    "output_limit": 4096,
+    "mode": "full-optimized-no-review",
+    "ok": true,
+    "error": null,
+    "wall_seconds": 210.33901596069336,
+    "generation_seconds": 198.21942741423845,
+    "export_seconds": 7.836118534207344,
+    "export_check_seconds": 4.002982310950756,
+    "reliable": true,
+    "summary_attested": false,
+    "bullet_attestations": 0,
+    "file": "cvtailor-old-optimized-16384.json",
+    "schema_calls": 4,
+    "schema_errors": [
+      {
+        "stage": "analyze_job",
+        "error": "Invalid JSON: Unterminated string starting at: line 340 column 14 (char 12571)"
+      }
+    ],
+    "load_seconds": [
+      4.793,
+      0.003,
+      0.003,
+      0.003,
+      0.0
+    ],
+    "prompt_seconds": 20.71,
+    "rates": [
+      51.14,
+      51.64,
+      51.62,
+      51.74
+    ],
+    "raw_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 0
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "ats_raw": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "ats_final": [
+      "Microsoft 365",
+      "Windows",
+      "PowerShell",
+      "DNS",
+      "VPN",
+      "MikroTik",
+      "FortiGate"
+    ],
+    "unsupported_raw": [
+      "Entra ID",
+      "Intune",
+      "Exchange Online"
+    ],
+    "unsupported_final": [],
+    "warnings": [
+      "Unsupported AI fact removed: Active Directory administration",
+      "Unsupported AI fact removed: Windows Server administration",
+      "Unsupported or non-deterministic headline was replaced with verified role and skills",
+      "Professional summary rebuilt from concise verified source sentences; model tone cannot be assessed from this replacement",
+      "Unsupported AI bullet removed from source_owner_1",
+      "Unsupported AI bullet replaced in source_owner_1"
+    ],
+    "obvious_quote_mismatches": [],
+    "metrics": [
+      {
+        "stage": "analyze_job",
+        "client_ms": 91028.32285314798,
+        "total_ms": 90825.202813,
+        "prompt_tokens": 9783,
+        "completion_tokens": 4096,
+        "done_reason": "length",
+        "error_kind": "output_limit",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 25128.117747604847,
+        "total_ms": 25008.667187,
+        "prompt_tokens": 8570,
+        "completion_tokens": 1005,
+        "done_reason": "stop",
+        "error_kind": "coverage",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "analyze_job",
+        "client_ms": 10216.13983809948,
+        "total_ms": 10085.443666,
+        "prompt_tokens": 8411,
+        "completion_tokens": 244,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": 1
+      },
+      {
+        "stage": "tailor_resume",
+        "client_ms": 32487.474411725998,
+        "total_ms": 32356.986208,
+        "prompt_tokens": 7668,
+        "completion_tokens": 1422,
+        "done_reason": "stop",
+        "error_kind": null,
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      },
+      {
+        "stage": "review_summary",
+        "client_ms": null,
+        "total_ms": 29951.85699313879,
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "done_reason": null,
+        "error_kind": "cancelled",
+        "thinking_requested": false,
+        "review_outcome": null,
+        "recovery_calls": null
+      }
+    ],
+    "exports": {
+      "resume.docx": 38733,
+      "resume.pdf": 23146
+    },
+    "export_text_chars": {
+      ".docx": 3545,
+      ".pdf": 3573
+    },
+    "cross_owner_bullets": 1,
+    "api_reported_prompt_sum": 34432,
+    "dataset_identity_checked": true
+  }
+]

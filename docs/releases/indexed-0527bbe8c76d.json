@@ -1,0 +1,25 @@
+{
+  "release": "indexed-0527bbe8c76d",
+  "image": "docker.io/library/cvtailor@sha256:7a066d007cce5755b107b9928b5dcdbef38f6fd56c8c1cc174d7be483afb95c9",
+  "base_image": "ghcr.io/rafalbanas/ai-resume-tailoring-platform@sha256:1e05cdcd74da8981ec439b54f5ab84180f1184f6c21607a2337e8391940055e1",
+  "files": {
+    "app/services/ollama_provider.py": "da905eff5a6469e4407acf34fa702da74aec4eeddefefe5bf0315c14d9acfe65",
+    "app/services/source_classification.py": "35beb5521934a545cb053249bbbb80ca7fc6bb4793c5e4223567e1581fc344b3",
+    "app/services/ollama_analysis.py": "dcba0b7ec48e8fb61e7f095d46839b9d85e8b0eccf51c89f045cf2a3747898a6",
+    "app/services/resilient_provider.py": "2494f6c75c8f70c0da717214762ef003599e87f99266a18bc6c700414aeab5be",
+    "app/services/gemini_provider.py": "e094e9694ac36280d5610e9311aaf985dd9e9bc7c24d1e9a10e26c54ded33162",
+    "app/services/grounded_requirements.py": "a4c6c68722c4957d6ed4cf675e89a933a450505fe1b82bada77bfc39a2b385d3",
+    "app/services/ai_provider.py": "fa84c8a50d43386d1705996a46db30cf5769881bd213ae402d06d30cf2799ddb",
+    "app/services/indexed_analysis.py": "2dcc62f468863eaf52c13ccd48bfb29cdcdcca8c414f7962267f0325bbdaf35e",
+    "app/services/semantic_requirements.py": "b1761d04d626e7d3326d832644c2bc894236d95f506ceead2e7f7faf56d22119",
+    "app/services/job_extractors/__init__.py": "f79c24e150f85c9d474b6c7ce2922fc95b604a83fd8af217ba57274c330415f2",
+    "templates/analysis.html": "e5cd95b2df86c2abc6980c965b5b1203ad568290ed7eb487132c0c7bbe6b216a"
+  },
+  "validation": {
+    "unit_tests": 218,
+    "production_base_tests": 166,
+    "live_gemini": "Public reported job with synthetic profile: 9 mandatory, 5 preferred, 7 duties, reliable before and after second validation.",
+    "live_import": "NFJ entrypoint URL imported as canonical URL, title Trainee Data Engineer, 2905 source characters.",
+    "image_smoke": "24 section permutations, model inventory, report rendering."
+  }
+}

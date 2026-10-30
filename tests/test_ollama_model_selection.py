@@ -19,7 +19,7 @@ def provider_with_models(limit=131072):
         if request.url.path == "/api/show":
             return httpx.Response(200, json={"model_info": {"qwen.context_length": limit}})
         raise AssertionError(request.url)
-    return OllamaProvider(Settings(_env_file=None), transport=httpx.MockTransport(handle))
+    return OllamaProvider(Settings(_env_file=None, ollama_tokenizer_path=""), transport=httpx.MockTransport(handle))
 
 
 @pytest.mark.asyncio

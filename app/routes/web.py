@@ -140,7 +140,8 @@ async def clean_job_text(request: Request, payload: JobTextRequest):
 
 
 @router.get("/", response_class=HTMLResponse)
-async def index(request: Request, from_task: str | None = None, from_draft: str | None = None):
+async def index(request: Request, from_task: str | None = None, from_draft: str | None = None,
+                from_cv: str | None = None):
     guard(request)
     default_provider = getattr(request.app.state.settings, "active_llm_provider", "ollama")
     form_data = {
@@ -152,6 +153,9 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
         "tailoring_level": 0.0,
         "selected_ollama_model": "",
         "ollama_context": 65536,
+        "workflow": "job",
+        "source_cv": "",
+        "cv_name": "",
     }
     if from_task:
         task = request.app.state.task_manager.get_task(from_task)
@@ -165,6 +169,8 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
             form_data["selected_ollama_model"] = task.payload.get("ollama_model", "")
             form_data["ollama_context"] = task.payload.get("ollama_context", 32768)
+            form_data.update({k: job_payload.get(k, "") for k in
+                              ("workflow", "custom_instructions", "cv_name", "source_cv")})
 
     elif from_draft:
         try:
@@ -173,7 +179,17 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             raise HTTPException(status_code=404, detail="Analysis draft not found") from None
         form_data.update(job.model_dump(mode='json'))
 
+    elif from_cv:
+        try:
+            job, _, _, metadata = request.app.state.storage.load_application(from_cv)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(404, "Saved CV not found") from exc
+        form_data.update(job.model_dump(mode="json"))
+        form_data["source_cv"] = from_cv
+        form_data["cv_name"] = metadata.get("cv_name", job.cv_name or job.role)
+
     form_data.update(await ollama_model_options(request))
+    form_data["saved_cvs"] = request.app.state.storage.history()
     return request.app.state.templates.TemplateResponse(
         request=request, name="index.html", context=context(request, **form_data)
     )
@@ -182,32 +198,48 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
 @router.post("/analyze")
 async def analyze(
     request: Request,
-    company: Annotated[str, Form()],
-    role: Annotated[str, Form()],
-    job_description: Annotated[str, Form()],
     csrf_token: Annotated[str, Form()],
+    company: Annotated[str, Form()] = "",
+    role: Annotated[str, Form()] = "",
+    job_description: Annotated[str, Form()] = "",
     job_url: Annotated[str, Form()] = "",
     llm_provider: Annotated[str, Form()] = "auto",
     ollama_model: Annotated[str, Form(max_length=200)] = "",
     ollama_context: Annotated[int, Form(ge=32768, le=131072)] = 65536,
     tailoring_level: Annotated[float, Form(ge=0, le=1)] = 0.0,
+    workflow: Annotated[Literal["job", "custom"], Form()] = "job",
+    cv_name: Annotated[str, Form(max_length=150)] = "",
+    source_cv: Annotated[str, Form(max_length=241)] = "",
 ):
     guard(request)
     limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     if len(job_description) > request.app.state.settings.max_job_description_chars:
-        raise HTTPException(status_code=413, detail="Job description is too long")
+        raise HTTPException(status_code=413, detail="CV instructions are too long" if workflow == "custom" else "Job description is too long")
     if ollama_context not in {32768, 65536, 98304, 131072}:
         raise HTTPException(status_code=422, detail="Choose a context of 32768, 65536, 98304 or 131072 tokens")
     try:
-        job = JobRequest(company=company, role=role, job_url=job_url or None, job_description=job_description,
+        job = JobRequest(company=company if workflow == "job" else "Custom CV",
+                         role=role.strip() if workflow == "job" else cv_name.strip() or "Custom CV",
+                         job_url=(job_url or None) if workflow == "job" else None,
+                         job_description=job_description if workflow == "job" else "",
+                         custom_instructions=job_description if workflow == "custom" else "",
+                         workflow=workflow, cv_name=cv_name, source_cv=source_cv,
                          tailoring_level=tailoring_level)
+        if source_cv:
+            request.app.state.storage.load_application(source_cv)
+    except (OSError, KeyError) as exc:
+        raise HTTPException(404, "Selected saved CV is unavailable. Choose another source.") from exc
     except ValidationError:
         return request.app.state.templates.TemplateResponse(
             request=request, name="index.html",
             context=context(
                 request,
-                error="Check the form fields and paste a complete job description.",
+                 error=("Enter at least 10 characters of CV instructions and a name up to 150 characters."
+                        if workflow == "custom" else "Check the form fields and paste a complete job description."),
+                 workflow=workflow, cv_name=cv_name, source_cv=source_cv,
+                 custom_instructions=job_description if workflow == "custom" else "",
+                 saved_cvs=request.app.state.storage.history(),
                 company=company,
                 role=role,
                 job_description=job_description,
@@ -232,6 +264,7 @@ async def analyze(
         ollama_model=ollama_model if llm_provider in {"auto", "ollama"} else "",
         ollama_context=ollama_context if llm_provider in {"auto", "ollama"} else 32768,
         tailoring_level=tailoring_level,
+        workflow=workflow, cv_name=cv_name, source_cv=source_cv,
     )
 
     task = await run_in_threadpool(request.app.state.task_manager.find_active_by_idempotency_key, key)
@@ -396,12 +429,21 @@ async def analysis_view(request: Request, draft_id: str):
     except FileNotFoundError:
         return draft_error_response(request, missing=True)
     except (DraftDataError, json.JSONDecodeError, ValidationError):
-        logger.exception("Could not open saved draft %s", draft_id)
+        logger.exception("Could not open draft %s", draft_id)
         return draft_error_response(request, missing=False)
-    checked = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis,
-        review_key=request.app.state.settings.csrf_secret).validate(response.resume, job).resume
+    validation = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis,
+        review_key=request.app.state.settings.csrf_secret).validate(response.resume, job)
+    checked = validation.resume
     review = summary_review(checked, request.app.state.profile, request.app.state.settings.csrf_secret,
         account_context(request.app.state.auth_store.username, 'draft', draft_id))
+    if job.workflow == "custom":
+        resume_html = await cpu_work(request, request.app.state.pdf_generator.render_preview,
+                                    checked, request.app.state.profile, template_name="ats_classic")
+        return request.app.state.templates.TemplateResponse(
+            request=request, name="custom_cv_draft.html", context=context(
+                request, job=job, draft_id=draft_id, resume_html=resume_html,
+                summary_review=review, validation_warnings=validation.warnings,
+                provider_used=response.provider_used, model_used=response.model_used))
     return request.app.state.templates.TemplateResponse(
         request=request, name="analysis.html",
         context=context(
@@ -452,7 +494,8 @@ async def save_analysis_evidence(request: Request, draft_id: str):
 @router.post("/generate/{draft_id}")
 async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()],
                    template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic",
-                   summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = ''):
+                    summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = '',
+                    cv_name: Annotated[str, Form(max_length=150)] = ''):
     guard(request)
     limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
@@ -461,8 +504,10 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     except FileNotFoundError:
         return draft_error_response(request, missing=True)
     except (DraftDataError, json.JSONDecodeError, ValidationError):
-        logger.exception("Could not open saved draft %s", draft_id)
+        logger.exception("Could not generate from draft %s", draft_id)
         return draft_error_response(request, missing=False)
+    if job.workflow == "custom" and cv_name.strip():
+        job.cv_name = cv_name.strip()
     started = time.perf_counter()
     validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
     result = validator.validate(response.resume, job)
@@ -477,7 +522,7 @@ async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, F
     try:
         fitted_resume, layout_warnings = await cpu_work(request, request.app.state.pdf_generator.fit_resume,
             result.resume, request.app.state.profile, layout_guide, template_name=template_name,
-            job_text=f"{job.role}\n{job.job_description}",
+            job_text=f"{job.role}\n{job.relevance_text}",
             one_page=template_name == "modern_sidebar", fact_validator=validator,
         )
     except ValueError as exc:
@@ -854,6 +899,26 @@ async def history(request: Request):
     )
 
 
+@router.post("/preview/{slug}/version/{action}")
+async def manage_cv_version(request: Request, slug: str, action: Literal['rename', 'duplicate'],
+                            csrf_token: Annotated[str, Form()], cv_name: Annotated[str, Form()] = ''):
+    guard(request)
+    limit_request(request)
+    validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ''),
+                  request.app.state.settings.csrf_secret)
+    try:
+        request.app.state.storage.load_application(slug)
+        if action == 'rename':
+            request.app.state.storage.rename_application(slug, cv_name)
+        else:
+            slug = request.app.state.storage.duplicate_application(slug)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, 'Saved CV not found') from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/preview/{slug}", status_code=303)
+
+
 @router.post("/history/{slug}/delete")
 async def delete_history_item(request: Request, slug: str, csrf_token: Annotated[str, Form()]):
     guard(request)
@@ -1050,8 +1115,29 @@ async def candidate_profile(request: Request):
             request,
             has_photo=request.app.state.profile_photo.exists(),
             interests=request.app.state.profile.interests,
+            personal=request.app.state.profile.personal,
         ),
     )
+
+
+@router.post("/profile/contact")
+async def save_profile_contact(request: Request, email: Annotated[str, Form()], csrf_token: Annotated[str, Form()]):
+    guard(request)
+    limit_request(request)
+    validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
+    from email_validator import validate_email
+
+    try:
+        address = validate_email(email.strip(), check_deliverability=False).normalized
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Enter one valid email address.") from exc
+    profile = request.app.state.profile
+    updated_profile = profile.model_copy(update={"personal": profile.personal.model_copy(update={"email": address})})
+    save_master_profile(updated_profile, request.app.state.settings)
+    request.app.state.profile = updated_profile
+    request.app.state.skills_bank.profile = updated_profile
+    request.app.state.skills_bank.catalog = FactCatalog(updated_profile)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/profile", status_code=303)
 
 
 @router.post("/profile/interests/add")

@@ -116,7 +116,12 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
 
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        data = (analysis_payload() if len(requests) == 1 else resume_payload() if len(requests) == 2
+        body = json.loads(request.content)
+        passages = json.loads(body['contents'][0]['parts'][0]['text']).get('passages', [])
+        indexed = {'rows': [dict(p=p['id'], k='context') if p['text'] in {'Python Engineer', 'Requirements'} else
+                           dict(p=p['id'], k='requirement', n=p['text'], priority='mandatory',
+                                s='missing', f=[], why='Not confirmed in supplied facts.') for p in passages]}
+        data = (indexed if len(requests) == 1 else resume_payload() if len(requests) == 2
                 else {'supported': False, 'issues': ['Unheld engineer role and unsupported architecture experience.']})
         return httpx.Response(200, json=gemini_response_envelope(data))
 
@@ -125,7 +130,8 @@ async def test_gemini_returns_valid_analysis_and_tailored_resume(profile):
 
     assert result.provider_used == "gemini"
     assert result.model_used == "gemini-3.1-flash-lite"
-    assert result.analysis.strong_matches == ["Python", "Linux"]
+    assert result.analysis.is_reliable
+    assert len(result.analysis.requirements) == 4
     assert result.resume.core_skills == ["Python", "Linux"]
     assert len(requests) == 3  # Includes the semantic review of a non-verbatim summary.
 

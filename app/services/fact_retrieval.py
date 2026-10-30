@@ -84,7 +84,7 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
     requirements = [*analysis.requirements, *analysis.role_competencies]
     queries = [(r.name, 2.0 if r.priority == "mandatory" else 1.0) for r in requirements]
     if not queries:
-        queries = [(job.job_description, 1.0)]
+        queries = [(job.relevance_text, 1.0)]
     queries.append((job.role, 0.5))
     mode = "ranked"
     try:

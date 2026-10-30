@@ -29,6 +29,7 @@ data/.drafts/
 data/.diagnostics/
 data/tasks/
 data/generated/
+**/custom_cvs/
 *.pdf
 *.docx
 

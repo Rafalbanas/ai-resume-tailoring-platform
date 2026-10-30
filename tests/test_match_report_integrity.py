@@ -53,6 +53,114 @@ def analyze(text, profile=None, rows=None):
     return AnalysisValidator(profile or support_profile()).validate(draft, text, semantic=rows is not None)
 
 
+SAAS_SOURCE = '''Technical Implementation Specialist – SaaS Integrations
+Responsibilities
+Configure, implement, and troubleshoot SaaS integrations using REST APIs, webhooks, and JSON.
+Support customer-facing technical implementations and software deployments.
+Required Technical Skills
+Minimum 2 years of hands-on experience in SaaS/software technical roles, including L2/L3 Support, Technical Implementation, Integrations, or Technical Consulting.
+REST API integration and troubleshooting.
+Webhooks and event-driven integrations.
+JSON data formats and API payloads.
+Authentication and identity management protocols.
+Technical troubleshooting and problem-solving.
+Customer-facing SaaS implementation experience.
+Jira, Asana, Trello, Monday.com, Notion, or similar project management tools.
+Professional Requirements
+Native-level English proficiency in written and spoken communication.
+Strong technical and non-technical communication skills.
+Experience independently leading customer integrations or deployments.
+Ability to translate complex technical concepts into clear explanations.
+Strong organizational skills and task ownership.
+Ability to work autonomously in an async-first remote environment.
+Professionalism, patience, and adaptability.
+ATS Keywords
+Technical Implementation Specialist, SaaS, REST API, Webhooks, JSON, Authentication, Identity Management, Jira.'''
+
+
+@pytest.mark.parametrize('formatted', [False, True])
+def test_saas_requirements_do_not_inherit_responsibility_section(formatted):
+    from app.services.job_sections import extract_sections
+
+    text = SAAS_SOURCE
+    if formatted:
+        for heading in ('Required Technical Skills', 'Professional Requirements', 'ATS Keywords'):
+            text = text.replace(heading, f'**{heading}:**')
+    units, headings = extract_sections(text)
+    assert len([u for u in units if u.category == 'mandatory']) == 15
+    assert len([u for u in units if u.category == 'responsibility']) == 2
+    assert units[-1].category == 'keywords'
+    assert len(headings) == 4
+    result = analyze(text)
+    assert result.requirements
+    assert result.scoring_counts['mandatory_groups'] == 15
+    assert len(result.responsibilities) == 2
+    assert any(c['category'] == 'keywords' for c in result.source_context)
+    assert not any('Technical Implementation Specialist, SaaS' in r.source_quote for r in result.requirements)
+
+
+def test_saas_keyword_list_cannot_be_promoted_by_model():
+    quote = SAAS_SOURCE.splitlines()[-1]
+    result = analyze(SAAS_SOURCE, rows=[JobRequirement(
+        name='Webhooks', source_quote=quote, status='missing', reason='Not documented',
+    )])
+    assert not any(r.source_quote == quote for r in result.requirements)
+    assert result.validation_corrections
+
+
+def test_full_lancesoft_markdown_source_preserves_overview_for_assessment():
+    from app.services.job_sections import extract_sections
+
+    text = '''# Technical Implementation Specialist – SaaS Integrations
+
+**Company:** LanceSoft (Recruitment for an external client)
+**Location:** Poland – Fully Remote
+**Contract Duration:** 12 months
+**Position:** Technical Implementation Specialist
+
+## Role Overview
+
+We are seeking a Technical Implementation Specialist with experience in SaaS platforms, technical support, API integrations, and customer-facing implementation projects.
+
+The role focuses on implementing, configuring, troubleshooting, and supporting integrations between SaaS applications and external customer systems. The successful candidate will work independently, act as a primary technical point of contact, and communicate effectively with both technical and non-technical stakeholders.
+
+## Key Responsibilities
+
+- Configure, implement, and troubleshoot SaaS integrations using REST APIs, webhooks, and JSON.
+- Support customer-facing technical implementations and software deployments.
+- Troubleshoot integration issues involving authentication, identity management, API communication, and application configuration.
+- Act as the primary technical contact for external customers during integrations and deployments.
+- Investigate complex technical problems and communicate solutions clearly.
+- Coordinate implementation activities and track progress using project management tools.
+- Provide technical guidance to customers and non-technical stakeholders.
+- Work independently in a remote, asynchronous environment with changing priorities.
+
+'''
+    # The technical/professional bullets are the same 15 supplied conditions.
+    requirements = SAAS_SOURCE[SAAS_SOURCE.index('Required Technical Skills'):]
+    for heading in ('Required Technical Skills', 'Professional Requirements', 'ATS Keywords'):
+        requirements = requirements.replace(heading, f'## {heading}')
+    requirements = requirements.replace(SAAS_SOURCE.splitlines()[-1],
+        'Technical Implementation Specialist, SaaS, Software Integrations, REST API, API Troubleshooting, Webhooks, JSON, Authentication, Identity Management, Technical Support L2, Technical Support L3, Technical Consulting, Customer Integrations, SaaS Implementation, Software Deployment, Customer-Facing Technical Support, Jira, Project Management, Incident Troubleshooting, Technical Communication, Remote Collaboration, Stakeholder Management, Technical Problem Solving.')
+    lines = requirements.splitlines()
+    text += '\n'.join(line if line.startswith('## ') or index == len(lines) - 1 else '- ' + line
+                      for index, line in enumerate(lines))
+    units, _ = extract_sections(text)
+    assert len([u for u in units if u.category == 'mandatory']) == 15
+    assert len([u for u in units if u.category == 'responsibility']) == 7
+    assert any(u.category == 'employment' and 'Work independently' in u.quote for u in units)
+    overview = [u for u in units if u.section == 'Role Overview']
+    assert len(overview) == 2
+    assert overview[0].uncertain
+    result = analyze(text)
+    assert len(result.responsibilities) == 7
+    assert any('Native-level English' in r.name for r in result.requirements)
+    assert any('Minimum 2 years' in r.name for r in result.requirements)
+    assert any(c['category'] == 'keywords' for c in result.source_context)
+    # An overview mentioning experience is not silently discarded as marketing.
+    assert any('We are seeking' in r.source_quote for r in result.requirements)
+
+
 @pytest.mark.parametrize('text', [PL, EN])
 def test_section_transition_excludes_context_from_scoring(text):
     result = analyze(text)
@@ -131,7 +239,8 @@ def test_compact_inventory_uses_same_context_boundaries():
 
     inventory = AnalysisInventory.build(JobRequest(company='Synthetic', role='IT', job_description=PL), support_profile())
     passages = list(inventory.passages.values())
-    assert next(p for p in passages if 'Oferujemy' in p['text'])['context_only']
+    assert not next(p for p in passages if 'Oferujemy' in p['text'])['context_only']
+    assert passages[0]['context_only']
     assert next(p for p in passages if 'Budżet' in p['text'])['hints'] == ['benefits']
     assert next(p for p in passages if 'wizytami' in p['text'])['hints'] == ['employment']
 

@@ -6,6 +6,20 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from playwright.sync_api import sync_playwright
 
 
+@pytest.mark.parametrize('workflow', ['job', 'custom'])
+def test_preview_workflow_is_rendered_from_saved_metadata_without_job(workflow):
+    env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(['html']))
+    html = env.get_template('resume_preview.html').render(
+        request=SimpleNamespace(state=SimpleNamespace(authenticated=False)),
+        metadata={'company': 'Synthetic', 'role': 'Support', 'workflow': workflow,
+                  'cv_name': 'Saved CV name', 'match_level': 'LIMITED', 'recommendation': 'REVIEW'},
+        slug='synthetic', asset_version='test', csrf_token='synthetic',
+        resume_html='<p>CV preview</p>', photo_available=False, pre_fit_diff=None)
+    assert 'value="Saved CV name"' in html
+    assert ('No job-match assessment' in html) == (workflow == 'custom')
+    assert ('Qualification match:' in html) == (workflow == 'job')
+
+
 @pytest.mark.parametrize("width", [360, 768, 1280])
 def test_review_statuses_wrap_and_limited_keeps_downloads(width):
     env = Environment(loader=FileSystemLoader("templates"), autoescape=select_autoescape(["html"]))

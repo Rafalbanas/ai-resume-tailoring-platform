@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, PrivateAttr, field_validator, model_validator
 
 
 class MatchLevel(StrEnum):
@@ -75,14 +75,31 @@ class JobRequirement(BaseModel):
 
 
 class JobRequest(BaseModel):
+    _source_resume: dict | None = PrivateAttr(default=None)
     company: str = Field(min_length=1, max_length=150)
     role: str = Field(min_length=1, max_length=150)
     job_url: HttpUrl | None = None
-    job_description: str = Field(min_length=30, max_length=30_000)
+    job_description: str = Field(default="", max_length=30_000)
     tailoring_level: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
+    workflow: Literal["job", "custom"] = "job"
+    custom_instructions: str = Field(default="", max_length=30_000)
+    cv_name: str = Field(default="", max_length=150)
+    source_cv: str = Field(default="", max_length=241, pattern=r"^[a-z0-9_-]*$")
+
+    @property
+    def relevance_text(self) -> str:
+        return self.custom_instructions if self.workflow == "custom" else self.job_description
+
+    @model_validator(mode="after")
+    def validate_workflow(self):
+        if self.workflow == "job" and len(self.job_description) < 30:
+            raise ValueError("Paste at least 30 characters of the job description.")
+        if self.workflow == "custom" and len(self.custom_instructions) < 10:
+            raise ValueError("Describe your CV instructions in at least 10 characters.")
+        return self
 
 
-    @field_validator("company", "role", "job_description", mode="before")
+    @field_validator("company", "role", "job_description", "custom_instructions", "cv_name", mode="before")
     @classmethod
     def strip_text(cls, value):
         return value.strip() if isinstance(value, str) else value

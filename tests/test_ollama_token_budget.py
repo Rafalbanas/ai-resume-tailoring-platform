@@ -29,12 +29,12 @@ def body_rows(body):
             "p": p["id"],
             "k": "requirement",
             "n": p["text"],
-            "priority": ("preferred" if "preferred" in p["hints"] else "mandatory"),
+            "priority": "mandatory",
             "s": "missing",
             "f": [],
             "why": "Not confirmed in the supplied profile.",
         }
-        if set(p["hints"]) & {"mandatory", "preferred", "nice_to_have"}
+        if p["text"].startswith("Experience with Tool") or p["text"] in {"Python and Docker", "Python or Docker"}
         else {"p": p["id"], "k": "context"}
         for p in payload["passages"]
     ]
@@ -65,7 +65,7 @@ async def test_adaptive_complete_analysis_counts_and_bounded_calls(count, profil
     assert len(requests) == (1 if count <= 22 else 2)
     ids = [p["id"] for r in requests for p in json.loads(r["messages"][1]["content"])["passages"]]
     assert len(ids) == len(set(ids)) == count + 2
-    assert all(r["options"] == {"temperature": 0, "num_predict": 8192, "num_ctx": 32768} for r in requests)
+    assert all(r["options"] == {"temperature": 0, "num_predict": 6144, "num_ctx": 32768} for r in requests)
     assert all(r["think"] is False and r["stream"] is False for r in requests)
     assert all(len(json.dumps(r["format"])) < 12000 for r in requests)
 
@@ -405,11 +405,13 @@ def test_schema_cannot_classify_qualifications_or_unfamiliar_tenure_as_context(p
     inv = AnalysisInventory.build(job, profile)
     schema = inv.schema(list(inv.passages))
     assert schema["$defs"]["QualificationRow"]["properties"]["k"]["enum"] == ["requirement"]
-    assert schema["$defs"]["CapabilityRow"]["properties"]["k"]["enum"] == ["requirement", "competency"]
-    assert "P3" in schema["$defs"]["QualificationRow"]["properties"]["p"]["enum"]
-    assert "P5" in schema["$defs"]["CapabilityRow"]["properties"]["p"]["enum"]
-    assert "P3" not in schema["$defs"]["OtherRow"]["properties"]["p"]["enum"]
+    # The explicit tenure clause is protected regardless of its heading.
+    assert "P5" in schema["$defs"]["QualificationRow"]["properties"]["p"]["enum"]
+    # Bare product names need semantic interpretation; a preceding heading is
+    # advisory and must not bind their category in the response grammar.
+    assert "P3" in schema["$defs"]["OtherRow"]["properties"]["p"]["enum"]
     assert "P5" not in schema["$defs"]["OtherRow"]["properties"]["p"]["enum"]
+
 
 
 def test_targeted_recovery_uses_flat_schema_and_keeps_reference_ids(profile):

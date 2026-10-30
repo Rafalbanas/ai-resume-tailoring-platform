@@ -153,7 +153,10 @@ async def test_both_providers_send_retrieved_catalog_and_keep_trace(candidate, m
     trace = WorkflowResponse(analysis=analysis, resume=resume).retrieval_context
     assert trace['mode'] == 'ranked'
     assert trace['source_snapshot'] == seen['payload']['source_catalog']
-    assert 'source_snapshot' not in seen['payload']['retrieval']
+    if provider_name == 'ollama':
+        assert 'retrieval' not in seen['payload']
+    else:
+        assert 'source_snapshot' not in seen['payload']['retrieval']
     candidate.projects[0].facts.clear()
     assert any('FastAPI' in e['fact'] for e in trace['source_snapshot'])
 

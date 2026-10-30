@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -18,6 +19,20 @@ from app.services.job_extractors.theprotocol import TheProtocolExtractor, Unsupp
 from app.services.job_extractors.workday import WorkdayExtractor
 
 logger = logging.getLogger(__name__)
+
+
+def canonical_job_url(url: str) -> str:
+    """Map the known NFJ entrypoint alias; preserve the offer path and parameters."""
+    try:
+        parts = urlsplit(url)
+        if (parts.hostname or '').casefold() != 'entrypoint-prod.nofluffjobs.com' or parts.username or parts.password:
+            return url
+        if parts.scheme.casefold() not in {'http', 'https'}:
+            return url
+        port = f':{parts.port}' if parts.port is not None else ''
+        return urlunsplit((parts.scheme, 'nofluffjobs.com' + port, parts.path, parts.query, parts.fragment))
+    except ValueError:
+        return url  # The existing URL guard reports malformed or unsafe addresses.
 
 
 class JobExtractorService:
@@ -83,6 +98,7 @@ class JobExtractorService:
         )
 
     async def extract(self, url: str) -> JobExtraction:
+        url = canonical_job_url(url)
         source = url
         adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
         metadata = None

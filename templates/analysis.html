@@ -27,7 +27,8 @@
 </div>
 {% if fallback_used %}
 <div class="alert fallback-alert" role="status">
-  <strong>Automatic Fallback Activated:</strong> {{ (fallback_reason or '').split('. Automatically recovered using')[0] }}
+  <strong>Automatic Fallback Activated:</strong> Analysis switched to {{ provider_used|default("the fallback provider") }}.
+  <details><summary>Technical details</summary><p>{{ (fallback_reason or '').split('. Automatically recovered using')[0] }}</p></details>
   {% if not analysis.is_reliable or analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' %}
   <p>The fallback analysis is also incomplete. Recovery did not produce a reliable assessment; review the source and retry.</p>
   {% else %}<p>Fallback source coverage checked. Classification and evidence validation are assessed separately; this does not guarantee correctness.</p>{% endif %}
@@ -36,11 +37,11 @@
 {% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
 <div class="alert alert-warning" role="alert" style="margin: 1rem 0; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 1rem; border-radius: 8px;">
   <strong>⚠️ Incomplete analysis — review required</strong>
-  <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
+  <p style="margin: 0.5rem 0 0;">The analysis could not be validated. See the issues below, then retry.</p>
 </div>
 {% endif %}
 {% if analysis.validation_version|default(0) < 2 %}<p class="alert alert-warning">Saved report uses older validation rules. Run a new analysis to check sections, evidence and compound requirements. Saved reports and CVs are unchanged.</p>{% endif %}
-{% if analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
+{% if analysis.completeness_issues or analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.completeness_issues + analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
 {% if analysis.validation_corrections %}<details class="card"><summary>Corrections applied during validation</summary>{% for correction in analysis.validation_corrections %}<p>{{ correction }}</p>{% endfor %}</details>{% endif %}
 <section class="card">
   <h2>Adjust job tailoring before export</h2>
@@ -102,11 +103,13 @@
 <p class="alert">No qualification requirements were assessed. Review the source text and the role competencies below.</p>
 {% endif %}
 {% if analysis.analysis_language != 'en' %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
+{% if analysis.is_reliable %}
 <section class="recommendation">
   <p class="eyebrow">REASONING</p>
   <p>{{ analysis.reasoning_summary }}</p>
 </section>
 
+{% endif %}
 {% include '_token_usage.html' %}
 {% if analysis.requirements %}
 <section class="card requirements-breakdown" style="margin-top: 1.5rem;">

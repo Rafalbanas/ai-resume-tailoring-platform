@@ -182,6 +182,9 @@ class Storage:
         if pre_fit_resume:
             (folder / "pre_fit_resume.json").write_text(pre_fit_resume.model_dump_json(indent=2), encoding="utf-8")
         metadata = {
+            "workflow": job.workflow,
+            "cv_name": job.cv_name or (job.role if job.workflow == "custom" else f"{job.company} · {job.role}"),
+            "source_cv": job.source_cv,
             "company": job.company,
             "role": job.role,
             "job_url": str(job.job_url) if job.job_url else None,
@@ -260,6 +263,58 @@ class Storage:
             os.replace(temporary, path)
         finally:
             Path(temporary).unlink(missing_ok=True)
+
+    def rename_application(self, slug: str, name: str) -> None:
+        """Renames the application by updating the cv_name in metadata."""
+        name = name.strip()
+        if not (1 <= len(name) <= 150):
+            raise ValueError("Name must be between 1 and 150 characters.")
+
+        folder = self.application_folder(slug)
+        path = folder / 'metadata.json'
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        metadata['cv_name'] = name
+
+        fd, temporary = tempfile.mkstemp(dir=folder, prefix='.rename-')
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(metadata, stream, indent=2)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    def duplicate_application(self, slug: str) -> str:
+        """Duplicates the application folder and metadata, returning the new slug."""
+        source_folder = self.application_folder(slug)
+        metadata = json.loads((source_folder / "metadata.json").read_text(encoding="utf-8"))
+
+        new_slug = f"{slug[:207]}-{uuid4().hex}"
+
+        original_name = metadata.get("cv_name", "resume")
+        new_name = f"{original_name} (copy)"
+        if len(new_name) > 150:
+            new_name = new_name[:150]
+
+        tmp_dir = Path(tempfile.mkdtemp(dir=self.generated_dir, prefix=".duplicate_"))
+        try:
+            # mkdtemp already creates the directory, so copytree needs dirs_exist_ok=True
+            shutil.copytree(source_folder, tmp_dir, dirs_exist_ok=True)
+
+            tmp_metadata_path = tmp_dir / "metadata.json"
+            tmp_metadata = json.loads(tmp_metadata_path.read_text(encoding="utf-8"))
+            tmp_metadata["cv_name"] = new_name
+            tmp_metadata.pop("summary_confirmation", None)
+            tmp_metadata.pop("summary_confirmed_at", None)
+
+            with open(tmp_metadata_path, "w", encoding="utf-8") as f:
+                json.dump(tmp_metadata, f, indent=2)
+
+            final_path = self.generated_dir / new_slug
+            os.replace(tmp_dir, final_path)
+            return new_slug
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def application_folder(self, slug: str) -> Path:
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,240}", slug):
@@ -372,6 +427,8 @@ class Storage:
     def history(self) -> list[dict]:
         rows = []
         for metadata_path in self.generated_dir.glob("*/metadata.json"):
+            if metadata_path.parent.name.startswith('.'):
+                continue
             try:
                 item = json.loads(metadata_path.read_text(encoding="utf-8"))
                 item["slug"] = metadata_path.parent.name
@@ -538,4 +595,3 @@ def compute_pre_fit_diff(pre_fit: TailoredResume | None, fitted: TailoredResume)
         "fitted_summary_len": fit_sum_len,
         "total_items": total_items,
     }
-

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Custom CV library · CV Tailor{% endblock %}
+{% block content %}
+<div class="preview-head"><h1>Custom CV / AI Editor</h1><a class="primary button" href="{{ app_root_path|default('') }}/">Create or import a CV</a></div>
+<p>Pasted CVs stay independent of your master profile. Accepted changes are saved automatically. Master-based custom CVs are available in <a href="{{ app_root_path|default('') }}/history">History</a>.</p>
+{% for doc in documents %}<section class="card"><h2><a href="{{ app_root_path|default('') }}/custom-cvs/{{ doc.id }}">{{ doc.name }}</a></h2><p>Revision {{ doc.revision }} · {{ doc.created_at[:10] }}</p></section>{% else %}<p>No pasted CVs yet. Select Custom CV, then Paste Existing CV.</p>{% endfor %}
+{% endblock %}

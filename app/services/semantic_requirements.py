@@ -17,7 +17,7 @@ from app.services.job_sections import clean_source_line
 def source_components(text):
     """Parse short named lists; retain qualifiers and leave mixed logic for review."""
     examples = re.search(r'\b(?:such as|for example|e\.g\.|takich jak|np\.)\s*:?', text, re.I)
-    prefix = re.match(r'^(?:(?:.*?\b(?:of|with|in|using|handling))|znajomość|doświadczenie w)\s+', text, re.I)
+    prefix = re.match(r'^(?:(?:.*?\b(?:of|with|in|using|handling))|(?:praktyczn\w*\s+)?znajomoś\w*|doświadczenie w)\s+', text, re.I)
     body = text[examples.end():] if examples else text[prefix.end():] if prefix else text
     body = body.strip(' .;()')
     has_and = bool(re.search(r'\band\b|\boraz\b|\bi\b|\s[+&]\s', body, re.I))
@@ -115,7 +115,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     from app.services.competency_scope import scoped_match
     from app.services.evidence_strength import CI
     scoped = None if aggregate else scoped_match(validator.matcher, item.name)
-    if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Entra ID|Intune)\b', item.name, re.I)):
+    if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia)\b', item.name, re.I)):
         scoped = validator.matcher.match(item.name)
     original_status, original_ids = item.status, list(item.source_fact_ids)
     if aggregate and item.status == Status.STRONG:
@@ -195,15 +195,15 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     return entries
 
 
-def validated_model_requirements(validator, candidate, job_text, units, fallback):
+def validated_model_requirements(validator, candidate, job_text, units, fallback, *, role=False, classified=False):
     from app.services.job_sections import REQUIREMENT_SIGNAL, clean_source_line, extract_sections
 
     def heading_key(value):
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
 
-    headings = {heading_key(s) for s in extract_sections(job_text)[1]}
+    headings = set() if classified else {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
-    excluded = {"benefits", "employment", "recruitment", "organization", "keywords", "responsibility", "competency"}
+    excluded = {"benefits", "employment", "recruitment", "keywords", "organization", "responsibility", "competency", "context"}
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
@@ -216,8 +216,9 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             # Keep its body available for the model instead of scoring the title.
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
-        if all(
+        if not classified and all(
             (any(u.category in excluded and clean_source_line(quote) in clean_source_line(u.quote) for u in units) or clean_source_line(quote) in context_text)
+            and not (role and any(u.category in {"competency", "responsibility"} and quote in [u.quote, *u.supporting_quotes] for u in units))
             and not any(u.category in qualification_categories and clean_source_line(quote) in clean_source_line(u.quote) for u in units)
             for quote in quotes
         ):

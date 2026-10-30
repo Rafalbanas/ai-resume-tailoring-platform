@@ -53,10 +53,10 @@ async def process(request: Request):
             value = json.loads(body)
             if not isinstance(value, dict) or not isinstance(value.get('payload'), dict):
                 raise ValueError('Invalid processing envelope')
-            if value.get('operation') not in {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'browser', 'check'}:
+            if value.get('operation') not in {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'browser', 'check', 'text_cv_export'}:
                 raise HTTPException(400, 'Unsupported operation')
             role = os.environ.get('PROCESSING_ROLE', 'full')
-            allowed = {'browser', 'check'} if role == 'browser' else {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'check'}
+            allowed = {'browser', 'check'} if role == 'browser' else {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'check', 'text_cv_export'}
             if role not in {'full', 'documents', 'browser'} or role != 'full' and value['operation'] not in allowed:
                 raise HTTPException(400, 'Operation is not supported by this worker role')
             limit = 20 if value['operation'] in {'reference', 'browser'} else 60

@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
 from app.core.request_limits import RequestSizeMiddleware
 from app.core.security import FixedWindowLimiter, new_csrf_token, validate_csrf
+from app.routes.custom_cvs import router as custom_cv_router
 from app.routes.web import router
 from app.services.auth_store import AuthStore
 from app.services.diagnostics import DiagnosticLogStore
@@ -347,6 +348,7 @@ def create_app(settings=None, shared_account=False):
     application.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     application.middleware("http")(request_context)
     application.include_router(router)
+    application.include_router(custom_cv_router)
     if not shared_account:
         application.add_middleware(AccountRoutingMiddleware)
         application.add_middleware(ConfiguredSessionMiddleware, settings=settings)

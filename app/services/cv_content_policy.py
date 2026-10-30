@@ -23,7 +23,7 @@ def networking_terminology_issue(text: str) -> bool:
 
 def cv_catalog(profile, job):
     catalog = FactCatalog(profile)
-    posting = f"{job.role}\n{job.job_description}"
+    posting = f"{job.role}\n{job.relevance_text}"
 
     def allowed(entry):
         if internal_annotation(entry.text):

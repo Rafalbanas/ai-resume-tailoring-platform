@@ -71,6 +71,8 @@ class TailoredResume(BaseModel):
     certifications: list[ResumeCertification] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     selected_interest_ids: list[str] = Field(default_factory=list)
+    section_order: list[Literal['summary', 'skills', 'learning', 'languages', 'experience', 'education', 'projects', 'certifications', 'interests']] = Field(default_factory=list, max_length=9)
+    excluded_sections: list[Literal['summary', 'skills', 'learning', 'languages', 'experience', 'education', 'projects', 'certifications', 'interests']] = Field(default_factory=list, max_length=9)
 
 
 class WorkflowResponse(BaseModel):

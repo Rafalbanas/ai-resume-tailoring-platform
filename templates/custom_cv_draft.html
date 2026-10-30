@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Custom CV draft · CV Tailor{% endblock %}
+{% block content %}
+{% if request.query_params.get('export_busy') %}<div class="alert" role="alert">Several document exports are already waiting. Your draft is saved. Please try exporting again shortly.</div>{% endif %}
+<div class="preview-head"><div><p class="eyebrow">CUSTOM CV — REVIEW PROPOSAL</p><h1>{{ job.cv_name or job.role }}</h1><p>{{ provider_used }} · {{ model_used }} · Truth Lock active</p></div><a class="secondary button" href="{{ app_root_path|default('') }}/?from_draft={{ draft_id }}">Revise instructions / regenerate</a></div>
+<section class="card"><h2>Your instructions</h2><p class="preserve-whitespace">{{ job.custom_instructions }}</p><p>Previously saved CVs and the master profile remain unchanged. Accepting creates a separate saved version.</p>{% if job.source_cv %}<a href="{{ app_root_path|default('') }}/preview/{{ job.source_cv }}">Keep previous version</a>{% endif %}</section>
+{% if validation_warnings %}<details class="warnings"><summary>Source validation notes</summary><ul>{% for warning in validation_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+<form action="{{ app_root_path|default('') }}/generate/{{ draft_id }}" method="post" class="job-form" data-document-export><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>CV name<input name="cv_name" value="{{ job.cv_name or job.role }}" maxlength="150" required></label>{% include '_summary_review.html' %}<label>Resume layout<select name="template_name"><option value="ats_classic">ATS Classic</option><option value="modern_sidebar">Modern Sidebar</option></select></label><button class="primary" type="submit">Accept and save CV · PDF / DOCX</button></form>
+<div class="paper-frame">{{ resume_html|safe }}</div>
+{% endblock %}

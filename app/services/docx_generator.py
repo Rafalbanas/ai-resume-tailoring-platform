@@ -142,6 +142,25 @@ def _generate_docx_local(
     if getattr(resume, "interests", None):
         document.add_heading("Interests", level=1)
         document.add_paragraph(" • ".join(resume.interests))
+    # Reorder/hide existing section XML without rewriting verified content.
+    if resume.section_order or resume.excluded_sections:
+        names = {'Professional Summary': 'summary', 'Core Skills': 'skills', 'Currently learning': 'learning',
+                 'Languages': 'languages', 'Experience': 'experience', 'Education': 'education',
+                 'Selected Projects': 'projects', 'Certifications': 'certifications', 'Interests': 'interests'}
+        groups, active = {}, None
+        for paragraph in document.paragraphs:
+            if paragraph.style.name == 'Heading 1':
+                active = names.get(paragraph.text)
+            if active:
+                groups.setdefault(active, []).append(paragraph._p)
+        body = document._element.body
+        for elements in groups.values():
+            for element in elements:
+                body.remove(element)
+        for key in dict.fromkeys([*resume.section_order, *groups]):
+            if key not in resume.excluded_sections:
+                for element in groups.get(key, []):
+                    body.insert(len(body) - 1, element)
     section.footer_distance = Inches(0.25)
     if document.paragraphs:
         document.paragraphs[-1].paragraph_format.keep_with_next = True

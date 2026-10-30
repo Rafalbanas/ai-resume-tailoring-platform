@@ -20,7 +20,7 @@ class SourceUnit:
 
 
 PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
-MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
+MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
 NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
     re.I,
@@ -29,7 +29,7 @@ QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
     r'professional\s+requirements)\s*:?$', re.I,
 )
-DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??)\s*:?$', re.I)
+DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
@@ -79,7 +79,7 @@ def requirement_units(line: str, category: str, section: str, group: str) -> lis
             SourceUnit(' OR '.join(alternatives), line, 'preferred', 'Explicit preferred alternatives; other languages accepted', section, group + '_preferred',
                        operator='any', alternatives=alternatives, accepted_alternatives=['other programming languages']),
         ]
-    optional = re.search(r',\s*(?:preferably|preferred specialization)\b', line, re.I)
+    optional = re.search(r',\s*(?:preferably|preferred specialization|najlepiej)\b', line, re.I)
     if optional:
         # Keep optional detail in the quote, not as a mandatory constraint.
         return [SourceUnit(line[:optional.start()].strip(), line, category,
@@ -110,7 +110,7 @@ def requirement_units(line: str, category: str, section: str, group: str) -> lis
             unit.basis += '; combined technical scopes need review'
     elif re.search(r'\bor\b|and/or', line, re.I):
         unit.operator = 'any'
-    if '/' in line and not re.search(r'TCP/IP|CI/CD|and/or', line, re.I) and unit.operator == 'single':
+    if '/' in line and not re.search(r'TCP/IP|CI/CD|and/or|Windows\s+\d+/\d+', line, re.I) and unit.operator == 'single':
         unit.operator, unit.uncertain = 'ambiguous', True
         unit.basis += '; slash meaning needs review'
     from app.services.evidence_matching import required_level
@@ -215,7 +215,7 @@ def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
                 if category in {'mandatory', 'preferred', 'nice_to_have'} and PREFERENCE_MARKER.search(piece):
                     piece_category = 'nice_to_have' if re.search(r'\boptional\b', piece, re.I) else 'preferred'
                 basis = f'{piece_category.title()} section: {section}' if piece_category == category else 'Explicit optional condition in source text' if piece_category == 'nice_to_have' else 'Explicit preference in source text'
-                if category == 'mandatory' and re.search(r',\s*(?:preferably|preferred specialization)\b', piece, re.I):
+                if category == 'mandatory' and re.search(r',\s*(?:preferably|preferred specialization|najlepiej)\b', piece, re.I):
                     piece_category = category
                     basis = f'Mandatory section: {section}; the preferably clause is optional'
                 piece_group = group if re.search(r'\bCRM\b.*\band\b.*\bKCS\b', line, re.I) else group + f'_{piece_index}'

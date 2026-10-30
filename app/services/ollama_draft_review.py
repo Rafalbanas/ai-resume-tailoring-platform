@@ -141,6 +141,7 @@ async def review_draft(provider, resume, analysis, job, profile):
             schema["$defs"][name]["properties"]["id"]["enum"] = ids
     schema["$defs"]["GapDecision"]["properties"]["facts"]["items"]["enum"] = list(facts) or ["NO_EVIDENCE"]
     payload = {"stage": "review_draft", "job_description": job.job_description, "target_role": job.role,
+               "workflow": job.workflow, "custom_instructions": job.custom_instructions,
                "gaps": gaps, "bullets": bullets,
                "facts": {fid: {"source_id": e.source_id, "kind": e.kind, "owner": e.owner_name, "text": e.text}
                          for fid, e in facts.items()},
@@ -156,7 +157,9 @@ async def review_draft(provider, resume, analysis, job, profile):
                 {**payload, "stage": "review_draft_thinking"}, _think=True,
                 _reasoning_only=True, _completion_budget=THINKING_TOKEN_LIMIT)
             payload["review_notes"] = notes.notes
-            verdict = await provider._chat(DraftReview, REVIEW_PROMPT, payload,
+            verdict = await provider._chat(DraftReview, REVIEW_PROMPT +
+                 "\nFor custom workflow, judge relevance against custom_instructions instead of a job description. "
+                 "Instructions are presentation preferences, never evidence of candidate facts.", payload,
                 _think=False, _completion_budget=REVIEW_TOKEN_LIMIT-THINKING_TOKEN_LIMIT, _schema=schema)
         # Treat partial/duplicate/unknown verdicts as a failed optional review,
         # never as approval inferred from truncated JSON or an omitted decision.

@@ -26,7 +26,8 @@ message.
 Before inference, `/api/tags` rechecks availability and `/api/show` checks the
 advertised model context limit. Each selected model gets an isolated provider
 copy, metrics, and context-local run state, sharing the original inference
-semaphore. Context planning retains the existing conservative estimator.
+semaphore. A tokenizer verified only for the default model is not reused for a
+different model. Context planning retains the existing conservative estimator.
 The actual model/context are sent to `/api/chat`. Existing automatic fallback
 settings still apply; a failed selected model can fall back when enabled.
 Model downloads and Ollama connection setup are not performed by this UI.

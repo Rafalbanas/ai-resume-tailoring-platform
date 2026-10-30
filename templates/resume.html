@@ -18,15 +18,16 @@
     <header><p class="candidate-name">{{ personal.name }}</p><h1>{{ resume.headline }}</h1>{% if template_name == 'ats_classic' %}<p class="ats-contact">{% for contact in contacts %}{% if not loop.first %} · {% endif %}{% if contact.target %}<a href="{{ contact.target }}">{{ contact.display }}</a>{% else %}{{ contact.display }}{% endif %}{% endfor %}</p>{% endif %}</header>
     <div class="main-sections">
         {% for section_name in section_order %}
-        {% if section_name == 'summary' %}{% if resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}{% if template_name == 'ats_classic' and resume.core_skills %}<section><h2>Core Skills</h2><p>{{ resume.core_skills|join(' · ') }}</p></section>{% endif %}{% endif %}
-        {% if section_name == 'summary' and resume.currently_learning %}<section class="currently-learning"><h2>Currently learning</h2><ul>{% for item in resume.currently_learning %}<li>{{ item.name }} — {{ item.status }}</li>{% endfor %}</ul></section>{% endif %}
-        {% if section_name == 'experience' and template_name == 'ats_classic' and languages %}<section><h2>Languages</h2><p>{{ languages|join(' · ') }}</p></section>{% endif %}
+        {% if section_name == 'summary' and resume.professional_summary %}<section><h2>Professional Summary</h2><p>{{ resume.professional_summary }}</p></section>{% endif %}
+        {% if section_name == 'skills' and template_name == 'ats_classic' and resume.core_skills %}<section><h2>Core Skills</h2><p>{{ resume.core_skills|join(' · ') }}</p></section>{% endif %}
+        {% if section_name == 'learning' and resume.currently_learning %}<section class="currently-learning"><h2>Currently learning</h2><ul>{% for item in resume.currently_learning %}<li>{{ item.name }} — {{ item.status }}</li>{% endfor %}</ul></section>{% endif %}
+        {% if section_name == 'languages' and template_name == 'ats_classic' and languages %}<section><h2>Languages</h2><p>{{ languages|join(' · ') }}</p></section>{% endif %}
         {% if section_name == 'experience' and resume.experience %}<section><h2>Experience</h2>{% for item in resume.experience %}<div class="entry"><div class="entry-head"><h3>{{ item.title }} · {{ item.company }}</h3><span>{{ item.dates }}</span></div><ul>{% for bullet in item.bullets %}<li>{{ bullet.text }}</li>{% endfor %}</ul></div>{% endfor %}</section>{% endif %}
         {% if section_name == 'education' and resume.education %}<section><h2>Education</h2>{% for item in resume.education %}<div class="entry"><div class="entry-head"><h3>{{ item.qualification }} · {{ item.institution }}</h3><span>{{ item.dates }}</span></div>{% if item.specialisation %}<p class="education-subline">{{ item.specialisation }}</p>{% endif %}{% if item.thesis_subline %}<p class="education-subline">{{ item.thesis_subline }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
         {% if section_name == 'projects' and resume.projects %}<section class="projects-section"><h2>Projects</h2>{% for item in resume.projects %}<div class="entry project-entry"><h3>{{ item.name }}</h3>{% if item.url %}<p><a href="{{ item.url }}">{{ link_display(item.url) }}</a></p>{% endif %}<p>{{ item.description }}</p>{% if item.technologies %}<p class="tech">{{ item.technologies|join(' · ') }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
         {% if section_name == 'certifications' and resume.certifications %}<section><h2>Certifications</h2><p>{{ resume.certifications|map(attribute='name')|join(' · ') }}</p></section>{% endif %}
+        {% if section_name == 'interests' and template_name == 'ats_classic' and resume.interests %}<section><h2>Interests</h2><p>{{ resume.interests|join(' · ') }}</p></section>{% endif %}
       {% endfor %}
     </div>
-    {% if template_name == 'ats_classic' and resume.interests %}<section><h2>Interests</h2><p>{{ resume.interests|join(' · ') }}</p></section>{% endif %}
   </main>
 </article>

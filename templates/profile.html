@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Candidate profile · CV Tailor{% endblock %}
 {% block content %}
+<div class="page-head"><div><p class="eyebrow">CANDIDATE / PROFILE</p><h1>Contact details</h1><p>Used for new CVs in every template and export. Saved PDF and DOCX files are kept unchanged.</p></div></div>
+<section class="job-form">
+  <form action="{{ app_root_path|default('') }}/profile/contact" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Email<input type="email" name="email" value="{{ personal.email }}" autocomplete="email" required></label>
+    {% if personal.website %}<p>Portfolio: <a href="{{ personal.website }}">{{ personal.website }}</a></p>{% endif %}
+    <button class="primary" type="submit">Save email</button>
+  </form>
+</section>
 <div class="page-head"><div><p class="eyebrow">CANDIDATE / PROFILE</p><h1>Profile photo</h1><p>Private local asset used only when enabled for a CV.</p></div></div>
 {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
 <section class="job-form photo-panel">

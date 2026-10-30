@@ -196,7 +196,7 @@ class EvidenceMatcher:
         minimum = required_years(name)
         if minimum is None:
             return None
-        support_role = bool(re.search(r'technical support|product support|customer.facing technical|software development', name, re.I))
+        support_role = bool(re.search(r'\bit support\b|technical support|product support|customer.facing technical|software development', name, re.I))
         systems_role = bool(re.search(r'system(?:s)? engineer(?:ing)?|system(?:s)? administrat|infrastructure', name, re.I))
         similar_role = bool(re.search(r'similar|related|equivalent', name, re.I))
         intervals, entries, periods = [], [], []
@@ -212,7 +212,10 @@ class EvidenceMatcher:
                 if platforms:
                     relevant = [e for e in relevant if all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in platforms)]
             elif support_role:
-                relevant = [e for e in facts if re.search(r'\b(?:technical|it|user|product|application|l[12]|tier [12]) support\b|(?:support.*(?:users?|applications?|windows|partners?)|(?:developed|built|implemented).*software)', e.text, re.I)]
+                activity = r'\b(?:technical|it|user|product|application|l[12]|tier [12]) support\b|support.*(?:users?|applications?|windows|partners?)'
+                if re.search(r'software development', name, re.I):
+                    activity += r'|(?:developed|built|implemented).*software'
+                relevant = [e for e in facts if re.search(activity, e.text, re.I)]
                 scopes = [v for v in ('SaaS', 'TypeScript', 'SAP', 'Kubernetes', 'Azure') if re.search(r'\b' + v + r'\b', name, re.I)]
                 if scopes:
                     relevant = [e for e in relevant if all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in scopes)]
@@ -394,15 +397,17 @@ class EvidenceMatcher:
         if re.search(r'\bSaaS\b', name, re.I):
             saas = self._find(r'\bSaaS\b', practical=True)
             return self._qualified(name, saas, bool(saas), 'Application support does not by itself establish SaaS product experience.')
-        product = re.fullmatch(r'(?:(?:knowledge|experience|familiarity|proficiency) (?:of|in|with) |znajomość )?(M365|Microsoft 365|Entra ID|Intune)[.]?', name, re.I)
+        product = re.fullmatch(r'(?:(?:(?:practical |basic |working )?(?:knowledge|experience|familiarity|proficiency) (?:of|in|with))\s+|(?:praktyczn\w*\s+)?znajomoś\w*\s+)?(M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia)(?:\s+(?:knowledge|experience|proficiency|practice))?[.]?', name, re.I)
         if product:
             patterns = {'m365': r'\b(?:M365|Microsoft 365|Office 365|O365)\b',
                         'microsoft 365': r'\b(?:M365|Microsoft 365|Office 365|O365)\b',
                         'entra id': r'\b(?:Entra ID|Azure AD|Azure Active Directory)\b',
                         'intune': r'\bIntune\b'}
-            entries = self._find(patterns[product[1].casefold()])
-            if re.search(r'experience', name, re.I):
-                entries = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id]
+            pattern = patterns.get(product[1].casefold(), r'(?<!\w)' + re.escape(product[1]) + r'(?!\w)')
+            entries = self._find(pattern)
+            if re.search(r'experience|practical|hands.on|proficien|praktyczn', name, re.I):
+                entries = [e for e in entries if e.kind != 'skill' and ':technology:' not in e.source_id
+                           and not re.search(r'theoret|basic knowledge|course|training', e.text, re.I)]
             return self._qualified(name, entries, bool(entries), 'Only evidence for this specific product is used; related products do not establish this scope.')
         if key in {'troubleshooting', 'support', 'incident', 'documentation'}:
             if key == 'support':
