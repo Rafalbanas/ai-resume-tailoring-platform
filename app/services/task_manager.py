@@ -36,6 +36,7 @@ class TaskStatus(str, Enum):
 class TaskKind(str, Enum):
     TAILOR = "tailor"
     COMPARE = "compare"
+    CUSTOM_EDIT = "custom_edit"
 
 
 class TaskRecord(BaseModel):
@@ -305,12 +306,60 @@ class TaskManager:
             await self._execute_tailor(task, app_state)
         elif task.kind == TaskKind.COMPARE:
             await self._execute_compare(task, app_state)
+        elif task.kind == TaskKind.CUSTOM_EDIT:
+            await self._execute_custom_edit(task, app_state)
         else:
             raise ValueError(f"Unknown task kind {task.kind}")
 
+    async def _execute_custom_edit(self, task, app_state):
+        from app.services.cv_editor import CVEditorStore, apply_proposal, split_sections
+        store = CVEditorStore(app_state.settings.data_dir)
+        payload = task.payload
+        try:
+            doc = store.load(payload["cv_id"])
+            store._check_revision(doc, payload["revision"])
+        except OSError as exc:
+            raise AIProviderError("This custom CV is no longer available. Return to the CV library.") from exc
+        except ValueError as exc:
+            raise AIProviderError("This CV changed or could not be read. Reload it before applying another prompt.") from exc
+        if doc["pending"]:
+            raise AIProviderError("Review or discard the previous proposal before applying another prompt.")
+        sections = split_sections(doc["current"])
+        self.update_task_progress(task.task_id, stage="Editing selected CV sections...", progress_percent=0)
+        proposal = await app_state.provider.edit_cv({
+            "stage": "edit_cv_sections", "sections": sections,
+            "selected_sections": payload["selected_sections"], "instructions": payload["instructions"],
+            "confirmed_additions": payload.get("confirmed_additions", ""),
+        }, requested_provider=payload.get("llm_provider", "auto"))
+        text = apply_proposal(sections, proposal, payload["selected_sections"], payload.get("confirmed_additions", ""))
+        try:
+            store.propose(doc["id"], payload["revision"], text, payload["instructions"], proposal.clarification)
+        except (OSError, ValueError) as exc:
+            raise AIProviderError("This CV changed while the AI was working. Your saved content was kept; reload and retry.") from exc
+        task = self.get_task(task.task_id) or task
+        task.status = TaskStatus.COMPLETED
+        task.stage = "Changes ready for review"
+        task.progress_percent = 100
+        task.completed_at = datetime.now(timezone.utc).isoformat()
+        task.result = {"redirect_url": f"/custom-cvs/{doc['id']}"}
+        self._save_task(task)
+
     async def _execute_tailor(self, task: TaskRecord, app_state: Any) -> None:
         job = JobRequest.model_validate(task.payload["job"])
+        if job.source_cv:
+            try:
+                _, source_resume, _, _ = app_state.storage.load_application(job.source_cv)
+            except (OSError, ValueError) as exc:
+                raise AIProviderError("The selected CV is unavailable. Choose another saved CV and retry.") from exc
+            job._source_resume = source_resume.model_dump(mode="json")
         llm_provider = task.payload.get("llm_provider", "auto")
+        provider = app_state.provider
+        selected_model = task.payload.get("ollama_model")
+        if (selected_model or "ollama_context" in task.payload) and llm_provider in {"auto", "ollama"}:
+            provider = copy(provider)
+            provider.providers = dict(provider.providers)
+            provider.providers["ollama"] = await provider.providers["ollama"].for_model(
+                selected_model or provider.providers["ollama"].model, task.payload.get("ollama_context", 32768))
         wall_start = time.perf_counter()
 
         def on_stage_cb(stage_name: str) -> None:
@@ -319,7 +368,7 @@ class TaskManager:
         on_stage_cb("Starting generation...")
 
         reused_analysis = task.payload.get('reuse_analysis')
-        if reused_analysis is not None:
+        if reused_analysis is not None and job.workflow != "custom":
             reused_analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
                 JobAnalysis.model_validate(reused_analysis), f"{job.role}\n{job.job_description}")
             if not reused_analysis.is_reliable:
@@ -327,10 +376,10 @@ class TaskManager:
 
         try:
             if reused_analysis is not None:
-                response = await app_state.provider.retailor(
+                response = await provider.retailor(
                     job, app_state.profile, reused_analysis, requested_provider=llm_provider, on_stage=on_stage_cb)
             else:
-                response = await app_state.provider.tailor(
+                response = await provider.tailor(
                     job, app_state.profile, requested_provider=llm_provider, on_stage=on_stage_cb
                 )
         except AIProviderError as exc:
@@ -346,17 +395,25 @@ class TaskManager:
             if reused_analysis is not None:
                 raise
             try:
-                response = await app_state.provider.tailor(
+                response = await provider.tailor(
                     job, app_state.profile, requested_provider=llm_provider
                 )
             except TypeError:
-                response = await app_state.provider.tailor(job, app_state.profile)
+                response = await provider.tailor(job, app_state.profile)
 
         on_stage_cb("Validating Truth Lock...")
 
-        response.analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
-            response.analysis, f"{job.role}\n{job.job_description}"
-        )
+        if job.workflow == "custom":
+            from app.services.custom_cv import custom_analysis
+            response.analysis = custom_analysis(job)
+            checked = FactValidator(app_state.profile, app_state.skills_bank, response.analysis,
+                                    review_key=app_state.settings.csrf_secret).validate(response.resume, job)
+            response.resume = checked.resume
+            response.summary_attestation = checked.resume.summary_attestation
+        else:
+            response.analysis = AnalysisValidator(app_state.profile, app_state.skills_bank).validate(
+                response.analysis, f"{job.role}\n{job.job_description}"
+            )
 
         on_stage_cb("Saving application draft...")
 

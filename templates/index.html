@@ -13,9 +13,15 @@
   <p id="provider-order" data-fallback="{{ 'true' if fallback_enabled else 'false' }}"></p>
   <small>Disabling fallback does not prevent selecting Gemini manually.</small>
 </form>
-<form action="{{ app_root_path|default('') }}/analyze" method="post" class="job-form" id="job-form" novalidate>
+<form action="{{ app_root_path|default('') }}/analyze" method="post" enctype="multipart/form-data" class="job-form" id="job-form" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-grid">
+    <label>Mode<select id="cv-workflow" name="workflow"><option value="job" {% if workflow != 'custom' %}selected{% endif %}>Tailor to Job Description</option><option value="custom" {% if workflow == 'custom' %}selected{% endif %}>Custom CV / AI Editor</option></select></label>
+    <label id="custom-source-label">Source<select id="custom-source"><option value="master">Use Master CV</option><option value="paste">Paste Existing CV</option></select></label>
+  </div>
+  <div id="custom-name-field"><label>CV name<input name="cv_name" value="{{ cv_name or '' }}" maxlength="150" placeholder="e.g. Technical Implementation CV"></label></div>
+  <div id="pasted-cv-field" hidden><label>Existing CV<textarea id="pasted-cv" name="pasted_cv" maxlength="60000" rows="20" placeholder="Paste your complete CV, including headings and dates…"></textarea></label><label>Or extract text from PDF / DOCX <small>optional; pasted text takes precedence</small><input id="cv-file" type="file" name="cv_file" accept=".pdf,.docx"></label><p>Import keeps your exact pasted original text. File imports recover text, not page layout; review extraction before editing. Review detected sections and enter editing instructions in the next step. No master profile facts are added.</p></div>
+  <div class="form-grid" id="job-identity-fields">
     <label>Company<input id="company" name="company" value="{{ company or '' }}" maxlength="150" autocomplete="organization" placeholder="e.g. HSBC"></label>
     <label>Role<input id="role" name="role" value="{{ role or '' }}" maxlength="150" placeholder="e.g. Application Support Engineer"></label>
   </div>
@@ -28,12 +34,35 @@
       </select>
       <small class="field-hint">Using Gemini sends the data needed for analysis to Google's external API.</small>
     </label>
-    <label>Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
+    <label id="job-url-field">Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
-  <label>Job description<textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ job_description or '' }}</textarea></label>
+  <div class="form-grid">
+    <label>Ollama model
+      <select name="ollama_model">
+        <option value="">Default model ({{ ollama_model }})</option>
+        {% for model in ollama_models|default([]) %}
+        <option value="{{ model }}" {% if selected_ollama_model == model %}selected{% endif %}>{{ model }}</option>
+        {% endfor %}
+      </select>
+      <small>{% if ollama_models_unavailable %}Ollama is unavailable. Connect the server to list installed models.{% else %}Installed models on your Ollama server. Applies to Auto and Ollama.{% endif %}</small>
+    </label>
+    <label>Ollama context
+      <select name="ollama_context">
+        <option value="32768" {% if ollama_context == 32768 %}selected{% endif %}>32k (32768 tokens)</option>
+        <option value="65536" {% if ollama_context == 65536 %}selected{% endif %}>65k (65536 tokens)</option>
+        <option value="98304" {% if ollama_context == 98304 %}selected{% endif %}>98k (98304 tokens)</option>
+        <option value="131072" {% if ollama_context == 131072 %}selected{% endif %}>131k (131072 tokens)</option>
+      </select>
+      <small>Includes input and output tokens. Applies to the default model too. Model support is checked before generation; larger contexts need more memory.</small>
+    </label>
+  </div>
+  <label id="prompt-field"><span id="prompt-label">Job description</span><textarea id="job-description" name="job_description" minlength="30" maxlength="30000" placeholder="Paste the complete job description here…">{{ custom_instructions if workflow == 'custom' else job_description or '' }}</textarea></label>
   <button id="clean-job-text" class="secondary" type="button">Clean pasted job offer</button>
-  <p class="field-hint">Paste a job offer copied from any job board or company website, then clean it to remove page clutter. No URL is needed. Review the cleaned text and complete the company and role before analysis.</p>
+  <p class="field-hint" id="job-prompt-hint">Paste a job offer copied from any job board or company website, then clean it to remove page clutter. No URL is needed. Review the cleaned text and complete the company and role before analysis.</p>
+  <p id="custom-prompt-hint" hidden>Describe the target role, skills to emphasize, summary, style and sections. Unsupported qualifications will not be invented. Your master CV is never overwritten.</p>
+  <label id="saved-source-field">Saved CV as a starting point <small>optional; still verified against the master profile</small><select name="source_cv"><option value="">Use master profile only</option>{% for item in saved_cvs|default([]) %}<option value="{{ item.slug }}" {% if source_cv == item.slug %}selected{% endif %}>{{ item.cv_name|default(item.role) }}</option>{% endfor %}</select></label>
+  <p><a href="{{ app_root_path|default('') }}/custom-cvs/">Open saved pasted CVs / AI Editor</a></p>
   {% include "_tailoring_slider.html" %}
   <div class="form-foot"><span>Source-constrained analysis and CV drafts. <a href="{{ app_root_path|default('') }}/compare">Compare models side-by-side</a></span><button id="submit" class="primary" type="submit"><span id="submit-label">Analyze job</span></button></div>
 </form>

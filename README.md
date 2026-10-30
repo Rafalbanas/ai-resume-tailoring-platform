@@ -31,6 +31,15 @@ The value continuously blends normalized BM25 scores with canonical profile orde
 
 Ranking is local and consumes no model tokens. The small policy object adds input tokens but no extra LLM request. Subsequent slider-driven drafts reuse the saved analysis and call only CV generation with Ollama/Gemini, within the existing provider timeout/fallback policy. Analysis is revalidated locally against the current profile before reuse; unreliable reports require fresh analysis. This avoids repeating the analysis LLM stage; it does not guarantee a specific latency or token reduction. N8n providers without a separate tailoring stage cannot use this shortcut; the existing 24-match/16,000-character context budget remains unchanged (identity anchors and the documented fallback are exceptions). Token usage depends on selected text, provider/tokenizer and generated output, not monotonically on this slider. Existing usage reporting records actual provider usage; no savings are claimed.
 
+## Custom CV / AI Editor
+
+Choose **Custom CV / AI Editor** in the main form to generate from the master
+profile without a job description, or paste/import an existing CV. The text editor
+supports selected-section AI edits, highlighted proposals, explicit acceptance,
+manual editing, undo, original recovery, named versions and PDF/DOCX exports.
+Custom documents never overwrite the master profile. See the
+[usage and factual-source safeguards](docs/custom-cv-editor.md).
+
 ## Candidate fact RAG
 
 CV generation through **Ollama and Gemini** now retrieves relevant candidate facts before calling the LLM. Earlier versions supplied the entire profile to generation; evidence matching for analysis and reference-CV style selection already existed. [The audit and implementation guide](docs/rag.md) identifies the files and functions behind this distinction.
@@ -221,6 +230,8 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | **pytest** | `9.1.1` | Testing | Automated test runner and assertion framework |
 | **pytest-asyncio** | `1.4.0` | Testing | Asynchronous test execution for pytest |
 | **Ruff** | `0.17.1` | Tooling | Fast Python linter and code style enforcement |
+| **Jsonschema** | `4.25.1` | Dependency | Application dependency |
+| **Tokenizers** | `0.22.2` | Dependency | Application dependency |
 <!-- TECH_STACK:END -->
 
 ---
@@ -295,7 +306,7 @@ The production environment operates as a hardened, single-node **K3s (v1.36.5+k3
 - **Loopback & Ingress Architecture**: Pods listen on host loopback (`127.0.0.1:18000` for main, `127.0.0.1:18001` for demo) via `hostNetwork`, preserving host-level Nginx reverse proxying, TLS termination, and existing SSH tunnels to Ollama (`127.0.0.1:11434`).
 - **Storage & Volume Management**: State (master profile, SQLite sessions, tasks, generated CVs) is mounted on dedicated PersistentVolumeClaims backed by host storage under `/storage/cvtailor-k3s-runtime/`.
 - **Nightly Backups & Monitoring**: Automated systemd timers execute atomic archives of application volumes with SHA-256 integrity verification.
-- **Continuous Deployment**: Triggered via GitHub Actions `workflow_dispatch` on `main`. Executes automated regression testing, builds and pushes an immutable image by exact digest to GHCR, and deploys via a restricted SSH entrypoint on the VPS with active task draining and automatic rollback.
+- **Continuous Deployment**: Starts automatically on pushes to `main`, including merged PRs; manual runs via GitHub Actions `workflow_dispatch` remain available on `main`. Executes automated regression testing, builds and pushes an immutable image by exact digest to GHCR, and deploys via a restricted SSH entrypoint on the VPS with active task draining and automatic rollback.
 
 For complete K3s operations, RBAC, and storage architecture, see [Kubernetes Production Guide](docs/kubernetes-production.md) and [Deployment Guide](docs/deployment.md).
 
@@ -487,7 +498,7 @@ CVTailor includes an extensive automated test suite covering unit contracts, int
 # Check code style and formatting
 ruff check .
 
-# Run complete test suite (767 tests)
+# Run complete test suite
 pytest -q
 ```
 

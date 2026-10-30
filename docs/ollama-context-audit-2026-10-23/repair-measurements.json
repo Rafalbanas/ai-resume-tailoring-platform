@@ -1,0 +1,109 @@
+[
+  {
+    "trial": "9b-warm",
+    "model": "qwen3.5:9b",
+    "ok": true,
+    "error": null,
+    "reliable": true,
+    "wall_seconds": 113.34949669241905,
+    "stage_seconds": null,
+    "generation_seconds": 87.41556127369404,
+    "export_seconds": 17.089112482964993,
+    "export_check_seconds": 6.8622715920209885,
+    "input_tokens": 24978,
+    "output_tokens": 2980,
+    "load_seconds": 0.044216176,
+    "schema_errors": 0,
+    "raw_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 1
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "truth_lock_warning_count": 2,
+    "exports": {
+      "resume.docx": 38722,
+      "resume.pdf": 22428
+    },
+    "profile_sha256": "bd7e83c44e0071067d414b5e2db7ed11296f086dcb70e7adace5878224b5d248",
+    "job_sha256": "21b0623697e318c39b6b5ec5d5ee7a7cfaa1f0c07c86a21a7cfea302286d01ea",
+    "skills_sha256": "13c31a54b4e0a05c55bf59c2ced765a163adf5ebc8cb088c664f8e5886431a66"
+  },
+  {
+    "trial": "9b-final",
+    "model": "qwen3.5:9b",
+    "ok": true,
+    "error": null,
+    "reliable": true,
+    "wall_seconds": 166.46371920406818,
+    "stage_seconds": {
+      "analyze_job": 61.454958602786064,
+      "tailor_resume": 44.746980868279934,
+      "truth_lock": 6.689215570688248,
+      "pdf": 28.392553262412548,
+      "docx": 5.154523432254791
+    },
+    "generation_seconds": 122.27301356196404,
+    "export_seconds": 33.54847425222397,
+    "export_check_seconds": 8.043441072106361,
+    "input_tokens": 24876,
+    "output_tokens": 3224,
+    "load_seconds": 3.203666652,
+    "schema_errors": 0,
+    "raw_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 1
+    },
+    "final_counts": {
+      "experience": 4,
+      "education": 3,
+      "projects": 2
+    },
+    "truth_lock_warning_count": 3,
+    "exports": {
+      "resume.docx": 38594,
+      "resume.pdf": 22202
+    },
+    "profile_sha256": "bd7e83c44e0071067d414b5e2db7ed11296f086dcb70e7adace5878224b5d248",
+    "job_sha256": "21b0623697e318c39b6b5ec5d5ee7a7cfaa1f0c07c86a21a7cfea302286d01ea",
+    "skills_sha256": "13c31a54b4e0a05c55bf59c2ced765a163adf5ebc8cb088c664f8e5886431a66"
+  },
+  {
+    "trial": "27b",
+    "model": "qwen3.8-27b-iq2s",
+    "ok": false,
+    "error": "Ollama analysis failed source coverage validation; incomplete analysis — review required.",
+    "reliable": null,
+    "wall_seconds": 213.90842005610466,
+    "stage_seconds": {
+      "analyze_job": 213.78657066822052
+    },
+    "generation_seconds": null,
+    "export_seconds": null,
+    "export_check_seconds": null,
+    "input_tokens": 41315,
+    "output_tokens": 2965,
+    "load_seconds": 5.313616947,
+    "schema_errors": 0,
+    "raw_counts": {
+      "experience": 0,
+      "education": 0,
+      "projects": 0
+    },
+    "final_counts": {
+      "experience": 0,
+      "education": 0,
+      "projects": 0
+    },
+    "truth_lock_warning_count": 0,
+    "exports": null,
+    "profile_sha256": "bd7e83c44e0071067d414b5e2db7ed11296f086dcb70e7adace5878224b5d248",
+    "job_sha256": "21b0623697e318c39b6b5ec5d5ee7a7cfaa1f0c07c86a21a7cfea302286d01ea",
+    "skills_sha256": "13c31a54b4e0a05c55bf59c2ced765a163adf5ebc8cb088c664f8e5886431a66"
+  }
+]

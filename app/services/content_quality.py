@@ -77,8 +77,15 @@ def _merge_qualifiers(first, second):
 def deduplicate_text(value):
     sentences = _SENTENCES.split(value.strip()) if value.strip() else []
     result = []
+    numbers = []
     for sentence in sentences:
+        signature = re.findall(r'(?<!\w)\d+(?:\.\d+)?(?!\w)', sentence)
         for index, prior in enumerate(result):
+            # Both subsumption and qualifier merging require identical numbers.
+            # Cache that necessary condition instead of tokenizing every pair in
+            # long imported/manual CVs (distinct dates/metrics must be retained).
+            if numbers[index] != signature:
+                continue
             if _subsumed(sentence, prior):
                 break
             if _subsumed(prior, sentence):
@@ -87,9 +94,11 @@ def deduplicate_text(value):
             merged = _merge_qualifiers(prior, sentence)
             if merged:
                 result[index] = merged
+                numbers[index] = re.findall(r'(?<!\w)\d+(?:\.\d+)?(?!\w)', merged)
                 break
         else:
             result.append(sentence)
+            numbers.append(signature)
     return ' '.join(result)
 
 

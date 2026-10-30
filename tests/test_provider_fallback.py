@@ -368,7 +368,11 @@ async def test_gemini_repairs_only_ollama_omissions_then_validates_full_source(p
     router = ResilientAIProvider({'ollama': FailingProvider('ollama', error), 'gemini': RepairProvider('gemini')})
     response = await router.tailor(source, profile)
     assert response.fallback_used and 'Automatically recovered' not in response.fallback_reason
-    assert response.analysis.is_reliable == complete
+    # Source coverage may be complete while invented evidence still prevents reliability.
+    assert not response.analysis.is_reliable
+    if complete:
+        assert response.analysis.evidence_issues
+        assert not response.analysis.completeness_issues
     assert not response.analysis.strong_matches  # Truth Lock rejects invented evidence.
     if complete:
         assert {r.source_quote for r in response.analysis.requirements} == {'Experience with Alpha.', 'Experience with Beta.'}

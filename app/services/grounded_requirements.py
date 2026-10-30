@@ -18,7 +18,8 @@ INJECTION = re.compile(r'ignore.*instructions|system prompt|you are chatgpt|retu
 def source_lines(job_text):
     from app.services.job_sections import extract_sections
     units, _ = extract_sections(job_text)
-    return [(u.name, RequirementPriority(u.category)) for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}]
+    return [(u.name, RequirementPriority.UNSPECIFIED if u.category == 'unknown' else RequirementPriority(u.category))
+            for u in units if u.category in {"mandatory", "preferred", "nice_to_have"} or u.category == 'unknown' and u.uncertain]
 
 
 def boundary_contains(needle, text):
@@ -182,18 +183,31 @@ def verify_requirement(validator, name, unit=None):
 
 def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result = candidate.model_copy(deep=True)
+    result.validation_version = 2
+    validator._classification_issues = []
+    validator._evidence_issues = []
     from app.services.job_sections import (
         ORGANIZATION_SIGNAL,
         REQUIREMENT_SIGNAL,
+        clean_source_line,
         extract_sections,
         role_competency_units,
         semantic_key,
     )
     units, sections = extract_sections(job_text)
-    source = source_lines(job_text)
+    semantic_source = False
+    source_issues = []
+    if semantic:
+        from app.services.source_classification import model_source_units
+        model_units, source_issues = model_source_units(candidate, job_text)
+        if model_units is not None:
+            units, sections = model_units, []
+            semantic_source = True
+    source = [(u.name, RequirementPriority(u.category)) for u in units
+              if u.category in {'mandatory', 'preferred', 'nice_to_have'}] if semantic_source else source_lines(job_text)
     result.source_sections = sections
-    result.analysis_method = 'llm_validated' if semantic and candidate.requirements else 'source_review'
-    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','unknown'}]
+    result.analysis_method = 'llm_validated' if semantic and (candidate.requirements or semantic_source) else 'source_review'
+    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','keywords','unknown','context'}]
     result.analysis_language = "en"
     result.responsibilities = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "responsibility"]
     # Responsibility overlap is indicative, not proof of the full duty or an
@@ -214,9 +228,13 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
             match_name = unit.name + ' ' + unit.level if unit.level and not boundary_contains(unit.level, unit.name) else unit.name
             status, evidence, ids, reason = verify_requirement(validator, match_name, unit)
             result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
-    unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
-    result.completeness_issues = []
+    unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have", "unknown"}}
+    result.completeness_issues = list(source_issues)
     result.unassessed_source_passages = list(candidate.unassessed_source_passages)
+    for issue in source_issues:
+        for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: '):
+            if issue.startswith(prefix):
+                result.unassessed_source_passages.append(issue[len(prefix):])
     if result.unassessed_source_passages:
         result.completeness_issues.append("Explicitly unresolved source passages still require model assessment.")
     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
@@ -245,17 +263,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
                 quote = passage.get('source_quote', '')
                 if quote and quote in job_text and not any(p.get('source_quote') == quote for p in current):
                     current.append(passage)
-        if candidate.role_competencies:
-            from app.services.semantic_requirements import validated_model_requirements
-            competency_candidate = candidate.model_copy(update={'requirements': candidate.role_competencies})
-            verified, _ = validated_model_requirements(validator, competency_candidate, job_text, units, result.role_competencies)
-            for req in verified:
-                req.priority = RequirementPriority.UNSPECIFIED
-            result.role_competencies = verified
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
-        if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "unknown"}
+        if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "keywords", "unknown"}
                and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
             continue
         if re.fullmatch(r'\s*(?:B[12]|C[12]|Advanced|Expert|Intermediate|Basic)\s*', raw, re.I) and index and not any(u.level == raw.strip() and u.name == job_lines[index-1].strip() for u in units):
@@ -299,28 +310,35 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         seen[key] = requirements[-1]
         sources[name] = ids
     from app.models.job import RequirementComponent
-    from app.services.semantic_requirements import explicit_list, validated_model_requirements
+    from app.services.semantic_requirements import explicit_list, source_components, validated_model_requirements
     for req in requirements:
         from app.services.competency_scope import atomic_parts
-        parts = atomic_parts(req.name) or explicit_list(req.name)
+        list_parts, list_operator = source_components(req.name)
+        parts = atomic_parts(req.name) or list_parts or explicit_list(req.name)
         if parts and not req.components:
             req.components = []
             for part in parts:
                 status, evidence, ids, reason = verify_requirement(validator, part)
                 req.components.append(RequirementComponent(name=part, status=status, evidence=evidence, source_fact_ids=ids,
                     evidence_sources=validator.matcher.sources(ids), reason=reason))
-            req.operator = 'any' if re.search(r'\bor\b|\blub\b', req.name, re.I) and not re.search(r'\band\b|\boraz\b', req.name, re.I) else 'all'
-            if not all(c.status == RequirementStatus.STRONG for c in req.components) and req.operator == 'all':
+            req.operator = list_operator if list_parts else ('any' if re.search(r'\bor\b|\blub\b', req.name, re.I) and not re.search(r'\band\b|\boraz\b', req.name, re.I) else 'all')
+            if req.operator == 'all' and all(c.status == RequirementStatus.STRONG for c in req.components):
+                req.status = RequirementStatus.STRONG
+            elif req.operator == 'all' and any(c.status == RequirementStatus.ABSENT for c in req.components):
+                req.status = RequirementStatus.ABSENT
+            elif req.operator == 'all':
                 req.status = RequirementStatus.PARTIAL if any(c.source_fact_ids for c in req.components) else RequirementStatus.MISSING
                 req.reason += ' Every AND item must be confirmed; item-level results are shown separately.'
-            if re.search(r'such as|for example|takich jak', req.name, re.I):
+            if req.operator == 'any':
+                req.status = max((c.status for c in req.components), key=lambda status: {RequirementStatus.STRONG: 3, RequirementStatus.PARTIAL: 2, RequirementStatus.MISSING: 1, RequirementStatus.ABSENT: 0}[status])
+            if req.operator == 'ambiguous':
                 req.interpretation_uncertain = True
-                req.operator = 'ambiguous'
-                if req.status == RequirementStatus.STRONG:
-                    req.status = RequirementStatus.PARTIAL
-                req.reason += ' Whether this list supplies examples or cumulative conditions requires semantic review.'
+                req.reason += ' Mixed list logic requires source review.'
+            req.source_fact_ids = list(dict.fromkeys(i for c in req.components for i in c.source_fact_ids))
+            req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
+            req.evidence = [e['fact'] for e in req.evidence_sources]
     if semantic and candidate.requirements:
-        requirements, model_issues = validated_model_requirements(validator, candidate, job_text, units, requirements)
+        requirements, model_issues = validated_model_requirements(validator, candidate, job_text, units, requirements, classified=semantic_source)
         result.completeness_issues.extend(model_issues)
     if semantic and candidate.role_competencies:
         # Unknown headings can contain soft skills/capabilities. Retain the model's
@@ -328,7 +346,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         role_candidate = candidate.model_copy(deep=True)
         role_candidate.requirements = candidate.role_competencies
         model_roles, role_issues = validated_model_requirements(
-            validator, role_candidate, job_text, [u for u in units if u.category != 'competency'], [])
+            validator, role_candidate, job_text, units, [], role=True, classified=semantic_source)
         result.completeness_issues.extend(role_issues)
         for role in model_roles:
             role.priority = RequirementPriority.UNSPECIFIED
@@ -377,9 +395,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     # Organization context and duties are represented separately, not scored.
     covered_quotes = [u.quote for u in units] + [r.source_quote for r in requirements + result.role_competencies]
     covered_quotes += [r.get("source_quote", "") for r in result.responsibilities if r.get("source_quote")]
+    heading_keys = {clean_source_line(section).rstrip(':').strip().casefold() for section in sections}
     uncovered = [line.strip() for line in job_text.splitlines()
                  if REQUIREMENT_SIGNAL.search(line) and not ORGANIZATION_SIGNAL.search(line) and not INJECTION.search(line)
-                 and line.strip().rstrip(':') not in sections
+                 and clean_source_line(line).rstrip(':').strip().casefold() not in heading_keys
                  and not re.search(r'knowledge with:\s*$', line, re.I)
                  and not any(quote in line or line.strip() in quote for quote in covered_quotes)]
     if uncovered:
@@ -390,7 +409,18 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         result.completeness_issues.append('A qualification source passage has unbalanced parentheses or joined fragments; review the original source.')
     if visibly_truncated:
         result.completeness_issues.append("The source ends in an unfinished sentence.")
-    result.is_reliable = bool(requirements or result.role_competencies or result.responsibilities) and not result.completeness_issues
+    assessed_quotes = [r.source_quote for r in requirements + result.role_competencies]
+    assessed_quotes += [r.get('source_quote', '') for r in result.responsibilities]
+    validator._classification_issues.extend(
+        f'Unclassified source passage needs review: {u.quote}' for u in units
+        if u.category == 'unknown' and not any(quote and (quote in u.quote or u.quote in quote) for quote in assessed_quotes)
+    )
+    result.classification_issues = list(dict.fromkeys(validator._classification_issues + [
+        f'Unresolved source interpretation: {r.name}' for r in requirements if r.interpretation_uncertain]))
+    result.evidence_issues = list(dict.fromkeys(validator._evidence_issues + [
+        f'Conflicting evidence: {r.name}' for r in requirements if re.search(r'conflict|contradict', r.reason, re.I)]))
+    result.is_reliable = bool(requirements or result.role_competencies or result.responsibilities) and not (
+        result.completeness_issues or result.classification_issues or result.evidence_issues)
     result.qualification_assessment = (
         "Explicit qualification requirements assessed against documented profile evidence."
         if requirements else
@@ -415,7 +445,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
                                  "confirmed_absence": sum(r.status == RequirementStatus.ABSENT for r in requirements)}
     if not result.is_reliable:
         result.match_level, result.recommendation = MatchLevel.UNRELIABLE, Recommendation.RETRY
-        result.reasoning_summary = "Incomplete analysis — review required. " + " ".join(result.completeness_issues or ["No requirements with a verifiable source were identified."])
+        result.reasoning_summary = "Incomplete analysis — review required. " + " ".join(result.completeness_issues + result.classification_issues + result.evidence_issues or ["No requirements with a verifiable source were identified."])
         return result
     if not requirements:
         result.match_level, result.recommendation = MatchLevel.LIMITED, Recommendation.REVIEW

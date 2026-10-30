@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from app.models.job import JobAnalysis, JobRequest
-from app.services.fact_catalog import FactCatalog, FactEntry, normalized_tokens
+from app.services.fact_catalog import FactEntry, normalized_tokens
 
 logger = logging.getLogger(__name__)
 TOP_K = 24
@@ -73,7 +73,8 @@ class FactIndex:
 
 def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
                    *, top_k=TOP_K, max_chars=MAX_CONTEXT_CHARS) -> RetrievalResult:
-    catalog = FactCatalog(profile)
+    from app.services.cv_content_policy import cv_catalog
+    catalog = cv_catalog(profile, job)
     documents = _documents(catalog, bank)
     selected = {e.source_id: e for e in _anchors(documents)}
     reasons = {i: "identity_anchor" for i in selected}
@@ -83,7 +84,7 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
     requirements = [*analysis.requirements, *analysis.role_competencies]
     queries = [(r.name, 2.0 if r.priority == "mandatory" else 1.0) for r in requirements]
     if not queries:
-        queries = [(job.job_description, 1.0)]
+        queries = [(job.relevance_text, 1.0)]
     queries.append((job.role, 0.5))
     mode = "ranked"
     try:

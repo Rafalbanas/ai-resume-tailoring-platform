@@ -1,0 +1,29 @@
+{
+  "branch": "codex/ollama-contract-context-fix",
+  "production_deployed": false,
+  "service_regression_passed": 182,
+  "summary_confirmation_passed": 19,
+  "collected_tests": 926,
+  "initial_suite_tests": 922,
+  "completed_batches": [
+    478,
+    288,
+    152
+  ],
+  "updated_fixture_failures": 4,
+  "updated_fixture_regression_passed": 19,
+  "additional_regressions_passed": 4,
+  "lint": "pass",
+  "diff_check": "pass",
+  "raw_schema_requests_valid": 13,
+  "tokenizer_api_parity": 13,
+  "final_pdf_pages": 2,
+  "final_docx_paragraphs": 45,
+  "employment_entries_in_both_exports": 4,
+  "education_entries_in_both_exports": 3,
+  "final_summary_confirmation_required": false,
+  "production_health": 200,
+  "production_model": "qwen3.5:9b",
+  "production_context": 32768,
+  "test_pods_removed": true
+}

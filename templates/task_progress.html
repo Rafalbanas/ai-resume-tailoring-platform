@@ -7,6 +7,8 @@
     <h1 id="task-title">
       {% if task.kind == 'compare' %}
         Comparing AI models
+      {% elif task.kind == 'custom_edit' %}
+        Editing selected CV sections
       {% else %}
         Generating tailored CV
       {% endif %}
@@ -20,6 +22,7 @@
       {% endif %}
     </p>
   </div>
+  <div class="actions"><a href="{{ app_root_path|default('') }}/history">Saved analyses</a>{% if job.get('job_url') %}<a href="{{ job.get('job_url') }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
   <div class="truth-badge" id="task-status-badge">
     <span class="{% if task.status not in ['failed', 'completed'] %}pulse-indicator{% endif %}" id="task-badge-icon">
       {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% else %}⚡{% endif %}
@@ -40,6 +43,7 @@
     </div>
   </div>
 </section>
+{% if task.kind == 'custom_edit' %}<details class="card"><summary>Your editing instructions — saved for recovery</summary><p class="preserve-whitespace">{{ task.payload.instructions }}</p>{% if task.payload.get('confirmed_additions') %}<h2>Confirmed factual additions</h2><p class="preserve-whitespace">{{ task.payload.confirmed_additions }}</p>{% endif %}</details>{% endif %}
 
 <div class="card task-progress-card" id="task-card"
      data-task-id="{{ task.task_id }}" data-status="{{ task.status }}"
@@ -90,7 +94,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" id="retry-btn" class="button primary">Retry generation</button>
       </form>
-      <a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Edit job and settings</a>
+      {% if task.kind == 'custom_edit' %}<a href="{{ app_root_path|default('') }}/custom-cvs/{{ task.payload.cv_id }}" id="edit-settings-link" class="button secondary">Return to CV — current version kept</a>{% else %}<a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Edit job and settings</a>{% endif %}
     </div>
   </div>
 </div>

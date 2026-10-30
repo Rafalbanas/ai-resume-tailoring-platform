@@ -60,6 +60,9 @@ def dispatch(operation, payload, work):
         store._save_local(payload['filename'], payload['mime'], decoded(payload['content']),
                           payload['crop_x'], payload['crop_y'], payload['crop_zoom'])
         return {'webp': encoded(store.webp_path.read_bytes()), 'jpg': encoded(store.jpg_path.read_bytes())}
+    if operation == 'text_cv_export':
+        from app.services.text_cv_export import text_cv_export_op
+        return text_cv_export_op(payload)
     if operation in {'pdf', 'preview', 'metrics', 'docx'}:
         from app.models.candidate import CandidateProfile
         from app.models.resume import TailoredResume

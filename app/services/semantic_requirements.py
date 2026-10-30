@@ -13,18 +13,37 @@ from app.services.evidence_matching import NEGATIVE, required_level, required_ye
 from app.services.fact_catalog import normalized_tokens
 
 
+def source_components(text):
+    """Parse short named lists; retain qualifiers and leave mixed logic for review."""
+    examples = re.search(r'\b(?:such as|for example|e\.g\.|takich jak|np\.)\s*:?', text, re.I)
+    prefix = re.match(r'^(?:(?:.*?\b(?:of|with|in|using|handling))|(?:praktyczn\w*\s+)?znajomoś\w*|doświadczenie w)\s+', text, re.I)
+    body = text[examples.end():] if examples else text[prefix.end():] if prefix else text
+    body = body.strip(' .;()')
+    has_and = bool(re.search(r'\band\b|\boraz\b|\bi\b|\s[+&]\s', body, re.I))
+    has_or = bool(re.search(r'\bor\b|\blub\b', body, re.I))
+    if not (has_and or has_or or examples):
+        return [], 'single'
+    parts = re.split(r'\s*(?:,|\s[+&]\s|\b(?:and|oraz|i|or|lub)\b)\s*', body, flags=re.I)
+    if len(parts) < 2 or any(not re.fullmatch(r'[A-Z][\w+#.-]*(?: [A-Z0-9][\w+#.-]*){0,3}', p) for p in parts):
+        return [], 'single'
+    operator = 'any' if examples or has_or and not has_and else 'all' if not has_or else 'ambiguous'
+    shared = text[:prefix.end()] if prefix and not examples else ''
+    # Plain knowledge labels add no level; practical/advanced/tenure modifiers do.
+    if re.fullmatch(r'(?:Knowledge of|Familiarity with|Znajomość)\s+', shared, re.I):
+        shared = ''
+    return [shared + p for p in parts], operator
+
+
 def explicit_list(text):
-    """A grammatical comma list, not a technology dictionary or hidden ontology."""
-    if "," not in text:
+    """Existing grammatical lists remain available even with lower-case labels."""
+    if ',' not in text:
         return []
-    match = re.search(r"(?:\bof\b|\bwith\b|\busing\b|\bhandling\b|takich jak:)\s+(.+)$", text, re.I)
+    match = re.search(r'(?:\bof\b|\bwith\b|\busing\b|\bhandling\b|takich jak:)\s+(.+)$', text, re.I)
     if not match:
         return []
-    parts = [
-        re.sub(r"^(?:and|oraz|or|lub)\s+", "", p.strip(" .;"), flags=re.I)
-        for p in re.split(r",\s*|\s+(?:and|oraz|or|lub)\s+", match[1], flags=re.I)
-    ]
-    return parts if len(parts) >= 3 and all(0 < len(p.split()) <= 4 and "(" not in p for p in parts) else []
+    parts = [re.sub(r'^(?:and|oraz|or|lub)\s+', '', p.strip(' .;'), flags=re.I)
+             for p in re.split(r',\s*|\s+(?:and|oraz|or|lub)\s+', match[1], flags=re.I)]
+    return parts if len(parts) >= 3 and all(0 < len(p.split()) <= 4 and '(' not in p for p in parts) else []
 
 
 def resolve_source_quotes(quote, job_text):
@@ -88,8 +107,9 @@ def _facts(validator, item, *, practical_scope=False, ml_context=""):
     from app.services.competency_scope import scoped_match
     scoped = scoped_match(validator.matcher, item.name)
     from app.services.evidence_strength import CI
-    if scoped is None and CI.search(item.name):
+    if scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia)\b', item.name, re.I)):
         scoped = validator.matcher.match(item.name)
+    original_status, original_ids = item.status, list(item.source_fact_ids)
     if scoped is not None:
         item.status = scoped.status
         item.source_fact_ids = [e.source_id for e in scoped.entries]
@@ -153,18 +173,22 @@ def _facts(validator, item, *, practical_scope=False, ml_context=""):
             item.evidence_sources = validator.matcher.sources(item.source_fact_ids)
             item.evidence = [e["fact"] for e in item.evidence_sources]
             item.reason += " " + language.reason
+    if original_status == Status.STRONG and item.status != Status.STRONG:
+        validator._evidence_issues.append(f'Unsupported model confirmation corrected: {item.name}.')
+    if set(original_ids) - set(item.source_fact_ids):
+        validator._evidence_issues.append(f'Invalid or irrelevant evidence removed: {item.name}.')
     return entries
 
 
-def validated_model_requirements(validator, candidate, job_text, units, fallback):
-    from app.services.job_sections import extract_sections
+def validated_model_requirements(validator, candidate, job_text, units, fallback, *, role=False, classified=False):
+    from app.services.job_sections import clean_source_line, extract_sections
 
     def heading_key(value):
-        return value.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold()
+        return clean_source_line(value).strip(" #:\t\r\n").casefold()
 
-    headings = {heading_key(s) for s in extract_sections(job_text)[1]}
+    headings = set() if classified else {heading_key(s) for s in extract_sections(job_text)[1]}
     requirements, issues = [], []
-    excluded = {"benefits", "employment", "recruitment", "responsibility", "competency"}
+    excluded = {"benefits", "employment", "recruitment", "keywords", "organization", "responsibility", "competency"}
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
@@ -177,11 +201,13 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             # Keep its body available for the model instead of scoring the title.
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
-        if all(
+        if not classified and all(
             (any(u.category in excluded and quote in u.quote for u in units) or " ".join(quote.split()) in context_text)
+            and not (role and any(u.category in {"competency", "responsibility"} and quote in [u.quote, *u.supporting_quotes] for u in units))
             and not any(u.category in qualification_categories and quote in u.quote for u in units)
             for quote in quotes
         ):
+            validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
             # Preserve the passage in source_context; it cannot enter qualification
             # arithmetic just because an earlier section was preferred.
             continue
@@ -197,9 +223,23 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         from app.models.job import RequirementComponent
         from app.services.competency_scope import atomic_parts
         parts = atomic_parts(req.source_quote) or atomic_parts(req.name)
+        list_parts, list_operator = source_components(req.source_quote)
+        parts = parts or list_parts
         if parts:
-            req.operator = "all"
-            req.components = [RequirementComponent(name=part) for part in parts]
+            req.operator = list_operator if list_parts else "all"
+            # Preserve claims for validation when their scope is identical.
+            old = {re.sub(r'^(?:(?:knowledge|experience|familiarity|proficiency) (?:of|in|with)|znajomość)\s+', '', c.name, flags=re.I).casefold(): c for c in req.components}
+            req.components = []
+            for part in parts:
+                key = re.sub(r'^(?:(?:knowledge|experience|familiarity|proficiency) (?:of|in|with)|znajomość)\s+', '', part, flags=re.I).casefold()
+                component = old[key].model_copy(update={'name': part}) if key in old else RequirementComponent(name=part)
+                req.components.append(component)
+        if req.operator == 'ambiguous':
+            req.interpretation_uncertain = True
+        for component in req.components:
+            if not component.reason and not component.source_fact_ids:
+                from app.services.grounded_requirements import verify_requirement
+                component.status, component.evidence, component.source_fact_ids, component.reason = verify_requirement(validator, component.name)
         entries = _facts(validator, req)
         if not req.reason.strip():
             req.interpretation_uncertain = True
@@ -248,7 +288,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.operator == "any"
             and explicit_list(" ".join(quotes))
             and re.search(r"\b(?:and|oraz)\b", " ".join(quotes), re.I)
-            and not re.search(r"\b(?:or|lub)\b|such as|for example|takich jak", " ".join(quotes), re.I)
+            and not re.search(r"\b(?:or|lub)\b|such as|for example|takich jak|e\.g\.|np\.", " ".join(quotes), re.I)
         ):
             req.operator = "all"
             req.interpretation_uncertain = True
@@ -342,6 +382,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         req.required_level = req.required_level or required_level(req.name)
         req.scoring_key = scoring_key(req.name)
         req.source_quotes = list(dict.fromkeys([req.source_quote, *req.source_quotes]))
+        if any(u.uncertain and u.category != 'unknown' for u in source_units):
+            req.interpretation_uncertain = True
         req.classification_basis = (
             req.classification_basis or "Model semantic interpretation; original source and cited facts verified"
         )

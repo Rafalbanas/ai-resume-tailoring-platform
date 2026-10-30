@@ -1,0 +1,13 @@
+{
+  "tokenizers_version": "0.22.2",
+  "tokenizer_json_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+  "tokenizer_source": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/main/tokenizer.json",
+  "tokenizer_config_sha256": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27",
+  "ollama_version": "0.40.1",
+  "models": [
+    "qwen3.5:9b",
+    "qwen3.8-27b-iq2s"
+  ],
+  "baseline_image": "sha256:d5691c0d0bb594a2e834c14ae28cb8e6fcc47ad11c31fc441ddb91cd39da4139",
+  "current_image": "sha256:acd3c69a486be1add9716e2c98717f92193989126a631949e140ba8895b82196"
+}

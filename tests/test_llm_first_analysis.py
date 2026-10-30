@@ -249,7 +249,11 @@ def test_saved_offers_sections_and_quality_are_offline(name, contextual_profile)
         assert result.requirement_counts["mandatory"] >= 8
         assert len(result.responsibilities) == 6
         assert not any("Allianz" in r.name or "Multisport" in r.name for r in result.requirements)
-        assert result.is_reliable == (name == "comarch_telco")
+        # Source coverage alone cannot validate unresolved slash/combined scopes.
+        assert not result.is_reliable
+        if name == "comarch_telco":
+            assert not result.completeness_issues
+            assert result.classification_issues
     if name == "winged":
         assert result.requirement_counts["mandatory"] == 8
         assert any(r.priority == "nice_to_have" for r in result.requirements)

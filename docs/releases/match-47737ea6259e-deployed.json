@@ -1,0 +1,15 @@
+{
+  "release": "match-47737ea6259e",
+  "image": "docker.io/library/cvtailor@sha256:b936e229d656b4c2501d8322c48cb4e8629c38a50118a28e26de221d64d30b3d",
+  "previous_image": "ghcr.io/rafalbanas/ai-resume-tailoring-platform@sha256:1e05cdcd74da8981ec439b54f5ab84180f1184f6c21607a2337e8391940055e1",
+  "files": {
+    "templates/analysis.html": "e5cd95b2df86c2abc6980c965b5b1203ad568290ed7eb487132c0c7bbe6b216a",
+    "app/services/source_classification.py": "393eb361139c7000c5911ac034c28da63b40bf1655dc8575eb164f1ce8695b06",
+    "app/services/ollama_analysis.py": "dcba0b7ec48e8fb61e7f095d46839b9d85e8b0eccf51c89f045cf2a3747898a6",
+    "app/services/resilient_provider.py": "2494f6c75c8f70c0da717214762ef003599e87f99266a18bc6c700414aeab5be",
+    "app/services/grounded_requirements.py": "a4c6c68722c4957d6ed4cf675e89a933a450505fe1b82bada77bfc39a2b385d3",
+    "app/services/ai_provider.py": "fa84c8a50d43386d1705996a46db30cf5769881bd213ae402d06d30cf2799ddb",
+    "app/services/semantic_requirements.py": "b1761d04d626e7d3326d832644c2bc894236d95f506ceead2e7f7faf56d22119"
+  },
+  "verified_at": "2026-10-29T21:24:50Z"
+}

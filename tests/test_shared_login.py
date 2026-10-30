@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.auth_store import AuthStore
-from app.services.task_manager import TaskKind
+from app.services.task_manager import TaskKind, TaskRecord, TaskStatus
 
 
 @pytest.fixture
@@ -66,6 +66,64 @@ def test_same_url_selects_only_authenticated_accounts_data(shared_app, account, 
             assert response.content == expected
         for path in ('/demo/profile', '/owner/profile', '/private/profile'):
             assert client.get(path, follow_redirects=False).status_code == 404
+
+
+@pytest.mark.parametrize('account', ['owner', 'demo'])
+def test_preview_and_draft_links_stay_in_their_account_before_exports_finish(shared_app, account, synthetic_download):
+    from app.models.job import JobAnalysis
+    from app.models.resume import WorkflowResponse
+
+    with TestClient(shared_app) as client:
+        owner, demo = runtimes(shared_app)
+        source = owner if account == 'owner' else demo
+        slug = '2026-10-21_synthetic_support_2'
+        synthetic_download(source, slug, b'%PDF synthetic')
+        # Match generation after save_application, before either export exists.
+        folder = source.state.storage.application_folder(slug)
+        (folder / 'resume.pdf').unlink()
+        job, resume, _, _ = source.state.storage.load_application(slug)
+        analysis = JobAnalysis.model_validate_json((folder / 'analysis.json').read_text())
+        draft = source.state.storage.save_draft(job, WorkflowResponse(analysis=analysis, resume=resume))
+        paths = (f'/preview/{slug}', f'/analysis/{draft}')
+        for path in paths:
+            assert client.get(path, follow_redirects=False).status_code == 303
+        assert sign_in(client, account).status_code == 303
+        for path in paths:
+            assert client.get(path, follow_redirects=False).status_code == 200
+        assert sign_in(client, 'demo' if account == 'owner' else 'owner').status_code == 303
+        for path in paths:
+            assert client.get(path, follow_redirects=False).status_code == 404
+            assert client.get(path + f'?account={account}', headers={'X-Account': account},
+                              follow_redirects=False).status_code == 404
+        assert client.post(f'/generate/{draft}', data={
+            'csrf_token': client.cookies.get('csrf_token'),
+        }, follow_redirects=False).status_code == 404
+
+
+@pytest.mark.parametrize('account', ['owner', 'demo'])
+@pytest.mark.parametrize('status', list(TaskStatus))
+def test_random_task_links_stay_in_their_account_at_every_stage(shared_app, account, status):
+    from uuid import uuid4
+
+    with TestClient(shared_app) as client:
+        owner, demo = runtimes(shared_app)
+        source = owner if account == 'owner' else demo
+        task = TaskRecord(task_id=uuid4().hex, kind=TaskKind.TAILOR, idempotency_key='synthetic',
+                          status=status, created_at='2026-10-21T00:00:00+00:00',
+                          payload={'sentinel': 'synthetic account-private job'})
+        # Persist a fixed state so no background worker can advance it mid-check.
+        source.state.task_manager._save_task(task)
+        paths = (f'/tasks/{task.task_id}', f'/tasks/{task.task_id}/view')
+        for path in paths:
+            assert client.get(path, follow_redirects=False).status_code == 303
+        assert sign_in(client, account).status_code == 303
+        assert client.get(paths[0]).json()['status'] == status.value
+        assert client.get(paths[1], follow_redirects=False).status_code == 200
+        assert sign_in(client, 'demo' if account == 'owner' else 'owner').status_code == 303
+        for path in paths:
+            assert client.get(path, follow_redirects=False).status_code == 404
+            assert client.get(path + f'?account={account}', headers={'X-Account': account},
+                              follow_redirects=False).status_code == 404
 
 
 @pytest.mark.parametrize('account', ['owner', 'demo'])

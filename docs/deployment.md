@@ -10,11 +10,11 @@
 8. Back up the `data/` directory; it contains the master profile and generated applications.
 9. Upload private reference CVs through the authenticated **Reference CVs** screen. Optionally upload a candidate photo through the **Profile** screen or place it under `data/profile_photo/`. Neither path is included in Git or the Docker image.
 
-CI checks pull requests and pushes. Production deployment is a separate manually triggered CD workflow, described below.
+CI checks pull requests and pushes. Production deployment starts automatically on pushes to `main`, including merged pull requests, using the separate CD workflow described below.
 
 ## Continuous deployment from GitHub Actions
 
-`Deploy CVTailor` is initially **manual**, via Actions → Deploy CVTailor → Run workflow → `main`. It runs the full CI checks, checks that the running commit is an ancestor of the release, publishes an image to GHCR, then deploys its immutable digest over restricted SSH. Merge all feature PRs already deployed on the VPS into `main` before the first release (a merged stacked PR may only be present on its parent branch): the ancestry check prevents accidental downgrades. No PRs are automatically merged.
+`Deploy CVTailor` starts **automatically on every push to `main`**, including a merged pull request. Manual runs remain available via Actions → Deploy CVTailor → Run workflow → `main`. Its test job runs lint and the full test suite; deployment requires that job to succeed. It checks that the running commit is an ancestor of the release, publishes an image to GHCR, then deploys its immutable digest over restricted SSH. Merge all feature PRs already deployed on the VPS into `main` before the first release (a merged stacked PR may only be present on its parent branch): the ancestry check prevents accidental downgrades. No PRs are automatically merged.
 
 The workflow forwards its short-lived `GITHUB_TOKEN` over SSH stdin for the registry pull. Docker credentials are held in a temporary directory and removed on success or failure; no permanent registry token is required on the VPS. Application secrets and private data stay on the VPS.
 
@@ -59,4 +59,4 @@ On deployment failure the script recreates the previous image and checks its hea
 
 After success `/var/lib/cvtailor-cd/current.yml` contains the digest pinned image and `previous-image` contains the previous image ID. Future manual Compose restarts must include `-f /var/lib/cvtailor-cd/current.yml` to retain the deployed version. Do not prune the previous image until the new release has been verified.
 
-To enable automatic CD later, add `push: {branches: [main]}` alongside `workflow_dispatch` in `cd.yml`. The existing `needs: test` still blocks deployment if tests fail. Start with one successful manual release first.
+The `push` trigger is limited to `main`; opening or updating a pull request does not deploy production. Existing `production` environment protection rules still apply, including any required reviewer approval configured in GitHub.

@@ -75,6 +75,9 @@ class ResilientAIProvider(AIProvider):
         on_stage: Callable[[str], None] | None = None,
         reuse_analysis: JobAnalysis | None = None,
     ) -> WorkflowResponse:
+        if job.workflow == "custom":
+            from app.services.custom_cv import custom_analysis
+            reuse_analysis = custom_analysis(job)
         primary_name, fallback_name = self.resolve_chain(requested_provider)
         primary = self.providers.get(primary_name)
         if not primary:
@@ -121,7 +124,7 @@ class ResilientAIProvider(AIProvider):
                                  if (row.get('source_quote') if isinstance(row, dict) else row.source_quote) in missing]
                     getattr(combined, field).extend(additions)
                 assessed_quotes = {row.source_quote for row in repair_rows.requirements + repair_rows.role_competencies}
-                assessed_quotes.update(row.get('source_quote') for row in repair_rows.responsibilities)
+                assessed_quotes.update(row.get('source_quote') for row in repair_rows.responsibilities + repair_rows.source_context)
                 combined.unassessed_source_passages = [quote for quote in missing if quote not in assessed_quotes]
                 model_output = combined.model_dump(mode='json')
                 combined = AnalysisValidator(profile, getattr(target, 'skills_bank', None)).validate(
@@ -298,6 +301,20 @@ class ResilientAIProvider(AIProvider):
     async def retailor(self, job, profile, analysis, requested_provider='auto', on_stage=None):
         return await self.tailor(job, profile, requested_provider=requested_provider,
                                  on_stage=on_stage, reuse_analysis=analysis)
+
+    async def edit_cv(self, payload: dict, requested_provider="auto"):
+        primary, fallback = self.resolve_chain(requested_provider)
+        async def run():
+            for index, name in enumerate(dict.fromkeys(n for n in (primary, fallback) if n)):
+                target = self.providers.get(name)
+                if target is None:
+                    raise ProviderUnavailableError(f"Provider '{name}' is not configured.")
+                try:
+                    return await target.edit_cv(payload)
+                except AIProviderError:
+                    if index or not fallback:
+                        raise
+        return await asyncio.wait_for(run(), timeout=self.operation_budget_seconds)
 
     async def analyze_job(
         self,

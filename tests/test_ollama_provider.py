@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import httpx
@@ -60,8 +61,14 @@ def resume_payload(*, unsupported: bool = False) -> dict:
     return {
         "headline": "Python Engineer",
         "professional_summary": "Builds reliable services.",
-        "summary_source_fact_ids": ["summary:0"],
+        "summary_source_fact_ids": [
+            "summary:"
+            + hashlib.sha256(
+                "automates repeatable infrastructure and support workflows with python.".encode()
+            ).hexdigest()[:12]
+        ],
         "core_skills": ["Python", "Kubernetes"] if unsupported else ["Python"],
+        "selected_skill_ids": [],
         "experience": [
             {
                 "company": "Invented Corp" if unsupported else "Example Ltd",
@@ -70,7 +77,14 @@ def resume_payload(*, unsupported: bool = False) -> dict:
                 "bullets": [
                     {
                         "text": "Invented unsupported achievement.",
-                        "source_fact_ids": ["experience:0:fact:0"],
+                        "source_fact_ids": [
+                            "experience:"
+                            + hashlib.sha256("example ltd|support engineer|2022|present".encode()).hexdigest()[:12]
+                            + ":fact:"
+                            + hashlib.sha256(
+                                "automated a verified operational workflow with python.".encode()
+                            ).hexdigest()[:12]
+                        ],
                     }
                 ],
             }
@@ -137,8 +151,8 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     assert json.loads(requests[1]["messages"][1]["content"])["stage"] == "tailor_resume"
     assert all(request["format"]["type"] == "object" for request in requests)
     assert all(request["stream"] is False for request in requests)
-    assert all(request["think"] is True for request in requests)
-    assert all(request["options"]["num_predict"] == 8192 for request in requests)
+    assert all(request["think"] is False for request in requests)
+    assert [r["options"]["num_predict"] for r in requests] == [6144, 4096]
     assert all(request["options"]["num_ctx"] == 32768 for request in requests)
     assert all(
         "MASTER PROFILE IS THE ONLY SOURCE OF FACTS" in request["messages"][0]["content"] for request in requests
@@ -146,8 +160,10 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     resume_schema = requests[1]["format"]
     assert resume_schema["properties"]["summary_source_fact_ids"]["minItems"] == 1
     assert resume_schema["properties"]["core_skills"]["items"]["enum"] == ["Python", "n8n", "Linux"]
-    assert resume_schema["$defs"]["ResumeBullet"]["properties"]["source_fact_ids"]["items"]["enum"]
-    project_schema = resume_schema["$defs"]["ResumeProject"]["properties"]
+    assert resume_schema["properties"]["experience"]["items"]["properties"]["bullets"]["items"]["properties"][
+        "source_fact_ids"
+    ]["items"]["enum"]
+    project_schema = resume_schema["properties"]["projects"]["items"]["properties"]
     assert project_schema["name"]["enum"] == ["Python ML thesis project"]
     assert project_schema["technologies"]["items"]["enum"] == ["Python", "n8n", "Linux"]
     assert "Python ML thesis project" not in project_schema["technologies"]["items"]["enum"]
@@ -166,7 +182,7 @@ async def test_ollama_receives_reference_cvs_as_style_only(profile):
     resume_request = json.loads(requests[1]["messages"][1]["content"])
 
     assert resume_request["reference_cvs_style_only"][0]["target_role"] == "Reference Platform Engineer"
-    assert resume_request["layout_constraints"]["max_skills"] == 10
+    assert resume_request["layout_guide"]["max_skills"] == 10
     assert "Never copy their people" in requests[1]["messages"][0]["content"]
 
 
@@ -209,7 +225,7 @@ async def test_ollama_health_checks_configured_model():
 
 @pytest.mark.asyncio
 async def test_truth_lock_still_removes_unsupported_ollama_facts(profile):
-    replies = [analysis_payload(), resume_payload(unsupported=True)]
+    replies = [analysis_payload(), dict(resume_payload(unsupported=True), experience=resume_payload()["experience"])]
     call_count = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:

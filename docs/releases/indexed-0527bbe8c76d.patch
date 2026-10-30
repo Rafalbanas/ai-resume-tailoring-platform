@@ -1,0 +1,616 @@
+--- a/app/services/ai_provider.py
++++ b/app/services/ai_provider.py
+@@ -47,7 +47,8 @@
+ 15. Return structured requirements with verbatim source_quote, priority, status, source_fact_ids from source_catalog, classification_basis, and reason explaining the complete scope and required proficiency. For each AND/OR condition return components with individual name/status/source_fact_ids/reason, and operator all/any. Explicitly separate required capability from optional/preferred languages or tools. Technology examples do not require every example.
+ 16. Use all supplied employment, project, verified repository, education and language evidence. Project experience is valid evidence of use, but is not automatically commercial tenure or advanced ownership. Missing evidence is missing, not absent; absent requires explicit negative evidence. Do not infer a specific database product from generic SQL or TypeScript from JavaScript.
+ 17. Each requirement must cover one qualification-bearing source passage. Copy source_quote exactly from the job (including original punctuation), not from the candidate profile. If citing more than one job passage, put each literal passage into source_quotes; do not invent a combined quotation. Never promote a duty under You will / Responsibilities to a mandatory qualification. Compound titles like Data Processing & SQL require separately assessed components; JSON knowledge does not confirm XML/CSV/Google Sheets. Fluent English requires more than documented B2, so preserve that difference.
+-18. Preserve source_context for benefits/employment/recruitment/company passages, responsibilities separately, and role_competencies for portal tags. These do not add mandatory qualification blockers. Use ambiguous operator and interpretation_uncertain when the source is unclear. Unknown headings do not justify discarding actual qualifications."""
++18. Classify EVERY nonempty source line, including headings, using literal source_quote fields. Preserve whole source lines in quotes. Interpret meaning in context regardless of section order, heading wording, bullets or formatting. Parser hints are advisory and must not override your interpretation. Headings themselves are context, never qualifications. Do not infer qualifications from employer benefits.
++19. Preserve source_context for benefits/employment/recruitment/company passages, responsibilities separately, and role_competencies for portal tags. These do not add mandatory qualification blockers. Use ambiguous operator and interpretation_uncertain when the source is unclear. Unknown headings do not justify discarding actual qualifications."""
+ 
+ 
+ RESUME_TAILOR_SYSTEM_PROMPT = """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
+--- a/app/services/gemini_provider.py
++++ b/app/services/gemini_provider.py
+@@ -10,11 +10,9 @@
+ 
+ from app.core.config import Settings
+ from app.models.candidate import CandidateProfile
+-from app.models.interpretation import JobInterpretation
+ from app.models.job import JobAnalysis, JobRequest
+ from app.models.resume import TailoredResume, WorkflowResponse
+ from app.services.ai_provider import (
+-    JOB_ANALYSIS_SYSTEM_PROMPT,
+     RESUME_TAILOR_SYSTEM_PROMPT,
+     AIProvider,
+     AIProviderError,
+@@ -22,7 +20,6 @@
+     GeminiQuotaError,
+     ProviderResponseError,
+     ProviderUnavailableError,
+-    build_compact_analysis_payload,
+     build_compact_tailor_payload,
+ )
+ from app.services.analysis_validator import AnalysisValidator
+@@ -147,6 +144,7 @@
+         system_prompt: str,
+         payload: dict,
+         *,
++        _schema: dict | None = None,
+         source_catalog: list[dict[str, str]] | None = None,
+         allowed_skills: list[str] | None = None,
+         allowed_skill_ids: list[str] | None = None,
+@@ -155,7 +153,7 @@
+             raise GeminiAuthError("Gemini API key is not configured. Set GEMINI_API_KEY in your environment.")
+ 
+         from app.services.bounded_http import bounded_post, model_call
+-        schema = response_model.model_json_schema()
++        schema = _schema or response_model.model_json_schema()
+         gemini_schema = to_gemini_schema(schema)
+ 
+         generation_config: dict[str, Any] = {
+@@ -315,12 +313,10 @@
+                 raise ProviderResponseError("Gemini returned invalid structured JSON. Try again.") from exc
+ 
+     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
+-        payload = build_compact_analysis_payload(job, profile, self.skills_bank)
+-        interpretation = await self._chat(
+-            JobInterpretation,
+-            JOB_ANALYSIS_SYSTEM_PROMPT,
+-            payload,
+-        )
++        from app.services.indexed_analysis import indexed_interpretation
++        from app.services.ollama_analysis import AnalysisInventory
++        inventory = AnalysisInventory.build(job, profile, self.skills_bank)
++        interpretation = await indexed_interpretation(self, inventory)
+         analysis = interpretation.to_analysis(job)
+         validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
+         import hashlib
+--- a/app/services/grounded_requirements.py
++++ b/app/services/grounded_requirements.py
+@@ -196,10 +196,19 @@
+         semantic_key,
+     )
+     units, sections = extract_sections(job_text)
+-    source = source_lines(job_text)
++    semantic_source = False
++    source_issues = []
++    if semantic:
++        from app.services.source_classification import model_source_units
++        model_units, source_issues = model_source_units(candidate, job_text)
++        if model_units is not None:
++            units, sections = model_units, []
++            semantic_source = True
++    source = [(u.name, RequirementPriority(u.category)) for u in units
++              if u.category in {'mandatory', 'preferred', 'nice_to_have'}] if semantic_source else source_lines(job_text)
+     result.source_sections = sections
+-    result.analysis_method = 'llm_validated' if semantic and candidate.requirements else 'source_review'
+-    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','keywords','unknown'}]
++    result.analysis_method = 'llm_validated' if semantic and (candidate.requirements or semantic_source) else 'source_review'
++    result.source_context = [{"name":u.name, "source_quote":u.quote, "category":u.category, "source_section":u.section} for u in units if u.category in {'benefits','employment','recruitment','organization','keywords','unknown','context'}]
+     result.analysis_language = "en"
+     result.responsibilities = [{"name": u.name, "source_quote": u.quote, "classification_basis": u.basis} for u in units if u.category == "responsibility"]
+     # Responsibility overlap is indicative, not proof of the full duty or an
+@@ -221,8 +230,12 @@
+             status, evidence, ids, reason = verify_requirement(validator, match_name, unit)
+             result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
+     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have", "unknown"}}
+-    result.completeness_issues = []
++    result.completeness_issues = list(source_issues)
+     result.unassessed_source_passages = list(candidate.unassessed_source_passages)
++    for issue in source_issues:
++        for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: '):
++            if issue.startswith(prefix):
++                result.unassessed_source_passages.append(issue[len(prefix):])
+     if result.unassessed_source_passages:
+         result.completeness_issues.append("Explicitly unresolved source passages still require model assessment.")
+     suggestions = candidate.strong_matches + candidate.partial_matches + candidate.missing_requirements
+@@ -333,7 +346,7 @@
+             req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
+             req.evidence = [e['fact'] for e in req.evidence_sources]
+     if semantic and candidate.requirements:
+-        requirements, model_issues = validated_model_requirements(validator, candidate, job_text, units, requirements)
++        requirements, model_issues = validated_model_requirements(validator, candidate, job_text, units, requirements, classified=semantic_source)
+         result.completeness_issues.extend(model_issues)
+     if semantic and candidate.role_competencies:
+         # Unknown headings can contain soft skills/capabilities. Retain the model's
+@@ -341,7 +354,7 @@
+         role_candidate = candidate.model_copy(deep=True)
+         role_candidate.requirements = candidate.role_competencies
+         model_roles, role_issues = validated_model_requirements(
+-            validator, role_candidate, job_text, [u for u in units if u.category != 'competency'], [])
++            validator, role_candidate, job_text, [u for u in units if u.category != 'competency'], [], classified=semantic_source)
+         result.completeness_issues.extend(role_issues)
+         for role in model_roles:
+             role.priority = RequirementPriority.UNSPECIFIED
+--- /dev/null
++++ b/app/services/indexed_analysis.py
+@@ -0,0 +1,61 @@
++"""Provider-neutral job coverage using literal passage IDs, never parser categories."""
++from app.services.ollama_analysis import COMPACT_PROMPT, CompactInterpretation, needs_assessment
++
++
++def interpretation_payload(inventory, ids):
++    payload = inventory.payload(ids)
++    # Incorrect inherited sections must not prime either model's interpretation.
++    payload['passages'] = [{'id': pid, 'text': inventory.passages[pid]['text']} for pid in ids]
++    return payload
++
++
++INDEXED_PROMPT = COMPACT_PROMPT + """
++The response is a keyed assessments object, never a rows array. Return every supplied
++passage ID exactly once. Use job_source to interpret surrounding meaning and priority.
++There are no parser categories to follow. Headings, benefit text and standalone level
++labels are context. Explicit qualifications are requirements; duties are responsibilities.
++Technology tags are competencies with unspecified priority, not mandatory qualifications.
++Never assess promotional headings as candidate skills. Preserve the source AND/OR scope;
++a slash between related APIs does not automatically make the condition uncertain.
++"""
++
++
++def reference_schema(inventory, ids):
++    # Explicit primitive schema: no nullable unions or conditional branches that
++    # a provider schema converter could silently erase.
++    text = {'type': 'string'}
++    facts = {'type': 'array', 'items': {'type': 'string'}}
++    status = {'type': 'string', 'enum': ['strong', 'partial', 'missing', 'absent']}
++    component = {'type': 'object', 'properties': {
++        'n': text, 's': status, 'f': facts, 'why': text, 'lvl': text,
++    }, 'required': ['n', 's', 'f', 'why']}
++    row = {'type': 'object', 'properties': {
++        'p': {'type': 'string', 'enum': ids},
++        'k': {'type': 'string', 'enum': ['requirement', 'competency', 'responsibility', 'context']},
++        'n': text, 'priority': {'type': 'string', 'enum': ['mandatory', 'preferred', 'nice_to_have', 'unspecified']},
++        's': status, 'f': facts, 'why': text,
++        'op': {'type': 'string', 'enum': ['single', 'all', 'any', 'ambiguous']},
++        'c': {'type': 'array', 'items': component}, 'lvl': text, 'uncertain': {'type': 'boolean'},
++    }, 'required': ['p', 'k', 'n', 'priority', 's', 'f', 'why', 'op', 'c', 'lvl', 'uncertain']}
++    return {'type': 'object', 'properties': {'rows': {'type': 'array', 'items': row}}, 'required': ['rows']}
++
++
++async def indexed_interpretation(provider, inventory):
++    pending = list(inventory.passages)
++    rows = []
++    for _attempt in range(2):
++        prompt = INDEXED_PROMPT + "\nFor this response return {rows: [assessment, ...]} with p inside each row. Exactly one row for each supplied passage ID, including all context and headings."
++        response = await provider._chat(
++            CompactInterpretation, prompt, interpretation_payload(inventory, pending),
++            _schema=reference_schema(inventory, pending),
++        )
++        verified = inventory.validate_rows(response.rows, pending)
++        valid = [row for row in verified if row.k not in {'context', 'responsibility'}
++                 or not needs_assessment(inventory.passages[row.p])]
++        rows.extend(valid)
++        covered = {row.p for row in valid}
++        pending = [pid for pid in pending if pid not in covered]
++        if not pending:
++            return inventory.expand(rows)
++    from app.services.ai_provider import ProviderResponseError
++    raise ProviderResponseError(f'Analysis left {len(pending)} source passages unassessed after targeted recovery.')
+--- a/app/services/job_extractors/__init__.py
++++ b/app/services/job_extractors/__init__.py
+@@ -1,4 +1,5 @@
+ import logging
++from urllib.parse import urlsplit, urlunsplit
+ 
+ import httpx
+ 
+@@ -18,6 +19,19 @@
+ from app.services.job_extractors.workday import WorkdayExtractor
+ 
+ logger = logging.getLogger(__name__)
++
++def canonical_job_url(url: str) -> str:
++    """Map the known NFJ entrypoint alias; preserve the offer path and parameters."""
++    try:
++        parts = urlsplit(url)
++        if (parts.hostname or '').casefold() != 'entrypoint-prod.nofluffjobs.com' or parts.username or parts.password:
++            return url
++        if parts.scheme.casefold() not in {'http', 'https'}:
++            return url
++        port = f':{parts.port}' if parts.port is not None else ''
++        return urlunsplit((parts.scheme, 'nofluffjobs.com' + port, parts.path, parts.query, parts.fragment))
++    except ValueError:
++        return url  # The existing URL guard reports malformed or unsafe addresses.
+ 
+ 
+ class JobExtractorService:
+@@ -83,6 +97,7 @@
+         )
+ 
+     async def extract(self, url: str) -> JobExtraction:
++        url = canonical_job_url(url)
+         source = url
+         adapter = next((candidate for candidate in self.adapters if candidate.matches(url)), None)
+         metadata = None
+--- a/app/services/ollama_analysis.py
++++ b/app/services/ollama_analysis.py
+@@ -88,7 +88,10 @@
+ For requirements/competencies supply n, priority, s, f, why; include optional fields
+ only when needed. Return one row per capability, use components for AND/OR conditions.
+ Never repeat source quotes, full evidence facts or long descriptions in the response.
+-Hints are advisory: unknown headings and unclassified paragraphs can contain qualifications.
++job_source preserves the complete offer across batches; classify only supplied passage IDs.
++Hints and section labels are advisory, never authoritative. Classify meaning regardless of
++heading wording, formatting or order. Inherited hints cannot override explicit qualifications.
++Headings are context, never qualifications.
+ Keep required scope, tenure, levels, negations and preferably optional qualifiers intact.
+ AND requires each component. OR/examples require an applicable alternative, not all examples.
+ A technology/file name or a workflow existing in a repository does not prove successful
+@@ -105,11 +108,12 @@
+     passages: dict
+     evidence: dict
+     owners: list
++    matcher: object = None
++    source_text: str = ""
+ 
+     @classmethod
+     def build(cls, job, profile, bank=None):
+-        units, headings = extract_sections(job.job_description)
+-        heading_keys = {clean_source_line(h).strip(" #:\t\r\n").casefold() for h in headings}
++        units, _ = extract_sections(job.job_description)
+         passages = {}
+         # Include unrecognized headings and all administrative/duty text, too.
+         # A parser hint cannot silently remove a passage from model interpretation.
+@@ -125,9 +129,10 @@
+                 "text": related[0].quote if related else text,
+                 "hints": hints,
+                 "section": section,
+-                "context_only": position == 0 or cleaned.replace("\u200b", "").replace("\ufeff", "").strip(" #:\t\r\n").casefold() in heading_keys or bool(hints) and set(hints) <= {"competency", "organization", "benefits", "employment", "recruitment", "keywords"},
++                "context_only": position == 0,
+             }
+-        entries = EvidenceMatcher(FactCatalog(profile), bank).entries
++        matcher = EvidenceMatcher(FactCatalog(profile), bank)
++        entries = matcher.entries
+         evidence = {f"F{i + 1}": e for i, e in enumerate(entries)}
+         # Dates are separate, once per owner: evidence references establish duties;
+         # job titles alone never prove competence or counted tenure.
+@@ -135,7 +140,7 @@
+             {"index": i, "company": e.company, "title": e.title, "start": e.start, "end": e.end}
+             for i, e in enumerate(profile.experience)
+         ]
+-        return cls(passages, evidence, owners)
++        return cls(passages, evidence, owners, matcher, job.job_description)
+ 
+     def payload(self, ids):
+         from app.services.evidence_strength import evidence_strength
+@@ -153,6 +158,7 @@
+             evidence[fid] = [entry.kind, owner_ids[key], entry.text, evidence_strength(entry)]
+         return {
+             "stage": "analyze_job",
++            "job_source": self.source_text,
+             "passages": [
+                 {"id": i, **self.passages[i], "requires_assessment": needs_assessment(self.passages[i])} for i in ids
+             ],
+@@ -163,6 +169,9 @@
+ 
+     def schema(self, ids):
+         schema = CompactInterpretation.model_json_schema()
++        if not ids:
++            schema["properties"]["rows"] = {"type": "array", "items": {"type": "object"}, "maxItems": 0}
++            return schema
+         # Bound every generated array and use short ID enums. This avoids repeating
+         # long IDs, quoted job text and fact text in every generated component.
+         schema["properties"]["rows"]["minItems"] = len(ids)
+@@ -172,13 +181,16 @@
+             schema["$defs"]["EvidenceId"] = {"type": "string", "enum": list(self.evidence)}
+             for kind in ["CompactAssessment", "CompactComponent"]:
+                 schema["$defs"][kind]["properties"]["f"]["items"] = {"$ref": "#/$defs/EvidenceId"}
++        else:
++            for kind in ["CompactAssessment", "CompactComponent"]:
++                schema["$defs"][kind]["properties"]["f"]["maxItems"] = 0
+         # Use disjoint ID enums, rather than unsupported custom options or prose
+         # retries: a known qualification cannot choose a context-only row type.
+         from copy import deepcopy
+ 
+         groups = {"QualificationRow": [], "CapabilityRow": [], "OtherRow": []}
+         for pid in ids:
+-            if set(self.passages[pid]["hints"]) & {"mandatory", "preferred", "nice_to_have"}:
++            if objective_condition(self.passages[pid]):
+                 groups["QualificationRow"].append(pid)
+             elif needs_assessment(self.passages[pid]):
+                 groups["CapabilityRow"].append(pid)
+@@ -213,6 +225,11 @@
+                 )
+                 row_schema["properties"]["n"]["minLength"] = 1
+                 row_schema["properties"]["why"]["minLength"] = 1
++            else:
++                row_schema["anyOf"] = [
++                    {"properties": {"k": {"enum": ["context", "responsibility"]}, "n": {"enum": [""]}, "why": {"enum": [""]}, "f": {"maxItems": 0}, "c": {"maxItems": 0}}},
++                    {"properties": {"k": {"enum": ["requirement", "competency"]}, "n": {"minLength": 1}, "why": {"minLength": 1}}, "required": ["n", "why", "s", "f", "priority"]},
++                ]
+             schema["$defs"][name] = row_schema
+             variants.append({"$ref": f"#/$defs/{name}"})
+         schema["properties"]["rows"]["items"] = variants[0] if len(variants) == 1 else {"anyOf": variants}
+@@ -220,30 +237,76 @@
+         return schema
+ 
+     def keyed_schema(self, ids):
+-        """Last recovery: the grammar requires each missing passage exactly once."""
++        """Each passage is required exactly once; context cannot claim a skill."""
+         from copy import deepcopy
+-        schema = self.schema(ids)
+-        definitions = schema["$defs"]
+-        base = definitions.get("AssessmentRow") or definitions.get("QualificationRow") or definitions.get("CapabilityRow") or definitions["OtherRow"]
++
++        definitions = CompactInterpretation.model_json_schema()["$defs"]
++        base = definitions.pop("CompactAssessment")
+         properties = {}
+         for pid in ids:
+             passage = self.passages[pid]
+-            qualification = bool(set(passage["hints"]) & {"mandatory", "preferred", "nice_to_have"})
+             assessable = needs_assessment(passage)
+-            kind = "KeyedQualification" if qualification else "KeyedCapability" if assessable else "KeyedContext"
++            qualification = objective_condition(passage)
++            fixed_context = passage["context_only"] and not assessable
++            kind = "Qualification" if qualification else "Assessment" if assessable else "Context" if fixed_context else "Open"
+             if kind not in definitions:
+                 row = deepcopy(base)
+                 row["properties"].pop("p")
+-                row["required"] = [key for key in row["required"] if key != "p"]
+-                if assessable:
+-                    row["properties"]["k"]["enum"] = ["requirement"] if qualification else ["requirement", "competency"]
+-                    row["required"] = list(dict.fromkeys(row["required"] + ["n", "s", "f", "why", "priority"]))
++                row["required"] = ["k"]
++                if kind == "Context":
++                    row["properties"] = {"k": {"type": "string", "enum": ["context"]}}
++                else:
++                    row["properties"]["k"]["enum"] = ["requirement"] if qualification else ["requirement", "competency"] if assessable else ["requirement", "competency", "context", "responsibility"]
++                    if kind != "Open":
++                        row["required"] += ["n", "s", "f", "why", "priority"]
+                     row["properties"]["n"]["minLength"] = 1
+                     row["properties"]["why"]["minLength"] = 1
+-                else:
+-                    row["properties"]["k"]["enum"] = ["context", "responsibility"]
++                    if kind == "Open":
++                        row["properties"]["n"]["minLength"] = 0
++                        row["properties"]["why"]["minLength"] = 0
++                        row["anyOf"] = [
++                            {"properties": {"k": {"enum": ["context", "responsibility"]}}},
++                            {"properties": {"k": {"enum": ["requirement", "competency"]}, "n": {"minLength": 1}, "why": {"minLength": 1}},
++                             "required": ["n", "s", "f", "why", "priority"]},
++                        ]
++                    for target in [row, definitions["CompactComponent"]]:
++                        refs = target["properties"]["f"]
++                        if self.evidence:
++                            refs["items"] = {"type": "string", "enum": list(self.evidence)}
++                        else:
++                            refs["maxItems"] = 0
+                 definitions[kind] = row
+-            # Reuse the grammar once per category, not once per source passage.
++            # Bind named product scopes to independently checked source evidence.
++            # Every evidence record still travels in the payload; this only bounds
++            # which IDs can prove this particular product at its requested scope.
++            if assessable and self.matcher:
++                import re
++
++                from app.services.semantic_requirements import source_components
++                parts, operator = source_components(passage["text"])
++                scopes = parts or [passage["text"]]
++                named = all(re.search(r"Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS", value, re.I) for value in scopes)
++                # Strip grammatical qualifiers for matching a single named product,
++                # retaining practical scope in the independent matcher query.
++                checks = []
++                for value in scopes:
++                    found = re.findall(r"Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS", value, re.I)
++                    if len(found) != 1:
++                        break
++                    query = ("Practical knowledge of " if re.search(r"praktyczn|practical|experience|hands.on", value, re.I) else "Knowledge of ") + found[0]
++                    checks.append(self.matcher.match(query))
++                if named and len(checks) == len(scopes) and all(check and check.status == RequirementStatus.MISSING for check in checks):
++                    kind = f"MissingProduct_{pid}"
++                    row = deepcopy(definitions["Qualification" if qualification else "Assessment"])
++                    row["properties"]["s"] = {"type": "string", "enum": ["missing"]}
++                    row["properties"]["f"] = {"type": "array", "items": {"type": "string"}, "maxItems": 0}
++                    component = deepcopy(definitions["CompactComponent"])
++                    component["properties"]["s"] = {"type": "string", "enum": ["missing"]}
++                    component["properties"]["f"] = {"type": "array", "items": {"type": "string"}, "maxItems": 0}
++                    row["properties"]["c"]["items"] = component
++                    if parts:
++                        row["properties"]["op"]["enum"] = [operator]
++                    definitions[kind] = row
+             properties[pid] = {"$ref": f"#/$defs/{kind}"}
+         return {"type": "object", "$defs": definitions,
+                 "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
+@@ -433,19 +496,14 @@
+     """Detect candidate capability passages left as context, not infer their status."""
+     import re
+ 
+-    if passage.get("assessment_required"):
++    if passage.get("assessment_required") or objective_condition(passage):
+         return True
+-    hints = set(passage["hints"])
+-    if hints & {"mandatory", "preferred", "nice_to_have"}:
+-        return True
+-    if hints & {"organization", "responsibility", "benefits", "employment", "recruitment", "keywords"}:
+-        return False
+-    text = passage["text"].strip()
+-    if text.endswith(":") or len(text.split()) < 3:
++    text = clean_source_line(passage["text"])
++    if text.endswith(":") or len(text.split()) < 2:
+         return False
+     return bool(
+         re.match(
+-            r"^(?:\d+\+?\s*years?\b|experience\b|hands.on experience\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|practical knowledge\b|ability\b|able to\b|excellent\b|strong attention\b|problem.solving\b|open to learning\b|must\b|fluen\w*\b)",
++            r"^(?:\d+(?:\.\d+)?\+?\s*years?\b|experience\b|hands.on experience\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|practical knowledge\b|(?:praktyczn\w*\s+)?znajomoś\w*\b|doświadczen\w*\b|umiejętnoś\w*\b|ability\b|able to\b|excellent\b|strong attention\b|problem.solving\b|open to learning\b|must\b|fluen\w*\b)",
+             text,
+             re.I,
+         )
+@@ -455,10 +513,8 @@
+ def objective_condition(passage):
+     import re
+ 
+-    if set(passage["hints"]) & {"responsibility", "organization", "benefits", "employment", "recruitment", "keywords"}:
+-        return False
+-    text = passage["text"].strip()
+-    tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+\+?\s*years?\b.*\bexperience\b", text, re.I)
++    text = clean_source_line(passage["text"])
++    tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+(?:\.\d+)?\+?\s*years?\b.*\bexperience\b", text, re.I)
+     language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?)\b", text, re.I) and re.search(
+         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
+     )
+--- a/app/services/ollama_provider.py
++++ b/app/services/ollama_provider.py
+@@ -24,7 +24,6 @@
+ from app.services.analysis_validator import AnalysisValidator
+ from app.services.comparison_capture import record_call
+ from app.services.ollama_analysis import (
+-    COMPACT_PROMPT,
+     AnalysisInventory,
+     CompactInterpretation,
+     OllamaAnalysisError,
+@@ -354,6 +353,7 @@
+             raise OllamaAnalysisError("envelope", "Ollama returned invalid structured JSON: missing message content.") from exc
+ 
+     async def analyze_job(self, job: JobRequest, profile: CandidateProfile, on_stage=None) -> JobAnalysis:
++        from app.services.indexed_analysis import INDEXED_PROMPT, interpretation_payload
+         inventory = AnalysisInventory.build(job, profile, self.skills_bank)
+         batches = plan_batches(inventory, self.num_predict, self.num_ctx)
+         rows = []
+@@ -389,8 +389,8 @@
+                         keyed_recovery = is_repair or repair
+                         if keyed_recovery:
+                             recovery_prompt += "\nRECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
+-                        result = await self._chat(CompactInterpretation, COMPACT_PROMPT + recovery_prompt, inventory.payload(pending),
+-                                                  _schema=inventory.keyed_schema(pending) if keyed_recovery else inventory.schema(pending))
++                        result = await self._chat(CompactInterpretation, INDEXED_PROMPT + recovery_prompt, interpretation_payload(inventory, pending),
++                                                  _schema=inventory.keyed_schema(pending))
+                         recovered = inventory.validate_rows(result.rows, pending)
+                     except OllamaAnalysisError as exc:
+                         if exc.kind != 'output_limit':
+--- a/app/services/resilient_provider.py
++++ b/app/services/resilient_provider.py
+@@ -122,7 +122,7 @@
+                                  if (row.get('source_quote') if isinstance(row, dict) else row.source_quote) in missing]
+                     getattr(combined, field).extend(additions)
+                 assessed_quotes = {row.source_quote for row in repair_rows.requirements + repair_rows.role_competencies}
+-                assessed_quotes.update(row.get('source_quote') for row in repair_rows.responsibilities)
++                assessed_quotes.update(row.get('source_quote') for row in repair_rows.responsibilities + repair_rows.source_context)
+                 combined.unassessed_source_passages = [quote for quote in missing if quote not in assessed_quotes]
+                 model_output = combined.model_dump(mode='json')
+                 combined = AnalysisValidator(profile, getattr(target, 'skills_bank', None)).validate(
+--- a/app/services/semantic_requirements.py
++++ b/app/services/semantic_requirements.py
+@@ -195,13 +195,13 @@
+     return entries
+ 
+ 
+-def validated_model_requirements(validator, candidate, job_text, units, fallback):
++def validated_model_requirements(validator, candidate, job_text, units, fallback, *, classified=False):
+     from app.services.job_sections import REQUIREMENT_SIGNAL, clean_source_line, extract_sections
+ 
+     def heading_key(value):
+         return clean_source_line(value).strip(" #:\t\r\n").casefold()
+ 
+-    headings = {heading_key(s) for s in extract_sections(job_text)[1]}
++    headings = set() if classified else {heading_key(s) for s in extract_sections(job_text)[1]}
+     requirements, issues = [], []
+     excluded = {"benefits", "employment", "recruitment", "organization", "keywords", "responsibility", "competency"}
+     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
+@@ -216,7 +216,7 @@
+             # Keep its body available for the model instead of scoring the title.
+             continue
+         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
+-        if all(
++        if not classified and all(
+             (any(u.category in excluded and clean_source_line(quote) in clean_source_line(u.quote) for u in units) or clean_source_line(quote) in context_text)
+             and not any(u.category in qualification_categories and clean_source_line(quote) in clean_source_line(u.quote) for u in units)
+             for quote in quotes
+--- /dev/null
++++ b/app/services/source_classification.py
+@@ -0,0 +1,55 @@
++"""Resolve complete model classifications against literal source, independent of layout."""
++from app.services.job_sections import SourceUnit, clean_source_line
++from app.services.semantic_requirements import resolve_source_quotes
++
++
++def model_source_units(candidate, text):
++    """Return verified dispositions, or explicit coverage/provenance errors.
++
++    A complete disposition map supersedes section-parser hints. Sparse legacy
++    responses retain the source-review path, never pretend to cover the source.
++    """
++    if not candidate.source_context and not candidate.responsibilities:
++        return None, []
++    claims = []
++    for row in candidate.requirements:
++        claims.append((row.source_quote, row.priority.value, row.name, row))
++    for row in candidate.role_competencies:
++        claims.append((row.source_quote, 'competency', row.name, row))
++    for category, rows in [('responsibility', candidate.responsibilities), ('context', candidate.source_context)]:
++        for row in rows:
++            claims.append((row.get('source_quote', ''), category, row.get('name', row.get('text', '')), None))
++    units, issues = [], []
++    for quote, category, name, row in claims:
++        resolved = resolve_source_quotes(quote, text) if quote.strip() else []
++        if not resolved:
++            issues.append('A model source classification had no verifiable original source quote.')
++            continue
++        for literal in resolved:
++            # Literal candidate-condition guards are independent of section names.
++            # A complete context map cannot silently discard explicit conditions.
++            if category in {'context', 'responsibility'}:
++                from app.services.ollama_analysis import needs_assessment
++                if needs_assessment({'text': literal, 'hints': []}):
++                    issues.append(f'Candidate condition was classified as context: {literal}')
++            units.append(SourceUnit(
++                name or literal, literal, category, 'Model source classification; literal provenance verified',
++                row.source_section if row else '', f'model_source_{len(units)+1}',
++                level=row.required_level if row else '', operator=row.operator if row else 'single',
++                alternatives=list(row.alternatives) if row else [],
++                uncertain=row.interpretation_uncertain if row else False,
++            ))
++    # Normalize presentation only. Every line must occur in a verified quote;
++    # an unknown heading or benefits paragraph is covered by a context disposition.
++    covered = [' '.join(clean_source_line(line).split())
++               for unit in units for line in unit.quote.splitlines() if clean_source_line(line)]
++    for line in text.splitlines():
++        normalized = ' '.join(clean_source_line(line).split())
++        if normalized and normalized != candidate.role and not any(normalized == value for value in covered):
++            issues.append(f'Unclassified source passage needs review: {line.strip()}')
++    for i, unit in enumerate(units):
++        for other in units[:i]:
++            if (unit.quote == other.quote and unit.category != other.category
++                    and {unit.category, other.category} != {'competency', 'responsibility'}):
++                issues.append(f'Conflicting model source classifications: {unit.quote}')
++    return units, list(dict.fromkeys(issues))
+--- a/templates/analysis.html
++++ b/templates/analysis.html
+@@ -27,7 +27,8 @@
+ </div>
+ {% if fallback_used %}
+ <div class="alert fallback-alert" role="status">
+-  <strong>Automatic Fallback Activated:</strong> {{ (fallback_reason or '').split('. Automatically recovered using')[0] }}
++  <strong>Automatic Fallback Activated:</strong> Analysis switched to {{ provider_used|default("the fallback provider") }}.
++  <details><summary>Technical details</summary><p>{{ (fallback_reason or '').split('. Automatically recovered using')[0] }}</p></details>
+   {% if not analysis.is_reliable or analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' %}
+   <p>The fallback analysis is also incomplete. Recovery did not produce a reliable assessment; review the source and retry.</p>
+   {% else %}<p>Fallback source coverage checked. Classification and evidence validation are assessed separately; this does not guarantee correctness.</p>{% endif %}
+@@ -36,11 +37,11 @@
+ {% if analysis.match_level == 'UNRELIABLE' or analysis.recommendation == 'RETRY' or not analysis.is_reliable %}
+ <div class="alert alert-warning" role="alert" style="margin: 1rem 0; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 1rem; border-radius: 8px;">
+   <strong>⚠️ Incomplete analysis — review required</strong>
+-  <p style="margin: 0.5rem 0 0;">{{ analysis.reasoning_summary }}</p>
++  <p style="margin: 0.5rem 0 0;">The analysis could not be validated. See the issues below, then retry.</p>
+ </div>
+ {% endif %}
+ {% if analysis.validation_version|default(0) < 2 %}<p class="alert alert-warning">Saved report uses older validation rules. Run a new analysis to check sections, evidence and compound requirements. Saved reports and CVs are unchanged.</p>{% endif %}
+-{% if analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
++{% if analysis.completeness_issues or analysis.classification_issues or analysis.evidence_issues %}<section class="card"><h2>Validation requires review</h2>{% for issue in analysis.completeness_issues + analysis.classification_issues + analysis.evidence_issues %}<p>{{ issue }}</p>{% endfor %}</section>{% endif %}
+ {% if analysis.validation_corrections %}<details class="card"><summary>Corrections applied during validation</summary>{% for correction in analysis.validation_corrections %}<p>{{ correction }}</p>{% endfor %}</details>{% endif %}
+ <section class="card">
+   <h2>Adjust job tailoring before export</h2>
+@@ -102,11 +103,13 @@
+ <p class="alert">No qualification requirements were assessed. Review the source text and the role competencies below.</p>
+ {% endif %}
+ {% if analysis.analysis_language != 'en' %}<p class="muted">Original analysis — saved wording is preserved.</p>{% endif %}
++{% if analysis.is_reliable %}
+ <section class="recommendation">
+   <p class="eyebrow">REASONING</p>
+   <p>{{ analysis.reasoning_summary }}</p>
+ </section>
+ 
++{% endif %}
+ {% include '_token_usage.html' %}
+ {% if analysis.requirements %}
+ <section class="card requirements-breakdown" style="margin-top: 1.5rem;">

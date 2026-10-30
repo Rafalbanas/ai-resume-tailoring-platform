@@ -142,7 +142,7 @@ odrębnym namespace na tym samym K3s. Produkcyjny wrapper, komenda `status` prze
 ograniczonego użytkownika i idempotentne wdrożenie przypiętego obrazu także przeszły.
 Nie wykonywano nowego wydania kodu aplikacji.
 
-Workflow `.github/workflows/cd.yml` zachowuje ręczne wyzwalanie i kontrakt SSH.
+Workflow `.github/workflows/cd.yml` uruchamia się automatycznie po pushu do `main` (również po merge'u PR); zachowuje ręczne wyzwalanie i kontrakt SSH.
 Jego wcześniejsza gałąź `codex/vps-cd` nie jest jeszcze scalona do `main`.
 Ta migracja nie scala pozostałych zmian repozytorium i nie deklaruje zakończonego
 uruchomienia workflow GitHub Actions. Serwerowa ścieżka wdrażania jest już K3s.

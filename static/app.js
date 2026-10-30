@@ -10,6 +10,54 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  const editableCV = document.querySelector(".cv-text-editor");
+  if (editableCV) {
+    const savedText = editableCV.value;
+    document.addEventListener("submit", (event) => {
+      if (event.target !== editableCV.form && editableCV.value !== savedText
+          && !window.confirm("You have unsaved manual CV edits. Continue without saving them?")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
+  document.querySelectorAll("[data-loading-form]").forEach(form => {
+    form.addEventListener("submit", () => {
+      const button = form.querySelector('button[type="submit"]');
+      if (button) { button.disabled = true; button.textContent = "Starting AI edit…"; }
+      const status = form.querySelector("[data-loading-status]");
+      if (status) status.textContent = "Your saved CV stays unchanged. Preparing a proposal for review…";
+    });
+  });
+  const historySearch = document.getElementById("history-search");
+  const historyType = document.getElementById("history-type");
+  const historyMatch = document.getElementById("history-match");
+  if (historySearch && historyType && historyMatch) {
+    const items = [...document.querySelectorAll("[data-history-item]")];
+    const count = document.getElementById("history-filter-count");
+    const empty = document.getElementById("history-filter-empty");
+    const filterHistory = () => {
+      const query = historySearch.value.trim().toLocaleLowerCase();
+      const type = historyType.value;
+      const match = historyMatch.value;
+      let visible = 0;
+      for (const item of items) {
+        const show = (!query || item.dataset.search.includes(query))
+          && (type === "all" || item.dataset.entryType === type)
+          && (match === "all" || item.dataset.match === match);
+        item.hidden = !show;
+        if (show) visible += 1;
+      }
+      historyMatch.disabled = type === "analysis";
+      count.textContent = `Showing ${visible} of ${items.length} entries`;
+      empty.hidden = visible !== 0;
+    };
+    historySearch.addEventListener("input", filterHistory);
+    historyType.addEventListener("change", filterHistory);
+    historyMatch.addEventListener("change", filterHistory);
+    filterHistory();
+  }
+
   const resumePreview = document.getElementById("resume-preview");
   const previewEnlarge = document.getElementById("preview-enlarge");
   const previewFit = document.getElementById("preview-fit");
@@ -416,6 +464,35 @@ document.addEventListener("DOMContentLoaded", () => {
   const status = document.getElementById("fetch-status");
   let fetching = false;
   let submitting = false;
+  const workflow = document.getElementById("cv-workflow");
+  const customSource = document.getElementById("custom-source");
+  const isCustom = () => workflow?.value === "custom";
+  const isPaste = () => isCustom() && customSource?.value === "paste";
+  const refreshWorkflow = () => {
+    const custom = isCustom(), paste = isPaste();
+    for (const id of ["job-identity-fields", "job-url-field", "clean-job-text", "job-prompt-hint"]) {
+      const node = document.getElementById(id);
+      if (node) node.hidden = custom;
+    }
+    for (const id of ["custom-source-label", "custom-name-field", "custom-prompt-hint"]) {
+      const node = document.getElementById(id);
+      if (node) node.hidden = !custom;
+    }
+    document.getElementById("pasted-cv-field").hidden = !paste;
+    document.getElementById("prompt-field").hidden = paste;
+    document.getElementById("saved-source-field").hidden = paste;
+    const truthTitle = document.querySelector(".truth-badge strong");
+    const truthDetail = document.querySelector(".truth-badge small");
+    if (truthTitle) truthTitle.textContent = paste ? "Original preserved" : "Truth Lock active";
+    if (truthDetail) truthDetail.textContent = paste ? "Your pasted CV is the factual source" : "Only master profile facts can reach the CV";
+    document.getElementById("prompt-label").textContent = custom ? "What would you like to change?" : "Job description";
+    descriptionInput.minLength = custom ? 10 : 30;
+    descriptionInput.placeholder = custom ? "Create a CV for a Technical Implementation Specialist. Emphasize verified troubleshooting, SQL and REST API experience…" : "Paste the complete job description here…";
+    submitLabel.textContent = paste ? "Import CV" : custom ? "Generate CV" : "Analyze job";
+  };
+  workflow?.addEventListener("change", refreshWorkflow);
+  customSource?.addEventListener("change", refreshWorkflow);
+  if (workflow) refreshWorkflow();
 
   async function jobRequest(url, options, timeout) {
     const controller = new AbortController();
@@ -439,6 +516,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function fieldsAreComplete() {
+    if (isPaste()) return document.getElementById("pasted-cv").value.trim().length > 0 || document.getElementById("cv-file").files.length > 0;
+    if (isCustom()) return descriptionInput.value.trim().length >= 10;
     return companyInput.value.trim() && roleInput.value.trim() && descriptionInput.value.trim().length >= 30;
   }
 
@@ -550,21 +629,28 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Wait for the offer to finish loading or cleaning before analysis.");
       return;
     }
-    if (!fieldsAreComplete() && urlInput.value.trim()) {
+    if (!isCustom() && !fieldsAreComplete() && urlInput.value.trim()) {
       const ready = await fetchJob();
       if (ready) form.requestSubmit();
       return;
     }
     if (!fieldsAreComplete()) {
-      setStatus("Enter company, role, and at least 30 characters of the job description.", "error");
+      setStatus(isPaste() ? "Paste your CV first." : isCustom() ? "Enter at least 10 characters of CV instructions." : "Enter company, role, and at least 30 characters of the job description.", "error");
       return;
     }
     submitting = true;
-    submitLabel.textContent = "Starting analysis…";
+    submitLabel.textContent = isPaste() ? "Importing…" : isCustom() ? "Starting generation…" : "Starting analysis…";
     submitButton.disabled = true;
     setStatus("Starting analysis…");
     try {
       const formData = new FormData(form);
+      if (isPaste()) {
+        const {data} = await jobRequest(cvAppUrl("/custom-cvs/import"), {
+          method: "POST", headers: {"Accept": "application/json"}, body: formData,
+        }, 60000);
+        window.location.href = cvAppUrl(data.view_url);
+        return;
+      }
       const {status: responseStatus, data} = await jobRequest(cvAppUrl("/analyze"), {
         method: "POST",
         headers: { "Accept": "application/json" },
@@ -578,14 +664,16 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (err.status === 429) {
         setStatus("Too many requests or queued analyses. Wait for current work to finish, then retry. Your text was kept.", "error");
       } else if (err.status === 422) {
-        setStatus("Check company, role and the complete job description. Your text was kept.", "error");
+        setStatus(isPaste() ? "Check the CV name and text (60,000 characters maximum). Use PDF/DOCX or paste plain text if file extraction fails. Your input was kept." : isCustom() ? "Check the CV instructions and name. Your text was kept." : "Check company, role and the complete job description. Your text was kept.", "error");
+      } else if (err.status === 413) {
+        setStatus("The input is too large. Shorten the instructions or paste the CV as plain text instead of uploading a large file.", "error");
       } else {
-        setStatus("Could not confirm that analysis started. Your text was kept. Check History before retrying to avoid starting it twice.", "error");
+        setStatus(isPaste() ? "Could not confirm the import. Your input was kept. Check Saved pasted CVs before retrying." : "Could not confirm that generation started. Your text was kept. Check History before retrying to avoid starting it twice.", "error");
       }
     } finally {
       submitting = false;
       submitButton.disabled = false;
-      submitLabel.textContent = "Analyze job";
+      if (workflow) refreshWorkflow(); else submitLabel.textContent = "Analyze job";
     }
   });
 

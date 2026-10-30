@@ -66,9 +66,14 @@ class FactValidator:
         return validate_manual_edit(self, original, edited, job, allow_manual_skills=allow_manual_skills)
 
     def validate(self, candidate: TailoredResume, job: JobRequest, *, preserve_skills: bool = False) -> ValidationResult:
+        from app.services.cv_content_policy import cv_catalog
+        self.catalog = cv_catalog(self.profile, job)
         draft = deepcopy(candidate)
+        if job.workflow != 'custom':
+            draft.section_order = []
+            draft.excluded_sections = []
         warnings: list[str] = []
-        learning = self.skills_bank.learning_for_job(f"{job.role}\n{job.job_description}") if self.skills_bank else []
+        learning = self.skills_bank.learning_for_job(f"{job.role}\n{job.relevance_text}") if self.skills_bank else []
         if preserve_skills:
             requested = {item.skill_id for item in candidate.currently_learning}
             learning = [item for item in learning if item.skill_id in requested]
@@ -93,7 +98,7 @@ class FactValidator:
                     warnings.append(f"Unsupported AI fact removed: {value}")
             selected = self.skills_bank.select_for_job(
                 list(dict.fromkeys(requested_ids)),
-                f"{job.role}\n{job.job_description}",
+                f"{job.role}\n{job.relevance_text}",
                 minimum=0 if preserve_skills else GENERATED_CV_SKILL_TARGET,
                 maximum=16,
                 requested_only=preserve_skills,
@@ -121,7 +126,7 @@ class FactValidator:
                 else:
                     warnings.append(f"Unsupported AI fact removed: {skill}")
             if not clean_skills and not preserve_skills:
-                job_text = job.job_description.casefold()
+                job_text = job.relevance_text.casefold()
                 relevant = [
                     canonical
                     for key, canonical in allowed_skills.items()
@@ -129,7 +134,7 @@ class FactValidator:
                 ]
                 clean_skills = relevant
             if not preserve_skills and len(clean_skills) < GENERATED_CV_SKILL_TARGET:
-                job_tokens = normalized_tokens(f"{job.role}\n{job.job_description}")
+                job_tokens = normalized_tokens(f"{job.role}\n{job.relevance_text}")
                 remaining = sorted(dict.fromkeys(allowed_skills.values()),
                                    key=lambda value: -len(normalized_tokens(value) & job_tokens))
                 for value in remaining:
@@ -160,7 +165,7 @@ class FactValidator:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
 
-        summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.job_description}", priorities=self.fact_priorities)
+        summary, summary_ids = build_summary(self.catalog, f"{job.role}\n{job.relevance_text}", priorities=self.fact_priorities)
         summary_entries = self.catalog.valid(draft.summary_source_fact_ids)
         model_ids = [e.source_id for e in summary_entries if e.kind in {"summary", "experience", "project"}
                      and (e.kind == "summary" or ":fact:" in e.source_id)]
@@ -528,7 +533,7 @@ class FactValidator:
 
     def _entry_relevance(self, entry, job: JobRequest) -> tuple[float, int]:
         from app.services.job_sections import relevance_text
-        terms = normalized_tokens(relevance_text(f'{job.role}\n{job.job_description}'))
+        terms = normalized_tokens(relevance_text(f'{job.role}\n{job.relevance_text}'))
         # The LLM's cited match evidence supplies the primary ordering; literal
         # overlap is only a fallback/tiebreaker, never proof of competence.
         overlap = normalized_tokens(entry.text) & terms
@@ -561,7 +566,7 @@ class FactValidator:
 
     def _project_relevance(self, project: ResumeProject, job: JobRequest) -> int:
         from app.services.job_sections import relevance_text
-        job_tokens = normalized_tokens(relevance_text(f"{job.role}\n{job.job_description}"))
+        job_tokens = normalized_tokens(relevance_text(f"{job.role}\n{job.relevance_text}"))
         role_tokens = normalized_tokens(job.role)
         generic = {
             "built",
@@ -602,4 +607,3 @@ class FactValidator:
             return evidence_priority, relevance, len(technologies)
 
         return sorted(projects, key=score, reverse=True)
-

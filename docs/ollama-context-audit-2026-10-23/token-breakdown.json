@@ -1,0 +1,2191 @@
+[
+  {
+    "file": "cvtailor-new-16384-generation.json",
+    "call": 0,
+    "stage": "tailor_resume",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 11485,
+    "tokenized_prompt_tokens": 11485,
+    "counted_message_tokens": 11468,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.061
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 6.469
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.113
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.139
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.836
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 2087,
+        "percent": 18.172
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1790,
+        "percent": 15.586
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1583,
+        "percent": 13.783
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2290,
+        "percent": 19.939
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 15.246
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.061
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.348
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.348
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.751
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.148
+      }
+    ],
+    "schema_wire_tokens": 2479,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "73fb9a3764930af9f93e50ab2e656ec878e9ab4e1a49a7f678f75dd5367d44da",
+    "api_completion_tokens": 1558,
+    "retrieval_unique_selected_facts": 29,
+    "same_fact_repeated_in_candidate_facts": 29,
+    "catalog_fact_tokens": 392,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-new-16384-generation.json",
+    "call": 1,
+    "stage": "review_draft_thinking",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8437,
+    "tokenized_prompt_tokens": 8437,
+    "counted_message_tokens": 8384,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 8,
+        "percent": 0.095
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 8.806
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.154
+      },
+      {
+        "component": "gaps",
+        "tokens": 431,
+        "percent": 5.108
+      },
+      {
+        "component": "bullets",
+        "tokens": 344,
+        "percent": 4.077
+      },
+      {
+        "component": "facts",
+        "tokens": 6532,
+        "percent": 77.421
+      },
+      {
+        "component": "employment",
+        "tokens": 112,
+        "percent": 1.327
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 201,
+        "percent": 2.382
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 53,
+        "percent": 0.628
+      }
+    ],
+    "schema_wire_tokens": 0,
+    "schema_prompt_tokens": 0,
+    "output_budget": 1024,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "6db53ab9dc7684711d4ebb4691a79abc287487271b6b9fae9821549301db604c",
+    "api_completion_tokens": 1024
+  },
+  {
+    "file": "cvtailor-new-16384-generation.json",
+    "call": 2,
+    "stage": "review_summary",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 1384,
+    "tokenized_prompt_tokens": 1384,
+    "counted_message_tokens": 1367,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.434
+      },
+      {
+        "component": "summary",
+        "tokens": 107,
+        "percent": 7.731
+      },
+      {
+        "component": "source_facts",
+        "tokens": 527,
+        "percent": 38.078
+      },
+      {
+        "component": "employment",
+        "tokens": 137,
+        "percent": 9.899
+      },
+      {
+        "component": "skill_levels",
+        "tokens": 229,
+        "percent": 16.546
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 361,
+        "percent": 26.084
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 1.228
+      }
+    ],
+    "schema_wire_tokens": 65,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "bfa765e432aa01563ed27474130472f5a37d60311ee3d26f4f7018b335ef572f",
+    "api_completion_tokens": 275
+  },
+  {
+    "file": "cvtailor-new-full-32768-1.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 10156,
+    "tokenized_prompt_tokens": 10156,
+    "counted_message_tokens": 10139,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1963,
+        "percent": 19.328
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.477
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.392
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.516
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.06
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "208027d716070dde58bc2155b7f981b3ac9e66df0f9f7549804d45d9df5d0a79",
+    "api_completion_tokens": 2443,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-full-32768-1.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8397,
+    "tokenized_prompt_tokens": 8397,
+    "counted_message_tokens": 8380,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.071
+      },
+      {
+        "component": "passages",
+        "tokens": 95,
+        "percent": 1.131
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 73.145
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.779
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.834
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 826,
+        "percent": 9.837
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.202
+      }
+    ],
+    "schema_wire_tokens": 1750,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "b91d865a0370aa68e4e28fefc2f7a678757cb4628d081ff6b9b669d40943aecb",
+    "api_completion_tokens": 192,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-full-32768-1.json",
+    "call": 2,
+    "stage": "tailor_resume",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 12290,
+    "tokenized_prompt_tokens": 12290,
+    "counted_message_tokens": 12273,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.057
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 6.046
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.106
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.13
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.781
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3097,
+        "percent": 25.199
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1726,
+        "percent": 14.044
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1509,
+        "percent": 12.278
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2223,
+        "percent": 18.088
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 14.247
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.057
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.325
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.325
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.177
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.138
+      }
+    ],
+    "schema_wire_tokens": 2476,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "fc227d7b3e7565663df735ff09a2ed7b3c37e95b48d2c03f54118b7030acd61c",
+    "api_completion_tokens": 1075,
+    "retrieval_unique_selected_facts": 29,
+    "same_fact_repeated_in_candidate_facts": 29,
+    "catalog_fact_tokens": 332,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-new-full-32768-2.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 10156,
+    "tokenized_prompt_tokens": 10156,
+    "counted_message_tokens": 10139,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1963,
+        "percent": 19.328
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.477
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.392
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.516
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.06
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "208027d716070dde58bc2155b7f981b3ac9e66df0f9f7549804d45d9df5d0a79",
+    "api_completion_tokens": 2443,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-full-32768-2.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8397,
+    "tokenized_prompt_tokens": 8397,
+    "counted_message_tokens": 8380,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.071
+      },
+      {
+        "component": "passages",
+        "tokens": 95,
+        "percent": 1.131
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 73.145
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.779
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.834
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 826,
+        "percent": 9.837
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.202
+      }
+    ],
+    "schema_wire_tokens": 1750,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "b91d865a0370aa68e4e28fefc2f7a678757cb4628d081ff6b9b669d40943aecb",
+    "api_completion_tokens": 192,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-full-32768-2.json",
+    "call": 2,
+    "stage": "tailor_resume",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 12290,
+    "tokenized_prompt_tokens": 12290,
+    "counted_message_tokens": 12273,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.057
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 6.046
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.106
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.13
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.781
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3097,
+        "percent": 25.199
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1726,
+        "percent": 14.044
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1509,
+        "percent": 12.278
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2223,
+        "percent": 18.088
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 14.247
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.057
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.325
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.325
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.177
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.138
+      }
+    ],
+    "schema_wire_tokens": 2476,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "fc227d7b3e7565663df735ff09a2ed7b3c37e95b48d2c03f54118b7030acd61c",
+    "api_completion_tokens": 1075,
+    "retrieval_unique_selected_facts": 29,
+    "same_fact_repeated_in_candidate_facts": 29,
+    "catalog_fact_tokens": 332,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-new-full-32768-2.json",
+    "call": 3,
+    "stage": "review_draft_thinking",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8321,
+    "tokenized_prompt_tokens": 8321,
+    "counted_message_tokens": 8268,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 8,
+        "percent": 0.096
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 8.929
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.156
+      },
+      {
+        "component": "gaps",
+        "tokens": 384,
+        "percent": 4.615
+      },
+      {
+        "component": "bullets",
+        "tokens": 275,
+        "percent": 3.305
+      },
+      {
+        "component": "facts",
+        "tokens": 6532,
+        "percent": 78.5
+      },
+      {
+        "component": "employment",
+        "tokens": 112,
+        "percent": 1.346
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 201,
+        "percent": 2.416
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 53,
+        "percent": 0.637
+      }
+    ],
+    "schema_wire_tokens": 0,
+    "schema_prompt_tokens": 0,
+    "output_budget": 1024,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "f8eea510bc4530ae843b1cdef07800a9ab158f4943ef2ae18b5385c3645a1c9f",
+    "api_completion_tokens": 1024
+  },
+  {
+    "file": "cvtailor-old-full-32768-1.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 10156,
+    "tokenized_prompt_tokens": 10156,
+    "counted_message_tokens": 10139,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1963,
+        "percent": 19.328
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.477
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.392
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.516
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.06
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "eab12b82254a56e3c0d945266c4a7a240448167e836969a12751ac43768bfcfd",
+    "api_completion_tokens": 4832,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-full-32768-1.json",
+    "call": 1,
+    "stage": "tailor_resume",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": null,
+    "tokenized_prompt_tokens": 12528,
+    "counted_message_tokens": 12511,
+    "accepted_by_backend": false,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 5.931
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.104
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.128
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.766
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3232,
+        "percent": 25.798
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1716,
+        "percent": 13.697
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1525,
+        "percent": 12.173
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2320,
+        "percent": 18.519
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 13.977
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.022
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.136
+      }
+    ],
+    "schema_wire_tokens": 2410,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "8ba6eaee0007379108ae8ce18428b24c3b785eab9ffdd773222a42bd7a13164e",
+    "api_completion_tokens": null,
+    "retrieval_unique_selected_facts": 28,
+    "same_fact_repeated_in_candidate_facts": 28,
+    "catalog_fact_tokens": 392,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-old-full-32768-2.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 10156,
+    "tokenized_prompt_tokens": 10156,
+    "counted_message_tokens": 10139,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1963,
+        "percent": 19.328
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.477
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.392
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.516
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.06
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "eab12b82254a56e3c0d945266c4a7a240448167e836969a12751ac43768bfcfd",
+    "api_completion_tokens": 4832,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-full-32768-2.json",
+    "call": 1,
+    "stage": "tailor_resume",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": null,
+    "tokenized_prompt_tokens": 12528,
+    "counted_message_tokens": 12511,
+    "accepted_by_backend": false,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 5.931
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.104
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.128
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.766
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3232,
+        "percent": 25.798
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1716,
+        "percent": 13.697
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1525,
+        "percent": 12.173
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2320,
+        "percent": 18.519
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 13.977
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.022
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.136
+      }
+    ],
+    "schema_wire_tokens": 2410,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "8ba6eaee0007379108ae8ce18428b24c3b785eab9ffdd773222a42bd7a13164e",
+    "api_completion_tokens": null,
+    "retrieval_unique_selected_facts": 28,
+    "same_fact_repeated_in_candidate_facts": 28,
+    "catalog_fact_tokens": 392,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-old-full-32768-3.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 10156,
+    "tokenized_prompt_tokens": 10156,
+    "counted_message_tokens": 10139,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1963,
+        "percent": 19.328
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.477
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.392
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.516
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.06
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "eab12b82254a56e3c0d945266c4a7a240448167e836969a12751ac43768bfcfd",
+    "api_completion_tokens": 4832,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-full-32768-3.json",
+    "call": 1,
+    "stage": "tailor_resume",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": null,
+    "tokenized_prompt_tokens": 12528,
+    "counted_message_tokens": 12511,
+    "accepted_by_backend": false,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 5.931
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.104
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.128
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 0.766
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3232,
+        "percent": 25.798
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 1716,
+        "percent": 13.697
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1525,
+        "percent": 12.173
+      },
+      {
+        "component": "retrieval",
+        "tokens": 2320,
+        "percent": 18.519
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1751,
+        "percent": 13.977
+      },
+      {
+        "component": "reference_cvs_style_only",
+        "tokens": 7,
+        "percent": 0.056
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "layout_constraints",
+        "tokens": 40,
+        "percent": 0.319
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 8.022
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.136
+      }
+    ],
+    "schema_wire_tokens": 2410,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "8ba6eaee0007379108ae8ce18428b24c3b785eab9ffdd773222a42bd7a13164e",
+    "api_completion_tokens": null,
+    "retrieval_unique_selected_facts": 28,
+    "same_fact_repeated_in_candidate_facts": 28,
+    "catalog_fact_tokens": 392,
+    "same_layout_twice": true
+  },
+  {
+    "file": "cvtailor-new-optimized-16384.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 9783,
+    "tokenized_prompt_tokens": 9783,
+    "counted_message_tokens": 9766,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.061
+      },
+      {
+        "component": "passages",
+        "tokens": 1590,
+        "percent": 16.253
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 62.782
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.827
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.574
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.329
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.174
+      }
+    ],
+    "schema_wire_tokens": 1865,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "dbf30bd1fb497ecd07a78dd38cdb9ad8baa555223fd2a0550eaadcb12f16f0d6",
+    "api_completion_tokens": 1940,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-optimized-16384.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8397,
+    "tokenized_prompt_tokens": 8397,
+    "counted_message_tokens": 8380,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.071
+      },
+      {
+        "component": "passages",
+        "tokens": 95,
+        "percent": 1.131
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 73.145
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.779
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.834
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 826,
+        "percent": 9.837
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.202
+      }
+    ],
+    "schema_wire_tokens": 1750,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "9ee56dc811399bb4c920771fe064d99584bb83f7ba27c339cc49306ca6800b7b",
+    "api_completion_tokens": 192,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-optimized-16384.json",
+    "call": 2,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8570,
+    "tokenized_prompt_tokens": 8570,
+    "counted_message_tokens": 8553,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.07
+      },
+      {
+        "component": "passages",
+        "tokens": 377,
+        "percent": 4.399
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 71.669
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.501
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.797
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 8.366
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.198
+      }
+    ],
+    "schema_wire_tokens": 1477,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "87c2bf05e14cba618bd1fb343804efd96f5ffaeb7d2535e9bc62a1ff5a1efd92",
+    "api_completion_tokens": 612,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-new-optimized-16384.json",
+    "call": 3,
+    "stage": "tailor_resume",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 7356,
+    "tokenized_prompt_tokens": 7356,
+    "counted_message_tokens": 7339,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.095
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 10.101
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.177
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.218
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 1.305
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 2661,
+        "percent": 36.175
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 185,
+        "percent": 2.515
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1568,
+        "percent": 21.316
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1005,
+        "percent": 13.662
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.544
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 13.662
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.231
+      }
+    ],
+    "schema_wire_tokens": 2470,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "7cb715dbca56b6678fd1923e5cc8b1c3814ea00ee22a10b283b29d7ede52e591",
+    "api_completion_tokens": 1960,
+    "retrieval_unique_selected_facts": 29,
+    "same_fact_repeated_in_candidate_facts": 0,
+    "catalog_fact_tokens": 386,
+    "same_layout_twice": false
+  },
+  {
+    "file": "cvtailor-new-optimized-16384.json",
+    "call": 4,
+    "stage": "review_summary",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 1473,
+    "tokenized_prompt_tokens": 1473,
+    "counted_message_tokens": 1456,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.407
+      },
+      {
+        "component": "summary",
+        "tokens": 130,
+        "percent": 8.826
+      },
+      {
+        "component": "source_facts",
+        "tokens": 593,
+        "percent": 40.258
+      },
+      {
+        "component": "employment",
+        "tokens": 137,
+        "percent": 9.301
+      },
+      {
+        "component": "skill_levels",
+        "tokens": 229,
+        "percent": 15.547
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 361,
+        "percent": 24.508
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 1.154
+      }
+    ],
+    "schema_wire_tokens": 65,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "b126a32b018a41eb9b8769d625176f9e71159087a207dc881e0ea4e9cb0ded76",
+    "api_completion_tokens": 306
+  },
+  {
+    "file": "cvtailor-old-optimized-16384.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 9783,
+    "tokenized_prompt_tokens": 9783,
+    "counted_message_tokens": 9766,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.061
+      },
+      {
+        "component": "passages",
+        "tokens": 1590,
+        "percent": 16.253
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 62.782
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.827
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.574
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.329
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.174
+      }
+    ],
+    "schema_wire_tokens": 1865,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "8eb82aa26d66b06ab6f3ad3f9bda8cbad8dcced2f72d92f5a2a70aff221af3b0",
+    "api_completion_tokens": 4096,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-optimized-16384.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 8570,
+    "tokenized_prompt_tokens": 8570,
+    "counted_message_tokens": 8553,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.07
+      },
+      {
+        "component": "passages",
+        "tokens": 377,
+        "percent": 4.399
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 71.669
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.501
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.797
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 8.366
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.198
+      }
+    ],
+    "schema_wire_tokens": 1477,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "30df96a6b0269e7170d76913d852a575ec07f9b707f6652b455c5eda614547b2",
+    "api_completion_tokens": 1005,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-optimized-16384.json",
+    "call": 2,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 8411,
+    "tokenized_prompt_tokens": 8411,
+    "counted_message_tokens": 8394,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.071
+      },
+      {
+        "component": "passages",
+        "tokens": 109,
+        "percent": 1.296
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 73.023
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.756
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.831
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 826,
+        "percent": 9.82
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.202
+      }
+    ],
+    "schema_wire_tokens": 1759,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "2d426235b8710213e6c4b5fb8d5593cc64c6796dae131c6766a88c15b7118ea4",
+    "api_completion_tokens": 244,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-old-optimized-16384.json",
+    "call": 3,
+    "stage": "tailor_resume",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 7668,
+    "tokenized_prompt_tokens": 7668,
+    "counted_message_tokens": 7651,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 7,
+        "percent": 0.091
+      },
+      {
+        "component": "job_description",
+        "tokens": 743,
+        "percent": 9.69
+      },
+      {
+        "component": "target_role",
+        "tokens": 13,
+        "percent": 0.17
+      },
+      {
+        "component": "target_company",
+        "tokens": 16,
+        "percent": 0.209
+      },
+      {
+        "component": "tailoring_policy",
+        "tokens": 96,
+        "percent": 1.252
+      },
+      {
+        "component": "analysis_summary",
+        "tokens": 3029,
+        "percent": 39.502
+      },
+      {
+        "component": "candidate_facts",
+        "tokens": 171,
+        "percent": 2.23
+      },
+      {
+        "component": "source_catalog",
+        "tokens": 1526,
+        "percent": 19.901
+      },
+      {
+        "component": "eligible_skills",
+        "tokens": 1005,
+        "percent": 13.106
+      },
+      {
+        "component": "layout_guide",
+        "tokens": 40,
+        "percent": 0.522
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 1005,
+        "percent": 13.106
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.222
+      }
+    ],
+    "schema_wire_tokens": 2010,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "2ab62ed7cc3df2c9f8abf9c825c6ed1958e5351d69a279a71be5d5ebadc301b2",
+    "api_completion_tokens": 1422,
+    "retrieval_unique_selected_facts": 28,
+    "same_fact_repeated_in_candidate_facts": 0,
+    "catalog_fact_tokens": 392,
+    "same_layout_twice": false
+  },
+  {
+    "file": "cvtailor-old-optimized-16384.json",
+    "call": 4,
+    "stage": "review_summary",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": null,
+    "tokenized_prompt_tokens": 6357,
+    "counted_message_tokens": 6340,
+    "accepted_by_backend": false,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.094
+      },
+      {
+        "component": "summary",
+        "tokens": 115,
+        "percent": 1.809
+      },
+      {
+        "component": "source_facts",
+        "tokens": 5492,
+        "percent": 86.393
+      },
+      {
+        "component": "employment",
+        "tokens": 137,
+        "percent": 2.155
+      },
+      {
+        "component": "skill_levels",
+        "tokens": 229,
+        "percent": 3.602
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 361,
+        "percent": 5.679
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.267
+      }
+    ],
+    "schema_wire_tokens": 65,
+    "schema_prompt_tokens": 0,
+    "output_budget": 4096,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "136f1b72186ba263b73d872cf8c8d62163b2d415d96beda7521dcb71d7f7cd7b",
+    "api_completion_tokens": null
+  },
+  {
+    "file": "cvtailor-current-new-baseline.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 10187,
+    "tokenized_prompt_tokens": 10187,
+    "counted_message_tokens": 10170,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1994,
+        "percent": 19.574
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.293
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.358
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.512
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.038
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "241182dd1ecfad34e79eb7b3aa4c7449724f14283a3f804cccf21c2077d48eb8",
+    "api_completion_tokens": 3301,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-current-new-baseline.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8636,
+    "tokenized_prompt_tokens": 8636,
+    "counted_message_tokens": 8619,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.069
+      },
+      {
+        "component": "passages",
+        "tokens": 334,
+        "percent": 3.868
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 71.121
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 13.397
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.783
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 826,
+        "percent": 9.565
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.197
+      }
+    ],
+    "schema_wire_tokens": 1828,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "e5bfe6e2de9b12dab1fdce8c6d07c1c17e55eee77026407758161f09d5396b68",
+    "api_completion_tokens": 337,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-current-old-baseline.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 10187,
+    "tokenized_prompt_tokens": 10187,
+    "counted_message_tokens": 10170,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.059
+      },
+      {
+        "component": "passages",
+        "tokens": 1994,
+        "percent": 19.574
+      },
+      {
+        "component": "evidence",
+        "tokens": 6142,
+        "percent": 60.293
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 1157,
+        "percent": 11.358
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.512
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 717,
+        "percent": 7.038
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.167
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 8192,
+    "num_ctx": 32768,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "d7e22af8025d6f4475080ca765a5cc6cb91f7382cb4475794006fee3c5c22800",
+    "api_completion_tokens": 4728,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-current-new-optimized.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 9404,
+    "tokenized_prompt_tokens": 9404,
+    "counted_message_tokens": 9387,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.064
+      },
+      {
+        "component": "passages",
+        "tokens": 1764,
+        "percent": 18.758
+      },
+      {
+        "component": "evidence",
+        "tokens": 5878,
+        "percent": 62.505
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 789,
+        "percent": 8.39
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.638
+      },
+      {
+        "component": "evidence_strengths",
+        "tokens": 36,
+        "percent": 0.383
+      },
+      {
+        "component": "evidence_owner_fields",
+        "tokens": 10,
+        "percent": 0.106
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 750,
+        "percent": 7.975
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.181
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 6144,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "0ef82ecfa4c1d0205c8a0c29c0e0caa67915ef692aedea4ac73eb065ca0b71dc",
+    "api_completion_tokens": 3469,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-current-new-optimized.json",
+    "call": 1,
+    "stage": "analyze_job",
+    "model": "qwen3.8-27b-iq2s",
+    "api_prompt_tokens": 8048,
+    "tokenized_prompt_tokens": 8048,
+    "counted_message_tokens": 8031,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.075
+      },
+      {
+        "component": "passages",
+        "tokens": 299,
+        "percent": 3.715
+      },
+      {
+        "component": "evidence",
+        "tokens": 5878,
+        "percent": 73.037
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 789,
+        "percent": 9.804
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.914
+      },
+      {
+        "component": "evidence_strengths",
+        "tokens": 36,
+        "percent": 0.447
+      },
+      {
+        "component": "evidence_owner_fields",
+        "tokens": 10,
+        "percent": 0.124
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 859,
+        "percent": 10.673
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.211
+      }
+    ],
+    "schema_wire_tokens": 1828,
+    "schema_prompt_tokens": 0,
+    "output_budget": 6144,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "5ebb8104f53437b17cd74dc3602b37d410035ea0d0b13f2f170ab2eb74e5f0a4",
+    "api_completion_tokens": 519,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  },
+  {
+    "file": "cvtailor-current-old-optimized.json",
+    "call": 0,
+    "stage": "analyze_job",
+    "model": "qwen3.5:9b",
+    "api_prompt_tokens": 9404,
+    "tokenized_prompt_tokens": 9404,
+    "counted_message_tokens": 9387,
+    "accepted_by_backend": true,
+    "components": [
+      {
+        "component": "stage",
+        "tokens": 6,
+        "percent": 0.064
+      },
+      {
+        "component": "passages",
+        "tokens": 1764,
+        "percent": 18.758
+      },
+      {
+        "component": "evidence",
+        "tokens": 5878,
+        "percent": 62.505
+      },
+      {
+        "component": "evidence_owners",
+        "tokens": 789,
+        "percent": 8.39
+      },
+      {
+        "component": "employment_dates",
+        "tokens": 154,
+        "percent": 1.638
+      },
+      {
+        "component": "evidence_strengths",
+        "tokens": 36,
+        "percent": 0.383
+      },
+      {
+        "component": "evidence_owner_fields",
+        "tokens": 10,
+        "percent": 0.106
+      },
+      {
+        "component": "system_instructions",
+        "tokens": 750,
+        "percent": 7.975
+      },
+      {
+        "component": "chat_template_and_reasoning_prefix",
+        "tokens": 17,
+        "percent": 0.181
+      }
+    ],
+    "schema_wire_tokens": 1913,
+    "schema_prompt_tokens": 0,
+    "output_budget": 6144,
+    "num_ctx": 16384,
+    "message_count": 2,
+    "prior_turns": 0,
+    "request_sha256": "41951183b3687653337b73d84b52a7890908195b090f308dc79bb6c5ccab0c85",
+    "api_completion_tokens": 4406,
+    "evidence_records": 203,
+    "unique_fact_strings": 192,
+    "fact_text_tokens": 3212
+  }
+]

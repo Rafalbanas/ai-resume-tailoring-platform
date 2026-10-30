@@ -63,16 +63,25 @@ class PDFGenerator:
         include_photo = template_name == "modern_sidebar" and (
             self.photo_store.exists() if photo_enabled is None else photo_enabled and self.photo_store.exists()
         )
-        order = ["summary", "experience", "education", "projects", "certifications"]
+        order = ["summary", "skills", "learning", "languages", "experience", "education", "projects", "certifications", "interests"]
         if template_name == "modern_sidebar":
             requested = guide.get("section_order", order)
             order = list(dict.fromkeys([value for value in requested if value in order] + order))
+        if resume.section_order:
+            order = list(dict.fromkeys([s for s in resume.section_order if s in order] + order))
+        order = [s for s in order if s not in resume.excluded_sections]
+        if 'skills' in resume.excluded_sections:
+            resume.core_skills = []
+        if 'learning' in resume.excluded_sections:
+            resume.currently_learning = []
+        if 'interests' in resume.excluded_sections:
+            resume.interests = []
         render_context = dict(
             resume=resume,
             personal=profile.personal,
             contacts=contacts(profile),
             link_display=link_display,
-            languages=profile_languages(profile),
+            languages=[] if 'languages' in resume.excluded_sections else profile_languages(profile),
             template_name=template_name,
             photo_enabled=include_photo,
             photo_available=self.photo_store.exists(),
