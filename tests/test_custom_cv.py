@@ -457,7 +457,8 @@ def test_analyze_endpoint_custom_without_company_role_or_job():
         assert task.payload["job"]["workflow"] == "custom"
 
 
-def test_custom_draft_accept_save_reopen_export_and_regenerate(resume_payload):
+@pytest.mark.parametrize('template', ['ats_classic', 'modern_sidebar'])
+def test_custom_draft_accept_save_reopen_export_and_regenerate(resume_payload, template):
     from bs4 import BeautifulSoup
 
     from app.models.resume import WorkflowResponse
@@ -477,7 +478,7 @@ def test_custom_draft_accept_save_reopen_export_and_regenerate(resume_payload):
         assert busy.status_code == 200 and 'Your draft is saved' in busy.text
         token = soup.select_one('[name="summary_token"]')
         data = {'csrf_token': client.cookies.get('csrf_token'), 'cv_name': 'Accepted custom CV',
-                'template_name': 'ats_classic', 'summary_confirmed': 'on'}
+                'template_name': template, 'summary_confirmed': 'on'}
         if token:
             data['summary_token'] = token['value']
         accepted = client.post(f'/generate/{draft}', data=data, follow_redirects=False)
@@ -495,6 +496,11 @@ def test_custom_draft_accept_save_reopen_export_and_regenerate(resume_payload):
         editor_copy = client.post(f'/preview/{slug}/ai-editor', data={'csrf_token': client.cookies.get('csrf_token')}, follow_redirects=False)
         assert editor_copy.status_code == 303
         assert 'Current CV' in client.get(editor_copy.headers['location']).text
+        editor_doc = CVEditorStore(app.state.settings.data_dir).load(editor_copy.headers['location'].split('/')[-1])
+        assert editor_doc['template_name'] == template
+        assert editor_doc['current'].startswith(app.state.profile.personal.name)
+        assert '\nExperience\n' in editor_doc['current']
+        assert '\nContact\n' in editor_doc['current']
         assert app.state.settings.master_profile_path.read_bytes() == before
 
 
@@ -523,3 +529,53 @@ def test_text_cv_routes_export_accepted_content_only(kind):
         assert '2022' in content and '2021' in content
         assert content.count('Experience') == 1
         assert 'Jan Test' not in content  # master identity must not leak into pasted-CV exports
+
+
+def test_editor_persists_template_in_preview_downloads_and_duplicate(monkeypatch):
+    from bs4 import BeautifulSoup
+
+    calls = []
+    def render(operation, payload, **kwargs):
+        from app.services.text_cv_export import text_cv_export_op
+        calls.append(payload.copy())
+        return text_cv_export_op(payload)
+    monkeypatch.setattr('app.routes.custom_cvs.process', render)
+    with TestClient(app) as client:
+        sign_in(client)
+        token = client.cookies.get('csrf_token')
+        imported = client.post('/custom-cvs/import', data={'csrf_token': token, 'pasted_cv': SOURCE,
+            'template_name': 'modern_sidebar'}, follow_redirects=False)
+        assert imported.status_code == 303
+        url = imported.headers['location']
+        store = CVEditorStore(app.state.settings.data_dir)
+        identifier = url.split('/')[-1]
+        assert client.post(url + '/template', data={'csrf_token': 'wrong', 'revision': 0,
+            'template_name': 'ats_classic'}).status_code == 403
+        assert client.post(url + '/template', data={'csrf_token': token, 'revision': 0,
+            'template_name': 'invalid'}).status_code == 409
+        store.propose(identifier, 0, SOURCE.replace('SQL incidents', 'SQL support incidents'), 'Improve summary')
+        assert client.post(url + '/template', data={'csrf_token': token, 'revision': 0,
+            'template_name': 'ats_classic'}, follow_redirects=False).status_code == 303
+        assert store.load(identifier)['pending']
+        assert client.post(url + '/template', data={'csrf_token': token, 'revision': 1,
+            'template_name': 'modern_sidebar'}, follow_redirects=False).status_code == 303
+        for kind in ['pdf', 'docx']:
+            response = client.get(url + '/export/' + kind)
+            assert response.status_code == 200
+            assert calls[-1]['template'] == 'modern_sidebar'
+            assert calls[-1]['text'] == SOURCE  # not the pending proposal
+        preview = client.get(url + '/preview')
+        assert preview.content.startswith(b'%PDF-')
+        assert preview.headers['content-disposition'].startswith('inline')
+        assert preview.headers['x-frame-options'] == 'SAMEORIGIN'
+        assert "frame-ancestors 'self'" in preview.headers['content-security-policy']
+        page = client.get(url)
+        assert page.headers['x-frame-options'] == 'DENY'
+        soup = BeautifulSoup(page.text, 'html.parser')
+        assert soup.select_one('[name="template_name"] option[selected]')['value'] == 'modern_sidebar'
+        assert client.post(url + '/accept', data={'csrf_token': token, 'revision': 2}, follow_redirects=False).status_code == 303
+        duplicate = client.post(url + '/duplicate', data={'csrf_token': token}, follow_redirects=False)
+        assert store.load(duplicate.headers['location'].split('/')[-1])['template_name'] == 'modern_sidebar'
+        assert client.get(url + '/export/pdf?template=invalid').status_code == 422
+        client.cookies.clear()
+        assert client.get(url + '/preview', follow_redirects=False).status_code in {303, 401}

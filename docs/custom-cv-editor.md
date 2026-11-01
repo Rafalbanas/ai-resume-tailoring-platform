@@ -36,7 +36,7 @@ its existing source and summary-review safeguards.
 4. Enter instructions, for example: “Improve the Professional Summary. Keep
    factual meaning and every other section unchanged.” If adding new facts,
    explicitly attest them in **Confirmed factual additions**.
-5. **Apply changes** opens the existing background-task progress screen. The
+5. **Propose changes** opens the existing background-task progress screen. The
    current CV remains saved and unchanged while AI works.
 6. Review the highlighted text comparison. **Accept changes** saves a version;
    **Discard proposal** retains the current version. If factual support is missing,
@@ -46,12 +46,33 @@ its existing source and summary-review safeguards.
    the original. Manual edits, rename, duplicate, delete and PDF/DOCX export are
    available in the editor. The library is linked from the main form and History.
 
-Only accepted/saved text is exported, never a pending proposal. Verify the exported
-page count when requesting a one-page CV; plain-text editing does not guarantee
-an exact page count. File extraction does not retain the source document's page
-layout and does not perform OCR. Unknown section headings can be corrected in the
-text editor. Text exports offer ATS and modern styling, not reconstruction of an
-arbitrary imported Word/PDF layout.
+The editor places the AI prompt and section scope beside an actual saved PDF
+preview. Manual text editing, factual additions, provider selection and document
+management are folded into advanced controls. On small screens the panels stack;
+**Open preview** is available if the browser cannot display an embedded PDF.
+
+Choose **Template → Save template** once. The selection is stored with the document
+and retained through manual/AI edits, accept/discard, undo/restore, rename, duplicate
+and reopening. PDF preview and both download links use that saved selection.
+Opening a generated CV as an independent text copy inherits its saved template;
+this no longer forces ATS. Older text documents without a selection default to
+ATS Classic, without rewriting their files on read. An explicit export query
+(`?template=ats_classic` or `?template=modern_sidebar`) remains a one-off override.
+
+Modern Sidebar is a real 62/148 mm two-column A4 layout: navy contact/skills/
+languages/interests sidebar and white main content. PDF uses paginating CSS grid;
+DOCX uses a fixed-width two-cell table, not Word newspaper columns. Unknown headings
+remain in the main content rather than being discarded. ATS stays single-column.
+Text imports/copies preserve text, not photographs or arbitrary original typography;
+they never borrow identity, photos or facts from the master profile. Keep the
+structured generated CV if its original photo/layout must remain intact.
+
+Only accepted/saved text is previewed or exported, never a pending proposal. Check
+the preview's page count before sending: the reference-shaped sample fits one page
+in PDF and in DOCX converted by LibreOffice, but arbitrary longer CVs deliberately
+paginate instead of being truncated or automatically rewritten. File extraction
+does not retain page layout and does not perform OCR. Unknown or glued-together
+headings in an already broken PDF can be corrected in the manual text editor.
 
 ## Factual and privacy boundaries
 
@@ -90,6 +111,7 @@ arbitrary imported Word/PDF layout.
 ```bash
 ruff check app tests
 pytest -q tests/test_custom_cv.py tests/test_custom_cv_storage.py tests/test_text_cv_export.py
+pytest -q tests/test_custom_cv_ui.py tests/test_modern_sidebar.py
 pytest -q
 python scripts/check_environment.py --dev
 python -m pip check
@@ -97,3 +119,14 @@ python -m pip check
 
 Tests use fictional profiles and mocked AI. Live quality checks require an available
 configured provider; automated tests do not send private CVs to real models.
+
+`tests/fixtures/modern_sidebar.txt` is fictional, shaped like the private reference
+without copying personal details. Its PNG baseline checks the rendered PDF, along
+with column coordinates, complete text, sidebar overflow and one-page geometry.
+The raster test requires Poppler (`pdftoppm`); DOCX pagination requires LibreOffice.
+Those tests explicitly skip when the optional tools are absent. Browser checks cover
+desktop/mobile editor geometry and access to manual edits. HTTP regressions check
+saved-template exports, proposal isolation, CSRF and preview authentication/framing.
+
+See [the Modern Sidebar validation/deployment notes](modern-sidebar-validation.md)
+before a separately authorized deployment.

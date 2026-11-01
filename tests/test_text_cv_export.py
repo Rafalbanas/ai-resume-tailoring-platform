@@ -31,6 +31,7 @@ def test_text_export_preserves_content_without_duplicate_headings(kind, template
     else:
         document = Document(BytesIO(output))
         content = '\n'.join(p.text for p in document.paragraphs)
+        content += '\n'.join(p.text for table in document.tables for row in table.rows for cell in row.cells for p in cell.paragraphs)
         assert document.styles['Normal'].font.bold is False
         assert document.styles['Normal'].font.name == 'Arial'
         assert document.styles['Normal'].font.size.pt == 10.5
@@ -38,8 +39,8 @@ def test_text_export_preserves_content_without_duplicate_headings(kind, template
         assert abs(document.sections[0].page_height - Mm(297)) < Mm(0.1)
     for value in ['Ada Example', 'ada@example.test', '2022', 'Present', '2021', 'SQL troubleshooting.', 'EXAMPLE LTD']:
         assert value in content
-    assert content.count('Experience:') == 1
-    assert content.count('Education') == 1
+    assert content.casefold().count('experience:') == 1
+    assert content.casefold().count('education') == 1
     assert 'Header / unclassified' not in content
     assert '\\n' not in content
 

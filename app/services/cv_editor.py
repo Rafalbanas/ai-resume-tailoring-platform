@@ -19,7 +19,8 @@ HEADINGS = {
     "professional summary", "summary", "profile", "professional profile", "career summary", "executive summary", "about me", "objective",
     "experience", "work experience", "professional experience", "employment history", "employment", "work history",
     "education", "skills", "technical skills", "core skills", "core competencies", "key skills", "technical competencies",
-    "projects", "technical projects", "certifications", "certificates", "languages",
+    "projects", "technical projects", "selected projects", "selected projects · personal", "personal projects",
+    "certifications", "certificates", "languages",
     "interests", "volunteering", "publications", "references", "contact", "contact details",
     "awards", "achievements", "training", "additional information", "currently learning",
     "podsumowanie", "profil zawodowy", "doświadczenie", "doświadczenie zawodowe",
@@ -146,20 +147,26 @@ class CVEditorStore:
         finally:
             Path(temporary).unlink(missing_ok=True)
 
-    def create(self, name, text, *, original=None):
+    def create(self, name, text, *, original=None, template_name='ats_classic'):
         validate_text(text)
         name = name.strip()
         if not 1 <= len(name) <= 150:
             raise ValueError("Enter a CV name of 1–150 characters.")
+        if template_name not in ['ats_classic', 'modern_sidebar']:
+            raise ValueError("Invalid template name.")
         identifier = uuid4().hex
         self._write(self.path(identifier), {"id": identifier, "name": name,
                     "original": text if original is None else validate_text(original),
                     "current": text, "revision": 0, "versions": [], "pending": None,
+                    "template_name": template_name,
                     "created_at": datetime.now(timezone.utc).isoformat()})
         return identifier
 
     def load(self, identifier):
-        return json.loads(self.path(identifier).read_text(encoding="utf-8"))
+        doc = json.loads(self.path(identifier).read_text(encoding="utf-8"))
+        if "template_name" not in doc:
+            doc["template_name"] = "ats_classic"
+        return doc
 
     def list(self):
         result = []
@@ -186,7 +193,7 @@ class CVEditorStore:
         if doc["revision"] != revision:
             raise ValueError("This CV changed in another tab. Reload before applying changes.")
 
-    def update(self, identifier, revision, action, *, text="", name=""):
+    def update(self, identifier, revision, action, *, text="", name="", template_name=""):
         with self.locked(identifier) as path:
             doc = self.load(identifier)
             self._check_revision(doc, revision)
@@ -208,6 +215,10 @@ class CVEditorStore:
                 if not 1 <= len(name.strip()) <= 150:
                     raise ValueError("Enter a CV name of 1–150 characters.")
                 doc["name"] = name.strip()
+            elif action == "template":
+                if template_name not in ['ats_classic', 'modern_sidebar']:
+                    raise ValueError("Invalid template name.")
+                doc["template_name"] = template_name
             elif action != "discard":
                 raise ValueError("Unknown CV action.")
             if replacement is not None:
@@ -218,7 +229,7 @@ class CVEditorStore:
             if doc["pending"]:
                 doc["last_instructions"] = doc["pending"]["instructions"]
             doc["revision"] += 1
-            if action == "rename" and doc["pending"]:
+            if action in ("rename", "template") and doc["pending"]:
                 doc["pending"]["revision"] = doc["revision"]
             else:
                 doc["pending"] = None
@@ -226,7 +237,7 @@ class CVEditorStore:
 
     def duplicate(self, identifier):
         doc = self.load(identifier)
-        return self.create((doc["name"][:143] + " (copy)"), doc["current"], original=doc["original"])
+        return self.create((doc["name"][:143] + " (copy)"), doc["current"], original=doc["original"], template_name=doc.get("template_name"))
 
     def delete(self, identifier):
         with self.locked(identifier) as path:

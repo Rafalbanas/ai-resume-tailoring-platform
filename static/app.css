@@ -544,3 +544,15 @@ ins {
 .cv-text-diff del { background: #ffe4e6; color: #881337; }
 .cv-text-diff ins { background: #dcfce7; color: #14532d; }
 .cv-text-editor { min-height: 36rem; font-family: ui-monospace, monospace; line-height: 1.5; }
+/* Focused AI editing beside the exact saved PDF, with advanced tools folded away. */
+.custom-editor-layout{display:grid;grid-template-columns:minmax(300px, .8fr) minmax(0, 1.2fr);gap:24px;align-items:start}
+.custom-editor-controls{min-width:0}.custom-editor-controls>.card{margin-bottom:18px}
+.custom-editor-controls details>summary{cursor:pointer;font-weight:600;padding:8px 0}
+.cv-section-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.cv-section-options label{display:flex;align-items:baseline;gap:6px;font-size:.9rem}
+.cv-section-options input{width:auto}.cv-template-form{display:flex;align-items:end;gap:12px;margin:14px 0}
+.cv-template-form label{flex:1}.cv-template-form select{display:block;width:100%}
+.cv-pdf-preview{width:100%;height:820px;border:1px solid #cbd5e1;border-radius:8px;background:#e2e8f0}
+.custom-editor-preview .muted{font-size:.85rem}.custom-editor-preview{min-width:0}
+@media(max-width:1000px){.custom-editor-layout{grid-template-columns:minmax(0,1fr)}.cv-pdf-preview{height:70vh;min-height:400px}}
+@media(max-width:480px){.cv-section-options{grid-template-columns:1fr}.cv-template-form{flex-wrap:wrap}}

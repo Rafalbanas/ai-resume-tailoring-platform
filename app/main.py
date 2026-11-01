@@ -300,13 +300,18 @@ async def request_context(request: Request, call_next):
         response.headers["Content-Security-Policy"] = (
             "default-src 'none'; script-src 'self' 'nonce-" + request.state.csp_nonce + "'; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; "
-            "form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
+            "form-action 'self'; base-uri 'none'; frame-src 'self'; frame-ancestors 'none'; object-src 'none'"
         )
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    # Only the authenticated, non-HTML PDF preview may be framed by this app.
+    if (getattr(request.scope.get('route'), 'path', '') == '/custom-cvs/{identifier}/preview'
+            and response.headers.get('content-type', '').startswith('application/pdf')):
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'self'"
     response.headers["Referrer-Policy"] = "no-referrer"
     if not request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
