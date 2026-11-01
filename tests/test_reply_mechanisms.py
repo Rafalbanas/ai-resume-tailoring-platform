@@ -228,7 +228,9 @@ async def test_invalid_response_is_captured_before_schema_parsing(profile):
     from app.services.ollama_provider import OllamaProvider
 
     transport = httpx.MockTransport(lambda request: httpx.Response(200,json={'message':{'content':'{"invalid":'}}))
-    provider = OllamaProvider(Settings(_env_file=None),transport=transport)
+    # This test isolates capture-before-parsing; bounded recovery is exercised
+    # separately and intentionally creates additional captured provider calls.
+    provider = OllamaProvider(Settings(_env_file=None, ollama_analysis_recovery_calls=0),transport=transport)
     job = JobRequest(company='Example',role='Support',job_description='Requirements\nCustomer Support\nProblem Solving')
     with capture_comparison() as records:
         with pytest.raises(AIProviderError):

@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from app.core import body_deadline
-from app.services.processing import local_process
+from app.services.processing import BROWSER_OPERATION_MAX_SECONDS, local_process
 
 
 @asynccontextmanager
@@ -59,7 +59,7 @@ async def process(request: Request):
             allowed = {'browser', 'check'} if role == 'browser' else {'reference', 'photo', 'pdf', 'preview', 'metrics', 'docx', 'check', 'text_cv_export'}
             if role not in {'full', 'documents', 'browser'} or role != 'full' and value['operation'] not in allowed:
                 raise HTTPException(400, 'Operation is not supported by this worker role')
-            limit = 20 if value['operation'] in {'reference', 'browser'} else 60
+            limit = BROWSER_OPERATION_MAX_SECONDS if value['operation'] == 'browser' else 20 if value['operation'] == 'reference' else 60
             requested_timeout = float(value.get('timeout_seconds', limit))
             if not math.isfinite(requested_timeout) or requested_timeout <= 0:
                 raise ValueError('Invalid processing deadline')

@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
 from app.core.request_limits import RequestSizeMiddleware
 from app.core.security import FixedWindowLimiter, new_csrf_token, validate_csrf
+from app.routes.benchmarks import router as benchmark_router
 from app.routes.custom_cvs import router as custom_cv_router
 from app.routes.web import router
 from app.services.auth_store import AuthStore
@@ -193,6 +194,7 @@ async def validate_mutation_body(request, settings):
         await request.body()
         async with request.form(max_files=20, max_fields=200, max_part_size=262144) as form:
             submitted = str(form.get('csrf_token', ''))
+            request.state.background_export = form.get('background_export') == 'true'
     validate_csrf(submitted, request.cookies.get(settings.csrf_cookie_name, ""), settings.csrf_secret)
     if not secrets.compare_digest(submitted, request.session.get("csrf_token", "")):
         raise HTTPException(403, "Invalid CSRF token")
@@ -230,8 +232,9 @@ async def request_context(request: Request, call_next):
         request.state.authenticated = bool(not public and request.app.state.sessions.valid(
             request.session.get("id", ""), credential))
         if not public and not request.state.authenticated:
+            json_endpoint = path.startswith(('/api/', '/health/', '/download/')) or path == '/queue/status' or re.fullmatch(r'/tasks/[a-f0-9]{32}', path)
             response = (RedirectResponse("/login", status_code=303) if request.method == "GET"
-                        and not path.startswith(("/api/", "/health/", "/download/"))
+                         and not json_endpoint
                         else JSONResponse({"detail": "Authentication required"}, status_code=401))
         else:
             try:
@@ -254,7 +257,12 @@ async def request_context(request: Request, call_next):
                             raise HTTPException(429, 'Too many concurrent uploads or forms')
                         await slots.acquire()
                         admitted_body = True
-                    if not public and path != '/logout':
+                    # Queue admission/controls do not modify profile/artifacts.
+                    # The export worker owns the mutation lock during CPU work;
+                    # repeated admission and pause/reject must remain responsive.
+                    scheduling = path.startswith('/queue/') or path == '/api/v1/benchmarks' or (
+                        generation and getattr(request.state, 'background_export', False))
+                    if not public and path != '/logout' and not scheduling:
                         mutations = request.app.state.resource_budget.mutation_slots
                         if generation:
                             try:
@@ -337,8 +345,28 @@ class ConfiguredSessionMiddleware(SessionMiddleware):
                        max_age=settings.session_ttl_seconds, same_site="strict")
         super().__init__(app, https_only=settings.base_url.startswith("https://"), **options)
         self.https_sessions = SessionMiddleware(app, https_only=True, **options)
+        self._read_only_cookie_names = (settings.session_cookie_name.encode() + b'=', settings.csrf_cookie_name.encode() + b'=')
 
     async def __call__(self, scope, receive, send):
+        path = scope.get('path', '')
+        root = scope.get('root_path', '')
+        if root and path.startswith(root + '/'):
+            path = path[len(root):]
+        polling = scope.get('method') == 'GET' and (
+            path == '/queue/status' or re.fullmatch(r'/tasks/[a-f0-9]{32}', path)
+            or re.fullmatch(r'/api/v1/benchmarks/[a-f0-9]{32}', path)
+        )
+        original_send = send
+        if polling:
+            async def read_only_send(message):
+                # A delayed poll from an old tab must not overwrite a freshly
+                # switched account's session/CSRF cookies. Verification and
+                # server-side revocation still run normally on every request.
+                if message['type'] == 'http.response.start':
+                    message['headers'] = [(name, value) for name, value in message.get('headers', [])
+                                          if not (name.lower() == b'set-cookie' and value.startswith(self._read_only_cookie_names))]
+                await original_send(message)
+            send = read_only_send
         if scope.get("scheme") == "https":
             await self.https_sessions(scope, receive, send)
         else:
@@ -354,6 +382,7 @@ def create_app(settings=None, shared_account=False):
     application.middleware("http")(request_context)
     application.include_router(router)
     application.include_router(custom_cv_router)
+    application.include_router(benchmark_router)
     if not shared_account:
         application.add_middleware(AccountRoutingMiddleware)
         application.add_middleware(ConfiguredSessionMiddleware, settings=settings)

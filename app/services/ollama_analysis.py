@@ -87,6 +87,9 @@ and hands-on experience conditions remain qualifications even under unfamiliar h
 For context/responsibility return ONLY p and k; their original text is kept by code.
 For requirements/competencies supply n, priority, s, f, why; include optional fields
 only when needed. Return one row per capability, use components for AND/OR conditions.
+For every requirement/competency, n and why must be non-blank. Keep n at most
+120 characters, why at most 280 characters, and lvl at most 40 characters.
+These length limits also apply to component fields. Be concise rather than truncate JSON.
 Never repeat source quotes, full evidence facts or long descriptions in the response.
 job_source preserves the complete offer across batches; classify only the supplied passage IDs.
 Hints and section labels are advisory, never authoritative. Classify each passage by
@@ -114,17 +117,21 @@ class AnalysisInventory:
 
     @classmethod
     def build(cls, job, profile, bank=None):
-        units, _ = extract_sections(job.job_description)
+        from app.services.job_sections import normalize_source_layout
+        layout = normalize_source_layout(job.job_description)
+        units, _ = extract_sections(layout)
         passages = {}
         # Include unrecognized headings and all administrative/duty text, too.
         # A parser hint cannot silently remove a passage from model interpretation.
-        for position, text in enumerate([job.role, *job.job_description.splitlines()]):
+        for position, text in enumerate([job.role, *layout.splitlines()]):
             text = text.strip()
             if not text:
                 continue
             cleaned = clean_source_line(text)
             related = [u for u in units if u.quote.strip() in {text, cleaned}] if position else []
             metadata = related or [u for u in units if cleaned in u.supporting_quotes]
+            portal_level = bool(not related and metadata and all(
+                u.category == 'competency' and cleaned in u.supporting_quotes for u in metadata))
             hints = sorted({u.category for u in metadata})
             section = metadata[0].section if metadata else ""
             passages[f"P{len(passages) + 1}"] = {
@@ -133,7 +140,7 @@ class AnalysisInventory:
                 "section": section,
                 # Keyword lists are presentation metadata, not qualifications.
                 # Explicit candidate conditions still override this hint below.
-                "context_only": position == 0 or bool(hints) and set(hints) <= {"keywords"},
+                "context_only": position == 0 or portal_level or bool(hints) and set(hints) <= {"keywords"},
             }
         matcher = EvidenceMatcher(FactCatalog(profile), bank)
         entries = matcher.entries
@@ -252,7 +259,8 @@ class AnalysisInventory:
         for pid in ids:
             passage = self.passages[pid]
             assessable = needs_assessment(passage)
-            qualification = objective_condition(passage)
+            qualification = assessment_priority(passage) is not None
+            duty = needs_responsibility(passage)
             fixed_context = passage["context_only"] and not assessable
             kind = "Qualification" if qualification else "Assessment" if assessable else "Context" if fixed_context else "Open"
             if kind not in definitions:
@@ -313,6 +321,28 @@ class AnalysisInventory:
                     if parts:
                         row["properties"]["op"]["enum"] = [operator]
                     definitions[kind] = row
+            if qualification:
+                # A clearly headed qualification cannot become an unweighted
+                # role tag. Keep model status/evidence, but bind source priority.
+                priority_kind = f"{kind}_{assessment_priority(passage).value}"
+                if priority_kind not in definitions:
+                    row = deepcopy(definitions[kind])
+                    row['properties']['priority']['enum'] = [assessment_priority(passage).value]
+                    definitions[priority_kind] = row
+                kind = priority_kind
+            elif duty and not assessable:
+                kind = 'Responsibility'
+                definitions[kind] = {'type': 'object', 'properties': {'k': {'type': 'string', 'enum': ['responsibility']}},
+                                     'required': ['k'], 'additionalProperties': False}
+            if assessable:
+                from app.services.evidence_matching import required_years
+                years = required_years(passage['text'])
+                years_kind = f'{kind}_Tenure_{years}'
+                if years_kind not in definitions:
+                    row = deepcopy(definitions[kind])
+                    row['properties']['yrs'] = {'type': 'null'} if years is None else {'type': 'number', 'enum': [years]}
+                    definitions[years_kind] = row
+                kind = years_kind
             properties[pid] = {"$ref": f"#/$defs/{kind}"}
         return {"type": "object", "$defs": definitions,
                 "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
@@ -329,18 +359,19 @@ class AnalysisInventory:
             # An explicit minimum tenure / required language condition cannot
             # become an unweighted role tag. Correct category only; retain model
             # evidence/status for the independent factual/proficiency validator.
-            if row.k == "competency" and objective_condition(self.passages[row.p]):
+            expected_priority = assessment_priority(self.passages[row.p])
+            if row.yrs is not None:
+                from app.services.evidence_matching import required_years
+                if required_years(self.passages[row.p]['text']) != row.yrs:
+                    raise OllamaAnalysisError('schema', f'Assessment {row.p} invented or changed minimum tenure (yrs); use only years explicitly required by the source, otherwise omit yrs.')
+            if row.k in {"competency", "requirement"} and expected_priority is not None:
                 row = row.model_copy(deep=True)
                 row.k = "requirement"
-                hints = self.passages[row.p]["hints"]
-                from app.services.job_sections import PREFERENCE_MARKER
-
-                optional = set(hints) & {"preferred", "nice_to_have"} or PREFERENCE_MARKER.search(
-                    self.passages[row.p]["text"]
-                )
-                row.priority = RequirementPriority.PREFERRED if optional else RequirementPriority.MANDATORY
+                row.priority = expected_priority
             if row.k in {"requirement", "competency"} and (not row.n.strip() or not row.why.strip()):
-                raise OllamaAnalysisError("schema", "Ollama omitted a capability label or evidence explanation.")
+                raise OllamaAnalysisError("schema", f"Assessment {row.p} omitted a non-blank capability label (n) or evidence explanation (why).")
+            if row.k == 'context' and needs_responsibility(self.passages[row.p]):
+                raise OllamaAnalysisError('schema', f'Assessment {row.p} must preserve the explicit responsibility, not context.')
             refs = row.f + [i for c in row.c for i in c.f]
             if any(i not in self.evidence for i in refs):
                 raise OllamaAnalysisError("schema", "Ollama referenced unknown candidate evidence.")
@@ -500,13 +531,47 @@ def needs_assessment(passage):
     text = clean_source_line(passage["text"])
     if text.endswith(":") or len(text.split()) < 2:
         return False
+    if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
+        r'^(?:wiedza\b|odpowiedzialność\b)', text, re.I
+    ):
+        return True
     return bool(
         re.match(
-            r"^(?:\d+(?:\.\d+)?\+?\s*years?\b|experience\b|hands.on experience\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|practical knowledge\b|(?:praktyczn\w*\s+)?znajomoś\w*\b|doświadczen\w*\b|umiejętnoś\w*\b|ability\b|able to\b|excellent\b|strong attention\b|problem.solving\b|open to learning\b|must\b|fluen\w*\b)",
+            r"^(?:\d+(?:\.\d+)?\+?\s*years?\b|experience\b|hands.on experience\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|(?:(?:very\s+)?good|strong|solid|practical|working|basic|advanced|in.depth)\s+(?:knowledge|background|understanding|experience|command|skills?)\b|(?:(?:bardzo\s+)?(?:dobr\w*|podstawow\w*|praktyczn\w*|biegł\w*)\s+)?znajomoś\w*\b|doświadczen\w*\b|umiejętnoś\w*\b|ability\b|able to\b|excellent\b|strong attention\b|problem.solving\b|open to learning\b|must\b|fluen\w*\b|(?:[a-z]+\s+)?language skills\b|willingness.*communicat|a customer.focused.*mindset|patience,?\s+attention)",
             text,
             re.I,
         )
-    )
+    ) or bool(re.search(r'\b(?:this role|position) requires\b.*\b(?:fluency|knowledge|experience|proficiency|skills)\b', text, re.I))
+
+
+def assessment_priority(passage):
+    """Bind explicit qualification priority, without inventing candidate evidence."""
+    import re
+
+    from app.services.job_sections import PREFERENCE_MARKER
+
+    if not needs_assessment(passage):
+        return None
+    hints = set(passage.get('hints', []))
+    if objective_condition(passage) and re.search(r'\b(?:is|are) required\b', passage['text'], re.I):
+        return RequirementPriority.MANDATORY
+    # An explicit mandatory section wins over an optional trailing clause.
+    if 'mandatory' in hints:
+        return RequirementPriority.MANDATORY
+    if hints & {'preferred', 'nice_to_have'}:
+        return RequirementPriority.PREFERRED
+    if objective_condition(passage):
+        return RequirementPriority.PREFERRED if PREFERENCE_MARKER.search(passage['text']) else RequirementPriority.MANDATORY
+    return None
+
+
+def needs_responsibility(passage):
+    """Guard explicit action duties against silent context-only coverage."""
+    import re
+
+    return 'responsibility' in passage.get('hints', []) and bool(re.match(
+        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział)\b',
+        clean_source_line(passage['text']), re.I)) and not needs_assessment(passage)
 
 
 def objective_condition(passage):
@@ -514,7 +579,7 @@ def objective_condition(passage):
 
     text = clean_source_line(passage["text"])
     tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+(?:\.\d+)?\+?\s*years?\b.*\bexperience\b", text, re.I)
-    language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?)\b", text, re.I) and re.search(
+    language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?|this role requires)\b", text, re.I) and re.search(
         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
     )
     return bool(tenure or language)

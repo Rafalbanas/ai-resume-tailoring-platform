@@ -115,7 +115,10 @@ def test_random_task_links_stay_in_their_account_at_every_stage(shared_app, acco
         source.state.task_manager._save_task(task)
         paths = (f'/tasks/{task.task_id}', f'/tasks/{task.task_id}/view')
         for path in paths:
-            assert client.get(path, follow_redirects=False).status_code == 303
+            # JSON polling must not follow /login and revoke a new account's
+            # session when an old tab has an in-flight request during switching.
+            expected = 303 if path.endswith('/view') else 401
+            assert client.get(path, follow_redirects=False).status_code == expected
         assert sign_in(client, account).status_code == 303
         assert client.get(paths[0]).json()['status'] == status.value
         assert client.get(paths[1], follow_redirects=False).status_code == 200

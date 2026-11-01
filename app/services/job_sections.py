@@ -20,21 +20,22 @@ class SourceUnit:
 
 
 PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
-MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
+MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze wymagania|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
 NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
     re.I,
 )
 QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
-    r'professional\s+requirements)\s*:?$', re.I,
+    r'(?:required|mandatory|essential|minimum)\s+(?:technical\s+and\s+professional\s+|technical\s+|professional\s+)?expertise|'
+    r'professional\s+requirements|idealnie abyś posiadał/a)\s*:?$', re.I,
 )
-DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|you will|twoje zadania|zakres obowiązków|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
+DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
     "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }
@@ -118,7 +119,23 @@ def requirement_units(line: str, category: str, section: str, group: str) -> lis
     return [unit]
 
 
+def normalize_source_layout(text: str) -> str:
+    """Separate copied inline lists without changing the source's words.
+
+    Some portal exports put entire sections on one line. Treating that line as
+    one passage lets a context disposition hide every qualification in it.
+    Keep this projection separate from the original offer used for provenance.
+    """
+    text = re.sub(r'(?<!\n)(?=[•●▪◦])', '\n', text)
+    for heading in ('Do Twoich obowiązków będzie należało:', 'Idealnie abyś posiadał/a:',
+                    'Mile widziane:', 'Ze swej strony możemy zaoferować:'):
+        text = re.sub(r'(?<!\n)(' + re.escape(heading) + r')', r'\n\1', text)
+        text = re.sub(r'(' + re.escape(heading) + r')(?!\n)', r'\1\n', text)
+    return text
+
+
 def extract_sections(text: str) -> tuple[list[SourceUnit], list[str]]:
+    text = normalize_source_layout(text)
     # Legacy portal exports used MUST HAVE for short tags alongside a separate
     # prose REQUIREMENTS section. Preserve those tags with unspecified priority.
     tag_block = re.search(r'(?im)^MUST HAVE\s*\n(.*?)\n\s*(?:NICE TO HAVE\s*\n.*?)?^REQUIREMENTS\s*$', text, re.S | re.M)

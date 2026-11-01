@@ -14,6 +14,10 @@
     <a href="{{ app_root_path|default('') }}/" class="brand"><span class="brand-mark">CV</span><span>Tailor</span></a>
     {% if request.state.authenticated %}<span class="account-label">{{ account_username }}</span><nav aria-label="Primary"><a href="{{ app_root_path|default('') }}/">New match</a><a href="{{ app_root_path|default('') }}/compare">Compare</a><a href="{{ app_root_path|default('') }}/history">History</a><a href="{{ app_root_path|default('') }}/diagnostics">Diagnostics</a><a href="{{ app_root_path|default('') }}/skills">Skills &amp; Evidence</a><a href="{{ app_root_path|default('') }}/references">Reference CVs</a><a href="{{ app_root_path|default('') }}/profile">Profile</a><a href="{{ app_root_path|default('') }}/account/password">Account</a></nav><form action="{{ app_root_path|default('') }}/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Sign out everywhere</button></form>{% endif %}
   </header>
+  {% if request.state.authenticated %}{% set activity = queue_activity|default({}) %}
+  <div class="shell"><a id="global-queue-link" href="{{ app_root_path|default('') }}/diagnostics#live-queue-panel">Background queue: <span id="global-queue-count">{{ activity.get('running_tasks', [])|length + activity.get('queued_tasks', [])|length }}</span><span id="global-queue-paused">{{ ' · paused' if activity.get('paused') else '' }}</span></a></div>
+  <script src="{{ app_root_path|default('') }}/static/queue_activity.js?v={{ asset_version }}" defer></script>
+  {% endif %}
   <main class="shell">{% if demo_mode %}<p class="demo-marker">Demo — fictional data</p>{% endif %}{% block content %}{% endblock %}</main>
   <footer class="site-footer">
     <span>CVTailor uses essential cookies for sign-in and security.</span>

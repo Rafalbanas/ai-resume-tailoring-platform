@@ -196,6 +196,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         semantic_key,
     )
     units, sections = extract_sections(job_text)
+    # Portal tags are source metadata, not model-assigned qualifications. Keep
+    # their independently parsed levels even when the model returns context rows.
+    portal_units = [u for u in units if u.category == 'competency']
+    portal_quotes = {clean_source_line(q) for u in portal_units for q in [u.quote, *u.supporting_quotes]}
     semantic_source = False
     source_issues = []
     # A normalized parser-backed report already contains derived context/duties.
@@ -206,7 +210,8 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         from app.services.source_classification import model_source_units
         model_units, source_issues = model_source_units(candidate, job_text)
         if model_units is not None:
-            units, sections = model_units, []
+            units = [u for u in model_units if clean_source_line(u.quote) not in portal_quotes] + portal_units
+            sections = []
             semantic_source = True
     source = [(u.name, RequirementPriority(u.category)) for u in units
               if u.category in {'mandatory', 'preferred', 'nice_to_have'}] if semantic_source else source_lines(job_text)
@@ -235,9 +240,12 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
             result.role_competencies.append(JobRequirement(name=unit.name, source_quote=unit.quote, source_quotes=[unit.quote, *unit.supporting_quotes], required_level=unit.level, source_section=unit.section, classification_basis="Role skill or portal tag; employer priority unspecified. Excluded from mandatory scoring; any listed proficiency requires separate verification", priority=RequirementPriority.UNSPECIFIED, status=status, evidence=evidence, source_fact_ids=ids, evidence_sources=validator.matcher.sources(ids), reason=reason))
     unit_by_name = {u.name: u for u in units if u.category in {"mandatory", "preferred", "nice_to_have", "unknown"}}
     result.completeness_issues = list(source_issues)
-    result.unassessed_source_passages = list(candidate.unassessed_source_passages)
+    result.unassessed_source_passages = [quote for quote in candidate.unassessed_source_passages
+                                         if clean_source_line(quote) not in portal_quotes]
     for issue in source_issues:
-        for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: '):
+        for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: ',
+                       'Explicit qualification was excluded from qualification scoring: ',
+                       'Explicit responsibility was classified as context: '):
             if issue.startswith(prefix):
                 result.unassessed_source_passages.append(issue[len(prefix):])
     if result.unassessed_source_passages:
@@ -266,6 +274,8 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
             current = getattr(result, field)
             for passage in getattr(candidate, field):
                 quote = passage.get('source_quote', '')
+                if clean_source_line(quote) in portal_quotes:
+                    continue
                 if quote and quote in job_text and not any(p.get('source_quote') == quote for p in current):
                     current.append(passage)
     # Location outside the requirement section is still a real constraint.

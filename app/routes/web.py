@@ -25,9 +25,8 @@ from app.services.processing import cpu_work
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
 from app.services.resume_editor import apply_resume_edits
-from app.services.resume_export import prepare_resume
 from app.services.storage import DraftDataError, compute_pre_fit_diff
-from app.services.summary_confirmation import account_context, confirmation_token, require_confirmation, summary_review
+from app.services.summary_confirmation import account_context, require_confirmation, summary_review
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 from app.services.ui_language import ui_text
 
@@ -36,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 def context(request: Request, **values):
+    activity = queue_activity(request, values.get('task')) if getattr(request.state, 'authenticated', False) else {}
     return {
         "request": request,
         "account_username": request.app.state.auth_store.username if getattr(request.state, "authenticated", False) else "",
@@ -48,6 +48,8 @@ def context(request: Request, **values):
         "gemini_model": getattr(getattr(request.app.state, "settings", None), "gemini_model", "unknown"),
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "asset_version": getattr(getattr(request.app.state, "settings", None), "app_build_sha", ""),
+        "queue_activity": activity,
+        "task_activity": activity,
         **values,
     }
 
@@ -60,6 +62,59 @@ def limit_request(request):
 
 def guard(request: Request) -> None:
     require_session(request)
+
+
+def queue_activity(request: Request, task=None):
+    activity = request.app.state.task_manager.activity_for(task)
+    for field in ('running_tasks', 'queued_tasks'):
+        for row in activity[field]:
+            row['stage'] = ui_text(row['stage'])
+    return activity
+
+
+def queue_control_guard(request, csrf_token):
+    guard(request)
+    limit_request(request)
+    validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ''), request.app.state.settings.csrf_secret)
+
+
+@router.get('/queue/status')
+async def queue_status(request: Request):
+    guard(request)
+    activity = await run_in_threadpool(queue_activity, request)
+    payload = {'activity': activity}
+    if request.query_params.get('panel') == '1':
+        payload['panel_html'] = request.app.state.templates.env.get_template('queue_panel.html').render(
+            request=request, queue_activity=activity,
+            app_root_path=request.scope.get('root_path', ''), csrf_token=getattr(request.state, 'csrf_token', ''))
+    return JSONResponse(payload, headers={'Cache-Control': 'no-store'})
+
+
+@router.post('/queue/{action}')
+async def control_queue(request: Request, action: Literal['pause', 'resume'], csrf_token: Annotated[str, Form()]):
+    queue_control_guard(request, csrf_token)
+    request.app.state.task_manager.set_paused(action == 'pause')
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/diagnostics#live-queue-panel", status_code=303)
+
+
+@router.post('/queue/tasks/{task_id}/reject')
+async def reject_queued_task(request: Request, task_id: str, csrf_token: Annotated[str, Form()]):
+    queue_control_guard(request, csrf_token)
+    request.app.state.task_manager.reject_queued(task_id)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/diagnostics#live-queue-panel", status_code=303)
+
+
+@router.post('/queue/tasks/{task_id}/delete')
+async def delete_task_entry(request: Request, task_id: str, csrf_token: Annotated[str, Form()]):
+    queue_control_guard(request, csrf_token)
+    request.app.state.task_manager.delete_inactive_entry(task_id)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/history", status_code=303)
+
+
+@router.post('/queue/tasks/{task_id}/retry')
+async def retry_queue_entry(request: Request, task_id: str, csrf_token: Annotated[str, Form()]):
+    queue_control_guard(request, csrf_token)
+    return await retry_task(request, task_id, csrf_token)
 
 
 def draft_error_response(request: Request, *, missing: bool):
@@ -312,7 +367,8 @@ async def get_task_status(request: Request, task_id: str):
     payload = task.model_dump(mode="json")
     payload["stage"] = ui_text(task.stage)
     payload["error"] = ui_text(task.error) if task.error else None
-    return JSONResponse(content=payload)
+    payload['activity'] = await run_in_threadpool(queue_activity, request, task)
+    return JSONResponse(content=payload, headers={'Cache-Control': 'no-store'})
 
 
 @router.post('/retailor/{source_type}/{source_id}')
@@ -398,6 +454,7 @@ async def retry_task(
         retry_from=task.task_id,
         attempt=str(time.time()),
     )
+    request.app.state.task_manager.retain_history(task)
     new_task = request.app.state.task_manager.create_task(
         kind=task.kind,
         payload=task.payload,
@@ -493,93 +550,40 @@ async def save_analysis_evidence(request: Request, draft_id: str):
 
 @router.post("/generate/{draft_id}")
 async def generate(request: Request, draft_id: str, csrf_token: Annotated[str, Form()],
-                   template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic",
-                    summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = '',
-                    cv_name: Annotated[str, Form(max_length=150)] = ''):
+                    template_name: Annotated[Literal["modern_sidebar", "ats_classic"], Form()] = "ats_classic",
+                     summary_confirmed: Annotated[str, Form()] = '', summary_token: Annotated[str, Form()] = '',
+                     cv_name: Annotated[str, Form(max_length=150)] = '',
+                     background_export: Annotated[bool, Form()] = False):
     guard(request)
     limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
     try:
-        job, response = request.app.state.storage.load_draft(draft_id)
+        from app.services.draft_export import export_draft, prepare_draft_export
+        options = dict(template_name=template_name, summary_confirmed=summary_confirmed,
+                       summary_token=summary_token, cv_name=cv_name)
+        job, _, _, _ = prepare_draft_export(request.app.state, draft_id, summary_confirmed=summary_confirmed,
+                                           summary_token=summary_token, cv_name=cv_name)
     except FileNotFoundError:
         return draft_error_response(request, missing=True)
     except (DraftDataError, json.JSONDecodeError, ValidationError):
         logger.exception("Could not generate from draft %s", draft_id)
         return draft_error_response(request, missing=False)
-    if job.workflow == "custom" and cv_name.strip():
-        job.cv_name = cv_name.strip()
-    started = time.perf_counter()
-    validator = FactValidator(request.app.state.profile, request.app.state.skills_bank, response.analysis, review_key=request.app.state.settings.csrf_secret)
-    result = validator.validate(response.resume, job)
-    review = summary_review(result.resume, request.app.state.profile, request.app.state.settings.csrf_secret,
-        account_context(request.app.state.auth_store.username, 'draft', draft_id))
-    require_confirmation(review, summary_confirmed, summary_token)
-    try:
-        prepare_resume(result.resume, request.app.state.profile)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    layout_guide = {}
+    if background_export:
+        manager = request.app.state.task_manager
+        key = compute_idempotency_key('export', draft_id=draft_id, **options)
+        task = manager.find_by_idempotency_key(key)
+        if task is None:
+            task = manager.create_task(TaskKind.EXPORT, {'draft_id': draft_id, 'export_options': options,
+                'job': {'company': job.company, 'role': job.role}}, key)
+            manager.retain_history(task)
+        return RedirectResponse(f"{request.scope.get('root_path', '')}/tasks/{task.task_id}/view", status_code=303)
     try:
-        fitted_resume, layout_warnings = await cpu_work(request, request.app.state.pdf_generator.fit_resume,
-            result.resume, request.app.state.profile, layout_guide, template_name=template_name,
-            job_text=f"{job.role}\n{job.relevance_text}",
-            one_page=template_name == "modern_sidebar", fact_validator=validator,
-        )
+        slug = await export_draft(request.app.state, draft_id, **options)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    warnings = result.warnings
-    final_review = summary_review(fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret,
-        account_context(request.app.state.auth_store.username, 'draft', draft_id))
-    require_confirmation(final_review, summary_confirmed, summary_token)
-    photo_enabled = template_name == "modern_sidebar" and request.app.state.profile_photo.exists()
-    slug, folder = request.app.state.storage.save_application(
-        job,
-        response.analysis,
-        fitted_resume,
-        warnings,
-        layout_guide,
-        draft_id,
-        template_name=template_name,
-        photo_enabled=photo_enabled,
-        truth_lock_warnings=result.warnings,
-        layout_warnings=layout_warnings,
-        pre_fit_resume=result.resume,
-        provider_used=getattr(response, "provider_used", "unknown"),
-        model_used=getattr(response, "model_used", "unknown"),
-        fallback_used=getattr(response, "fallback_used", False),
-        fallback_reason=getattr(response, "fallback_reason", None),
-        retrieval_context=response.retrieval_context,
-    )
-    await cpu_work(request, request.app.state.pdf_generator.generate,
-        fitted_resume,
-        request.app.state.profile,
-        folder / "resume.pdf",
-        layout_guide,
-        template_name=template_name,
-        photo_enabled=photo_enabled,
-    )
-    await cpu_work(request, request.app.state.docx_generator,
-        fitted_resume,
-        request.app.state.profile,
-        folder / "resume.docx",
-        photo_path=request.app.state.profile_photo.path,
-        photo_enabled=photo_enabled,
-        template_name=template_name,
-    )
-    request.app.state.storage.mark_export_checked(slug)
-    if final_review['required']:
-        request.app.state.storage.confirm_summary(slug, confirmation_token(
-            fitted_resume, request.app.state.profile, request.app.state.settings.csrf_secret,
-            account_context(request.app.state.auth_store.username, 'saved', slug)))
-    logger.info(
-        "Resume generated",
-        extra={
-            "stage": "generate",
-            "duration_ms": int((time.perf_counter() - started) * 1000),
-            "warning_count": len(warnings),
-        },
-    )
-    return RedirectResponse(f"/preview/{slug}", status_code=303)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/preview/{slug}", status_code=303)
 
 
 @router.get("/preview/{slug}", response_class=HTMLResponse)
