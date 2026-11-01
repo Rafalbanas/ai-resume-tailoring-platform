@@ -5,10 +5,14 @@
   <div>
     <p class="eyebrow">BACKGROUND TASK</p>
     <h1 id="task-title">
-      {% if task.kind == 'compare' %}
+      {% if task.kind == 'benchmark' %}
+        Benchmarking offer analysis
+      {% elif task.kind == 'compare' %}
         Comparing AI models
       {% elif task.kind == 'custom_edit' %}
         Editing selected CV sections
+      {% elif task.kind == 'export' %}
+        Preparing PDF and DOCX
       {% else %}
         Generating tailored CV
       {% endif %}
@@ -24,8 +28,8 @@
   </div>
   <div class="actions"><a href="{{ app_root_path|default('') }}/history">Saved analyses</a>{% if job.get('job_url') %}<a href="{{ job.get('job_url') }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
   <div class="truth-badge" id="task-status-badge">
-    <span class="{% if task.status not in ['failed', 'completed'] %}pulse-indicator{% endif %}" id="task-badge-icon">
-      {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% else %}⚡{% endif %}
+    <span class="{% if task.status not in ['failed', 'completed', 'rejected'] %}pulse-indicator{% endif %}" id="task-badge-icon">
+      {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% elif task.status == 'rejected' %}—{% else %}⚡{% endif %}
     </span>
     <div>
       <strong id="task-status-text">
@@ -35,6 +39,8 @@
           Processing
         {% elif task.status == 'completed' %}
           Completed
+        {% elif task.status == 'rejected' %}
+          Rejected — history kept
         {% else %}
           Generation failed
         {% endif %}
@@ -48,10 +54,11 @@
 <div class="card task-progress-card" id="task-card"
      data-task-id="{{ task.task_id }}" data-status="{{ task.status }}"
      data-created-at="{{ task.created_at }}" data-started-at="{{ task.started_at or '' }}"
-     data-token-usage="{{ task.token_usage|tojson|forceescape }}">
+     data-token-usage="{{ task.token_usage|tojson|forceescape }}"
+     data-task-activity="{{ task_activity|default({})|tojson|forceescape }}">
   <div class="task-card-header">
     <div class="task-stage-badge">
-      <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed'] %}display: none;{% endif %}"></span>
+      <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed', 'rejected'] %}display: none;{% endif %}"></span>
       <span id="task-stage">{{ task.stage|ui_text }}</span>
     </div>
     <div class="task-timer-meta">
@@ -67,6 +74,17 @@
     </div>
   </div>
 
+  {% set activity = task_activity|default({}) %}
+  <div id="task-activity-section" aria-live="polite" style="margin: 1rem 0;" {% if task.status in ['failed', 'completed', 'rejected'] %}hidden{% endif %}>
+    <h2>Current background activity</h2>
+    <p id="task-queue-position">{% if activity.get('paused') and task.status == 'queued' %}Queue paused — the active task finishes, but waiting requests do not start.{% elif activity.get('queue_position') %}Queue position: {{ activity.queue_position }} · {{ activity.queued_ahead }} queued requests ahead{% elif task.status == 'running' %}This task is processing on the server.{% else %}Waiting for the server worker to pick up this task{% endif %}</p>
+    <ul id="running-tasks-list">
+      {% for running_task in activity.get('running_tasks', []) %}
+      <li>Currently processing: {{ running_task.company }} — {{ running_task.role }} · {{ running_task.stage }}{% if running_task.model %} · {{ running_task.model }}{% endif %} <a href="{{ app_root_path|default('') }}/tasks/{{ running_task.task_id }}/view">View task</a></li>
+      {% endfor %}
+    </ul>
+    <a href="{{ app_root_path|default('') }}/diagnostics#live-queue-panel">Open queue controls</a>
+  </div>
   <section id="token-usage" aria-label="Token usage" style="margin: 1rem 0;" hidden>
     <strong id="token-count"></strong><span id="token-speed" style="margin-left: 1rem;"></span>
     <p id="token-detail" class="muted"></p><small id="token-note"></small>
@@ -76,6 +94,8 @@
       <small id="task-footer-note">
         {% if task.status == 'failed' %}
           Processing failed. Retry generation or edit the job.
+        {% elif task.status == 'rejected' %}
+          Rejected before execution. This entry remains in history until you delete it manually.
         {% else %}
           ℹ️ This task runs on the server independently of your browser. You may refresh, close this tab, or return later.
         {% endif %}
@@ -86,15 +106,18 @@
     </div>
   </div>
 
-  <div id="error-container" class="alert" style="{% if task.status != 'failed' %}display: none;{% endif %} margin-top: 1.5rem;">
-    <strong id="error-title">Processing failed:</strong>
-    <p id="error-message" style="margin-top: 0.5rem; word-break: break-word;">{{ task.error|ui_text }}</p>
+  <div id="error-container" class="alert" style="{% if task.status not in ['failed', 'rejected'] %}display: none;{% endif %} margin-top: 1.5rem;">
+    <strong id="error-title">{{ 'Task rejected:' if task.status == 'rejected' else 'Processing failed:' }}</strong>
+    <p id="error-message" style="margin-top: 0.5rem; word-break: break-word;">{{ (task.stage if task.status == 'rejected' else task.error)|ui_text }}</p>
     <div class="task-actions" style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-      <form id="retry-form" action="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/retry" method="post" style="display: inline-block; margin: 0;">
+      <form id="retry-form" action="{{ app_root_path|default('') }}/queue/tasks/{{ task.task_id }}/retry" method="post" style="display: inline-block; margin: 0;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" id="retry-btn" class="button primary">Retry generation</button>
       </form>
-      {% if task.kind == 'custom_edit' %}<a href="{{ app_root_path|default('') }}/custom-cvs/{{ task.payload.cv_id }}" id="edit-settings-link" class="button secondary">Return to CV — current version kept</a>{% else %}<a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Edit job and settings</a>{% endif %}
+      <form action="{{ app_root_path|default('') }}/queue/tasks/{{ task.task_id }}/delete" method="post" data-confirm="Delete this task entry permanently? This is a manual deletion; saved CVs are not deleted.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Delete history entry manually</button>
+      </form>
+      {% if task.kind == 'custom_edit' %}<a href="{{ app_root_path|default('') }}/custom-cvs/{{ task.payload.cv_id }}" id="edit-settings-link" class="button secondary">Return to CV — current version kept</a>{% elif task.kind == 'export' %}<a href="{{ app_root_path|default('') }}/analysis/{{ task.payload.draft_id }}" id="edit-settings-link" class="button secondary">Return to saved draft and confirmation</a>{% else %}<a href="{{ app_root_path|default('') }}/?from_task={{ task.task_id }}" id="edit-settings-link" class="button secondary">Edit job and settings</a>{% endif %}
     </div>
   </div>
 </div>

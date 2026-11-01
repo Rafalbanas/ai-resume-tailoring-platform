@@ -320,9 +320,19 @@ class GeminiProvider(AIProvider):
         from app.services.indexed_analysis import indexed_interpretation
         from app.services.ollama_analysis import AnalysisInventory
         inventory = AnalysisInventory.build(job, profile, self.skills_bank)
-        interpretation = await indexed_interpretation(self, inventory)
-        analysis = interpretation.to_analysis(job)
-        validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
+        feedback = []
+        for attempt in range(2):
+            interpretation = await indexed_interpretation(self, inventory, validation_feedback=feedback)
+            analysis = interpretation.to_analysis(job)
+            validated = AnalysisValidator(profile, self.skills_bank).validate(analysis, f"{job.role}\n{job.job_description}", semantic=True)
+            if validated.is_reliable or attempt == 1:
+                break
+            feedback = validated.completeness_issues + validated.classification_issues + validated.evidence_issues
+            # Keep independent corrections as feedback, never silently erase
+            # evidence issues or fabricate a successful score after rejection.
+            for row in validated.requirements + validated.role_competencies:
+                if any(row.name in issue for issue in validated.evidence_issues + validated.classification_issues):
+                    feedback.append(f"Source {row.source_quote}: independent evidence check permits at most {row.status.value}. {row.reason}")
         import hashlib
         validated.company, validated.role = job.company, job.role
         validated.job_source = {'url': str(job.job_url or ''), 'sha256': hashlib.sha256(job.job_description.encode()).hexdigest()}

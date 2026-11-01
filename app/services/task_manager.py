@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 from contextlib import contextmanager
 from copy import copy
@@ -31,12 +32,15 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    REJECTED = "rejected"
 
 
 class TaskKind(str, Enum):
     TAILOR = "tailor"
     COMPARE = "compare"
     CUSTOM_EDIT = "custom_edit"
+    BENCHMARK = "benchmark"
+    EXPORT = "export"
 
 
 class TaskRecord(BaseModel):
@@ -56,6 +60,7 @@ class TaskRecord(BaseModel):
     error: str | None = None
     error_status_code: int | None = None
     token_usage: dict[str, Any] = Field(default_factory=dict)
+    keep_history: bool = False
 
 
 def compute_idempotency_key(kind: str, **kwargs) -> str:
@@ -75,6 +80,19 @@ class TaskManager:
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_pending)
         self._worker_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
+        self._pending_task_ids: dict[str, None] = {}
+        self._active_task_id: str | None = None
+        self._pause_path = data_dir / '.queue-control.json'
+        self._paused = False
+        if self._pause_path.exists():
+            try:
+                paused = json.loads(self._pause_path.read_text())['paused']
+                if not isinstance(paused, bool):
+                    raise ValueError('Invalid queue pause state')
+                self._paused = paused
+            except (OSError, ValueError, KeyError, TypeError):
+                self._paused = True
+                logger.warning('Invalid queue control state; queue paused until explicitly resumed')
 
     def _task_path(self, task_id: str) -> Path:
         return self.tasks_dir / f"{task_id}.json"
@@ -102,6 +120,96 @@ class TaskManager:
         except Exception as exc:
             logger.error("Failed to read task %s (%s)", task_id, type(exc).__name__)
             return None
+
+    def activity_for(self, task: TaskRecord | None = None) -> dict[str, Any]:
+        """Read-only account-local worker snapshot; never scan another account.
+
+        Read only the small live queue, not every historical CV on every poll.
+        Position is among waiting requests (1 means next), not an ETA.
+        """
+        activity = {"queue_position": None, "queued_ahead": 0, "running_tasks": [],
+                    "queued_tasks": [], "paused": self._paused}
+        pending = []
+        for task_id in list(self._pending_task_ids):
+            queued = self.get_task(task_id)
+            if queued and queued.status == TaskStatus.QUEUED:
+                pending.append(task_id)
+                activity['queued_tasks'].append(self._activity_row(queued))
+        if task and task.status == TaskStatus.QUEUED and task.task_id in pending:
+            position = pending.index(task.task_id) + 1
+            activity['queue_position'] = position
+            activity['queued_ahead'] = position - 1
+        active_id = self._active_task_id
+        if active_id:
+            current = self.get_task(active_id)
+            if current and current.status == TaskStatus.RUNNING:
+                activity['running_tasks'].append(self._activity_row(current))
+        return activity
+
+    @staticmethod
+    def _activity_row(task):
+        job = task.payload.get('job') or {}
+        if not isinstance(job, dict):
+            job = {}
+        if task.kind == TaskKind.BENCHMARK:
+            job = {'company': 'Benchmark', 'role': f"{len(task.payload.get('benchmark', {}).get('urls', []))} offers · full / cleaned"}
+        return {'task_id': task.task_id, 'company': str(job.get('company', '')),
+                'role': str(job.get('role', '')), 'kind': task.kind.value, 'stage': task.stage,
+                'started_at': task.started_at, 'model': task.token_usage.get('model')}
+
+    def set_paused(self, paused: bool) -> None:
+        if not isinstance(paused, bool):
+            raise ValueError('Invalid queue pause state')
+        descriptor, temporary = tempfile.mkstemp(dir=self.tasks_dir.parent, prefix='.queue-control-')
+        try:
+            with os.fdopen(descriptor, 'w') as handle:
+                json.dump({'paused': paused}, handle)
+            os.replace(temporary, self._pause_path)
+            self._paused = paused
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def reject_queued(self, task_id: str) -> TaskRecord:
+        task = self.get_task(task_id)
+        if task is None:
+            raise HTTPException(404, 'Task not found')
+        if task.status != TaskStatus.QUEUED or task_id == self._active_task_id:
+            raise HTTPException(409, 'Only waiting tasks can be rejected. Active tasks finish normally.')
+        task.status = TaskStatus.REJECTED
+        task.stage = 'Rejected before execution — history kept'
+        task.completed_at = datetime.now(timezone.utc).isoformat()
+        task.keep_history = True
+        self._save_task(task)
+        self._pending_task_ids.pop(task_id, None)
+        # Compact using public Queue methods, preserving FIFO and join() counts.
+        # Reinsert retained entries BEFORE task_done(), so join cannot wake early.
+        retained, drained = [], 0
+        while True:
+            try:
+                queued_id = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            drained += 1
+            if queued_id != task_id:
+                retained.append(queued_id)
+        for queued_id in retained:
+            self._queue.put_nowait(queued_id)
+        for _ in range(drained):
+            self._queue.task_done()
+        return task
+
+    def retain_history(self, task: TaskRecord) -> None:
+        task.keep_history = True
+        self._save_task(task)
+
+    def delete_inactive_entry(self, task_id: str) -> None:
+        task = self.get_task(task_id)
+        if task is None:
+            raise HTTPException(404, 'Task not found')
+        if task_id == self._active_task_id or task.status not in {TaskStatus.REJECTED, TaskStatus.FAILED} or task.result is not None:
+            raise HTTPException(409, 'Only rejected or failed entries without saved results may be deleted here.')
+        self._task_path(task_id).unlink()
 
     async def recover_on_startup(self) -> int:
         """Finds any tasks left as running or queued on startup and marks them failed."""
@@ -137,6 +245,13 @@ class TaskManager:
                 continue
         return None
 
+    def find_by_idempotency_key(self, key: str) -> TaskRecord | None:
+        for path in self.tasks_dir.glob('*.json'):
+            task = self.get_task(path.stem)
+            if task and task.idempotency_key == key:
+                return task
+        return None
+
     @contextmanager
     def _admission(self):
         descriptor = os.open(self.tasks_dir / '.admission.lock', os.O_CREAT | os.O_RDWR, 0o600)
@@ -149,7 +264,7 @@ class TaskManager:
                     continue
                 if task.status in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
                     active += 1
-                elif self.auto_delete_history:
+                elif self.auto_delete_history and not task.keep_history:
                     completed.append((task.created_at, task.task_id, (task.result or {}).get('draft_id')))
             if active >= self.max_pending or self._queue.full():
                 raise HTTPException(429, 'The task queue is full. Wait for an existing task to finish.')
@@ -191,6 +306,7 @@ class TaskManager:
         )
         self._save_task(task)
         self._queue.put_nowait(task_id)
+        self._pending_task_ids[task_id] = None
         logger.info("Enqueued task %s (%s, idempotency=%s)", task_id, kind.value, idempotency_key[:12])
         return task
 
@@ -216,13 +332,24 @@ class TaskManager:
     async def _worker_loop(self, app_state: Any) -> None:
         while not self._stop_event.is_set():
             try:
+                while self._paused:
+                    await asyncio.sleep(.25)
                 task_id = await asyncio.wait_for(self._queue.get(), timeout=1.0)
             except (TimeoutError, asyncio.TimeoutError):
                 continue
             except asyncio.CancelledError:
                 break
 
+            try:
+                # Pause may have been requested while queue.get() was waiting.
+                while self._paused:
+                    await asyncio.sleep(.25)
+            except asyncio.CancelledError:
+                self._queue.task_done()
+                break
+
             task = self.get_task(task_id)
+            self._pending_task_ids.pop(task_id, None)
             if not task or task.status != TaskStatus.QUEUED:
                 self._queue.task_done()
                 continue
@@ -232,6 +359,7 @@ class TaskManager:
             queued_duration = max(0.0, (started_dt - created_dt).total_seconds())
 
             task.status = TaskStatus.RUNNING
+            self._active_task_id = task_id
             task.started_at = started_dt.isoformat()
             task.queued_duration_seconds = round(queued_duration, 2)
             task.stage = "Starting generation..."
@@ -278,6 +406,15 @@ class TaskManager:
                 task.error_status_code = 502
                 self._save_task(task)
                 logger.warning("Task %s provider error: %s", task_id, exc)
+            except HTTPException as exc:
+                task = self.get_task(task_id) or task
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.now(timezone.utc).isoformat()
+                task.execution_duration_seconds = round(time.perf_counter() - wall_start, 2)
+                task.stage = 'Request validation failed'
+                task.error = str(exc.detail)
+                task.error_status_code = exc.status_code
+                self._save_task(task)
             except Exception as exc:
                 exec_duration = time.perf_counter() - wall_start
                 task = self.get_task(task_id) or task
@@ -290,6 +427,7 @@ class TaskManager:
                 self._save_task(task)
                 logger.error("Task %s failed unexpectedly (%s)", task_id, type(exc).__name__)
             finally:
+                self._active_task_id = None
                 self._queue.task_done()
 
     async def _execute_task(self, task: TaskRecord, app_state: Any) -> None:
@@ -308,8 +446,50 @@ class TaskManager:
             await self._execute_compare(task, app_state)
         elif task.kind == TaskKind.CUSTOM_EDIT:
             await self._execute_custom_edit(task, app_state)
+        elif task.kind == TaskKind.BENCHMARK:
+            await self._execute_benchmark(task, app_state)
+        elif task.kind == TaskKind.EXPORT:
+            await self._execute_export(task, app_state)
         else:
             raise ValueError(f"Unknown task kind {task.kind}")
+
+    async def _execute_export(self, task, app_state):
+        from app.services.draft_export import export_draft
+        self.update_task_progress(task.task_id, 'Preparing PDF and DOCX — you can safely refresh this status page', 20)
+        # Match the web mutation boundary: editors/settings must not race saved
+        # artifacts while an export has moved out of the HTTP request lifespan.
+        async with app_state.resource_budget.mutation_slots:
+            slug = await export_draft(app_state, task.payload['draft_id'], **task.payload['export_options'])
+        current = self.get_task(task.task_id) or task
+        current.status = TaskStatus.COMPLETED
+        current.stage = 'PDF and DOCX ready'
+        current.progress_percent = 100
+        current.completed_at = datetime.now(timezone.utc).isoformat()
+        current.execution_duration_seconds = round((datetime.now(timezone.utc) - datetime.fromisoformat(current.started_at)).total_seconds(), 2)
+        current.result = {'slug': slug, 'redirect_url': f'/preview/{slug}'}
+        current.keep_history = True
+        self._save_task(current)
+
+    async def _execute_benchmark(self, task, app_state):
+        from app.models.benchmark import BenchmarkRequest
+        from app.services.benchmark import run_benchmark
+        spec = BenchmarkRequest.model_validate(task.payload['benchmark'])
+
+        def save_report(report):
+            current = self.get_task(task.task_id) or task
+            current.result = {'report': report, 'redirect_url': f'/api/v1/benchmarks/{task.task_id}'}
+            self._save_task(current)
+
+        await run_benchmark(spec, app_state,
+                            lambda stage: self.update_task_progress(task.task_id, stage, 0), save_report)
+        current = self.get_task(task.task_id) or task
+        current.status = TaskStatus.COMPLETED
+        current.stage = 'Benchmark finished — inspect per-variant validation before interpreting savings'
+        current.progress_percent = 100
+        current.completed_at = datetime.now(timezone.utc).isoformat()
+        current.execution_duration_seconds = round((datetime.now(timezone.utc) - datetime.fromisoformat(current.started_at)).total_seconds(), 2)
+        current.keep_history = True
+        self._save_task(current)
 
     async def _execute_custom_edit(self, task, app_state):
         from app.services.cv_editor import CVEditorStore, apply_proposal, split_sections

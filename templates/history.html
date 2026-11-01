@@ -21,7 +21,7 @@
 {% for row in analyses %}
 <article class="history-row" data-history-item data-entry-type="analysis" data-search="{{ (row.company ~ ' ' ~ row.role)|lower }}" data-match="">
   <div><strong>{{ row.company }}</strong><span>{{ row.role }}</span>{% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
-  <div class="history-meta"><span>{{ row.date }}</span><span class="pill">{% if row.interrupted %}Interrupted{% else %}{{ {'queued': 'Queued', 'running': 'In progress', 'failed': 'Failed', 'completed': 'Report unavailable', 'report_ready': 'Report ready — CV not generated'}.get(row.status, 'Review required') }}{% endif %}</span></div>
+  <div class="history-meta"><span>{{ row.date }}</span><span class="pill">{% if row.interrupted %}Interrupted{% else %}{{ {'queued': 'Queued', 'running': 'In progress', 'failed': 'Failed', 'rejected': 'Rejected — history kept', 'completed': 'Report unavailable', 'report_ready': 'Report ready — CV not generated'}.get(row.status, 'Review required') }}{% endif %}</span></div>
   <div class="row-actions">{% if row.status != 'completed' %}<a href="{{ app_root_path|default('') }}{{ row.view_url }}">{{ 'Open report' if row.status == 'report_ready' else 'View status' }}</a>{% endif %}<a href="{{ app_root_path|default('') }}{{ row.edit_url }}">Return to form</a></div>
 </article>
 {% else %}<p>No unfinished analyses.</p>{% endfor %}

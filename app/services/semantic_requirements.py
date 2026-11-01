@@ -154,10 +154,14 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
             re.I,
         )
     )
+    language_aggregate = aggregate and bool(getattr(item, 'components', [])) and all(
+        validator.matcher._language(component.name) for component in item.components
+    )
     if (
         item.status == Status.STRONG
         and entries
         and practical
+        and not language_aggregate
         and all(evidence_strength(e) in {"declaration", "theoretical_knowledge", "academic_knowledge"} for e in entries)
     ):
         item.status = Status.PARTIAL
@@ -178,7 +182,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     if ceiling and item.status == Status.STRONG and ceiling[0] != "strong":
         item.status = Status(ceiling[0])
         item.reason += " " + ceiling[1]
-    if hasattr(item, "required_level"):
+    if hasattr(item, "required_level") and not aggregate:
         language_name = language_check_name(item.name, item.required_level)
         language = validator.matcher._language(language_name)
         if language and re.search(r"\b[ABC][12]\+?|\bnative\b|\bfluent\b|\bfluency\b", language_name, re.I):
@@ -353,6 +357,10 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
             req.evidence = [s["fact"] for s in req.evidence_sources]
             entries = _facts(validator, req, aggregate=True)
+            if len(req.components) > 1 and all(validator.matcher._language(c.name) for c in req.components):
+                req.reason = 'Language requirements evaluated separately: ' + '; '.join(
+                    f'{c.name} ({c.required_level or "level from source"}): {c.status.value}' for c in req.components
+                ) + '.'
         elif explicit_list(req.name) and req.status == Status.STRONG:
             # A whole AND condition cannot be proved by citing only one item.
             req.interpretation_uncertain = True
@@ -365,7 +373,10 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         if ml_limit and req.status == Status.STRONG and ml_limit[0] != 'strong':
             req.status = Status(ml_limit[0])
             req.reason += ' ' + ml_limit[1]
-        minimum = required_years(req.source_quote) or required_years(req.name) or req.required_years
+        minimum = required_years(req.source_quote) or required_years('\n'.join(quotes))
+        if req.required_years is not None and req.required_years != minimum:
+            validator._classification_issues.append(f'Minimum tenure not supported by the original qualification source: {req.name}.')
+            req.required_years = minimum
         if minimum is not None:
             # The model chooses which employment duties/roles are relevant;
             # dates and overlap are calculated exclusively from cited records.

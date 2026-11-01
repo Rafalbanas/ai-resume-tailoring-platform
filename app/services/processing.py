@@ -21,6 +21,7 @@ ENDPOINT = ContextVar("processing_endpoint", default=None)
 BROWSER_ENDPOINT = ContextVar("processing_browser_endpoint", default=None)
 DEADLINE = ContextVar("processing_deadline", default=None)
 MAX_RESULT = 24 * 1024 * 1024
+BROWSER_OPERATION_MAX_SECONDS = 20
 logger = logging.getLogger(__name__)
 
 
@@ -125,9 +126,13 @@ CPU_QUEUE_WAIT_SECONDS = 60
 
 
 async def cpu_work(request, function, *args, **kwargs):
+    return await cpu_work_for_state(request.app.state, function, *args, **kwargs)
+
+
+async def cpu_work_for_state(state, function, *args, **kwargs):
     from fastapi import HTTPException
     from starlette.concurrency import run_in_threadpool
-    budget = request.app.state.resource_budget
+    budget = state.resource_budget
     if budget.cpu_queue_slots.locked():
         raise HTTPException(429, 'Document processing queue is full. Try again shortly.')
     async with budget.cpu_queue_slots:

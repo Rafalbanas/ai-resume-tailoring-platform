@@ -1,0 +1,57 @@
+<section id="live-queue-panel" class="card" aria-live="polite">
+  <div class="card-header">
+    <h2>Current background queue</h2>
+    <p class="muted">Pausing lets the active task finish; history is kept.</p>
+  </div>
+
+  {% set activity = queue_activity|default({}) %}
+  {% set paused = activity.get('paused', False) %}
+  {% set queued_tasks = activity.get('queued_tasks', []) %}
+  {% set running_tasks = activity.get('running_tasks', []) %}
+
+  <form action="{{ (app_root_path|default('') + '/queue/pause') if not paused else (app_root_path|default('') + '/queue/resume') }}" method="post" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="button">
+      {{ 'Resume queue' if paused else 'Pause queue' }}
+    </button>
+  </form>
+
+  <div class="card-body">
+    {% if paused %}
+      <div class="muted">Queue paused</div>
+    {% endif %}
+    {% if running_tasks %}
+      <div class="muted">Processing now</div>
+      <ul class="list-unstyled">
+        {% for task in running_tasks %}
+        <li>
+          <strong>{{ task.company }}</strong> - {{ task.role }} ({{ task.stage }})
+          {% if task.model %} <small>- {{ task.model }}</small>{% endif %}
+          <a href="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/view">View</a>
+        </li>
+        {% endfor %}
+      </ul>
+    {% elif queued_tasks and not paused %}
+      <p class="muted">Waiting for worker</p>
+    {% endif %}
+      {% if queued_tasks %}
+      <div class="muted">Waiting</div>
+      <ol class="list-unstyled">
+        {% for task in queued_tasks %}
+        <li>
+          <strong>{{ task.company }}</strong> - {{ task.role }} ({{ task.stage }})
+          {% if task.model %} <small>- {{ task.model }}</small>{% endif %}
+          <a href="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/view">View</a>
+          <form action="{{ app_root_path|default('') }}/queue/tasks/{{ task.task_id }}/reject" method="post" data-confirm="Reject this waiting task? Its history will be kept;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="button secondary small">Reject waiting task</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    {% if not running_tasks and not queued_tasks %}
+      <div class="muted">No active background tasks.</div>
+    {% endif %}
+  </div>
+</section>

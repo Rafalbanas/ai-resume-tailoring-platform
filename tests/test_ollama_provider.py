@@ -188,6 +188,47 @@ async def test_ollama_receives_reference_cvs_as_style_only(profile):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('defect', ['json', 'schema', 'label', 'explanation'])
+async def test_ollama_repairs_structural_analysis_errors(profile, defect):
+    requests = []
+
+    async def handler(request):
+        requests.append(json.loads(request.content))
+        payload = analysis_payload()
+        if len(requests) == 1:
+            if defect == 'json':
+                return httpx.Response(200, json={'message': {'content': 'not JSON'}})
+            if defect == 'schema':
+                payload['rows'][2]['s'] = 'unsupported-status'
+            else:
+                payload['rows'][2]['n' if defect == 'label' else 'why'] = '   '
+        return httpx.Response(200, json={'message': {'content': json.dumps(payload)}})
+
+    result = await provider(httpx.MockTransport(handler)).analyze_job(job(), profile)
+    assert result.is_reliable
+    assert len(requests) == 2
+    assert 'VALIDATION FEEDBACK' in requests[1]['messages'][0]['content']
+    if defect == 'schema':
+        assert 'rows.2.s' in requests[1]['messages'][0]['content']
+
+
+@pytest.mark.asyncio
+async def test_ollama_structural_repair_is_bounded(profile):
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={'message': {'content': 'not JSON'}})
+
+    target = provider(httpx.MockTransport(handler))
+    target.analysis_recovery_calls = 1
+    with pytest.raises(AIProviderError, match='invalid structured JSON') as caught:
+        await target.analyze_job(job(), profile)
+    assert len(requests) == 2
+    assert caught.value.unassessed_source_passages
+
+
+@pytest.mark.asyncio
 async def test_ollama_invalid_json_raises_readable_provider_error(profile):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"message": {"content": "not JSON"}})

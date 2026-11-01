@@ -355,7 +355,13 @@ class OllamaProvider(AIProvider):
                 return result
             except ValidationError as exc:
                 metrics["error_kind"] = "schema"
-                raise OllamaAnalysisError("schema", "Ollama returned invalid structured JSON: schema validation failed.") from exc
+                # Include field paths/types, never candidate data, so a bounded
+                # repair can correct the response rather than repeat it blindly.
+                details = "; ".join(
+                    f"{'.'.join(map(str, error['loc']))}: {error['type']}"
+                    for error in exc.errors(include_input=False, include_url=False)[:5]
+                )
+                raise OllamaAnalysisError("schema", "Ollama returned invalid structured JSON: schema validation failed. " + details) from exc
         except (KeyError, TypeError) as exc:
             metrics["error_kind"] = "envelope"
             raise OllamaAnalysisError("envelope", "Ollama returned invalid structured JSON: missing message content.") from exc
@@ -407,6 +413,21 @@ class OllamaProvider(AIProvider):
                         if exc.kind != 'output_limit':
                             if self.call_metrics and self.call_metrics[-1].get('error_kind') is None:
                                 self.call_metrics[-1]['error_kind'] = exc.kind
+                            if exc.kind in {'schema', 'invalid_json'}:
+                                # Structural errors get the same bounded repair
+                                # budget as missing coverage. Never invent rows
+                                # or relax evidence validation to accept them.
+                                if recovery_calls >= self.analysis_recovery_calls:
+                                    unresolved = [pid for pid in inventory.passages
+                                                  if not any(row.p == pid for row in rows)]
+                                    incomplete = coverage_error(str(exc), unresolved)
+                                    exc.partial_analysis = incomplete.partial_analysis
+                                    exc.unassessed_source_passages = incomplete.unassessed_source_passages
+                                    exc.recovery_job_text = incomplete.recovery_job_text
+                                    raise
+                                repair_feedback[:] = [str(exc)]
+                                is_repair = True
+                                continue
                             raise
                         recovered = inventory.validate_rows(exc.recovered, pending)
                     covered = {r.p for r in recovered}

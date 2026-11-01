@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import sys
 import tempfile
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.services.job_extractors.fetcher import SafeHttpFetcher
 from app.services.job_extractors.security import PublicUrlGuard
+from app.services.processing import BROWSER_OPERATION_MAX_SECONDS
 
 
 class BrowserRenderError(RuntimeError):
@@ -28,6 +30,10 @@ class SafePlaywrightRenderer:
         self.slots = asyncio.Semaphore(1)
         self.guard = guard
         self.timeout_ms = int(timeout_seconds * 1000)
+        # Navigation has its own timeout below. Browser bootstrap/teardown also
+        # need a bounded allowance; use the already enforced processor limit,
+        # rather than aborting a 5-second navigation test during cold startup.
+        self.total_timeout = max(BROWSER_OPERATION_MAX_SECONDS, timeout_seconds + 5)
         self.max_bytes = max_bytes
         self.max_redirects = max_redirects
 
@@ -36,7 +42,7 @@ class SafePlaywrightRenderer:
             raise BrowserRenderError('Browser processing is busy')
         async with self.slots:
             try:
-                async with asyncio.timeout(self.timeout_ms / 1000 + 5):
+                async with asyncio.timeout(self.total_timeout):
                     return await self._render(url)
             except TimeoutError as exc:
                 raise BrowserRenderError('Browser processing exceeded its deadline') from exc
@@ -50,7 +56,7 @@ class SafePlaywrightRenderer:
             from app.services.processing import ProcessingError, process
             try:
                 value = await run_in_threadpool(process, 'browser', {'url': url, 'timeout': self.timeout_ms / 1000,
-                    'max_bytes': self.max_bytes, 'max_redirects': self.max_redirects}, timeout=self.timeout_ms / 1000 + 5)
+                    'max_bytes': self.max_bytes, 'max_redirects': self.max_redirects}, timeout=self.total_timeout)
                 return RenderedPage(**value)
             except ProcessingError as exc:
                 raise BrowserRenderError('Browser processing is unavailable') from exc
@@ -128,6 +134,7 @@ async def _browser_launcher(executable):
     # Chromium has no native IP sockets, even if a route interception is missed.
     # Validated HTTP runs in the trusted Python fetcher, supplied via route.fulfill.
     with tempfile.TemporaryDirectory(prefix='cvtailor-browser-') as directory:
+        executable = headless_executable(executable)
         path = Path(directory) / 'chromium'
         root = str(Path(__file__).resolve().parents[3])
         path.write_text(f"#!{sys.executable}\nimport sys,os\nsys.path.insert(0,{root!r})\n"
@@ -135,3 +142,21 @@ async def _browser_launcher(executable):
                         f"os.execv({executable!r},[{executable!r},*sys.argv[1:]])\n")
         path.chmod(0o700)
         yield path
+
+
+def headless_executable(executable):
+    """Prefer the matching installed headless shell, never another revision.
+
+    Passing a wrapper as executable_path otherwise forces full desktop Chromium
+    even for headless rendering. Keep the same kernel/network wrapper either way;
+    deployments intentionally installed with --no-shell retain the full binary.
+    """
+    for parent in Path(executable).parents:
+        match = re.fullmatch(r'chromium-(\d+)', parent.name)
+        if match:
+            directory = parent.with_name('chromium_headless_shell-' + match[1])
+            for candidate in sorted(directory.glob('*/chrome-headless-shell')):
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return str(candidate)
+            break
+    return str(executable)
