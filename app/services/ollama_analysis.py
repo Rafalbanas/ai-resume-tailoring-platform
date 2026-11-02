@@ -95,6 +95,8 @@ job_source preserves the complete offer across batches; classify only the suppli
 Hints and section labels are advisory, never authoritative. Classify each passage by
 its meaning in the complete source, regardless of heading wording, formatting or order.
 An inherited duty/benefit hint cannot override an explicit candidate qualification.
+A short label before a colon (e.g. Background:, System Familiarity:) does not make a
+candidate condition a responsibility; classify the condition that follows the label.
 Preserve every heading and non-qualification passage as context; never score a heading.
 Keep required scope, tenure, levels, negations and preferably optional qualifiers intact.
 Never cite broad Microsoft 365 or Active Directory use as evidence of Exchange Online, Entra ID or Intune practice. For minimum tenure, cite the actual support duties of dated employment, not unrelated technologies. Use one compound label per passage, preserving every condition in components. A clause introduced by najlepiej/preferably is optional and must not weaken the main minimum. AND requires each component. OR/examples require an applicable alternative, not all examples.
@@ -522,13 +524,22 @@ def closed_rows(content):
     return rows
 
 
+def condition_text(passage):
+    """Read a short presentation label separately; retain original source quotes."""
+    import re
+
+    text = clean_source_line(passage["text"])
+    label = re.match(r"^[\w &/()'’–-]{1,80}:\s+(\S.*)$", text)
+    return label[1] if label else text
+
+
 def needs_assessment(passage):
     """Detect candidate capability passages left as context, not infer their status."""
     import re
 
     if passage.get("assessment_required") or objective_condition(passage):
         return True
-    text = clean_source_line(passage["text"])
+    text = condition_text(passage)
     if text.endswith(":") or len(text.split()) < 2:
         return False
     if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
@@ -537,7 +548,7 @@ def needs_assessment(passage):
         return True
     return bool(
         re.match(
-            r"^(?:\d+(?:\.\d+)?\+?\s*years?\b|experience\b|hands.on experience\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|(?:(?:very\s+)?good|strong|solid|practical|working|basic|advanced|in.depth)\s+(?:knowledge|background|understanding|experience|command|skills?)\b|(?:(?:bardzo\s+)?(?:dobr\w*|podstawow\w*|praktyczn\w*|biegł\w*)\s+)?znajomoś\w*\b|doświadczen\w*\b|umiejętnoś\w*\b|ability\b|able to\b|excellent\b|strong attention\b|problem.solving\b|open to learning\b|must\b|fluen\w*\b|(?:[a-z]+\s+)?language skills\b|willingness.*communicat|a customer.focused.*mindset|patience,?\s+attention)",
+            r"^(?:\d+(?:\.\d+)?\+?\s*years?\b|experience\b|hands.on (?:experience|exposure)\b|knowledge\b|familiarity\b|proficiency\b|understanding\b|(?:(?:very\s+)?good|strong|solid|practical|working|basic|advanced|in.depth)\s+(?:knowledge|background|understanding|experience|command|skills?)\b|(?:(?:bardzo\s+)?(?:dobr\w*|podstawow\w*|praktyczn\w*|biegł\w*)\s+)?znajomoś\w*\b|doświadczen\w*\b|umiejętnoś\w*\b|ability\b|able to\b|excellent\b|strong attention\b|(?:strong\s+)?problem.solving\b|open to learning\b|curiosity to learn\b|must\b|fluen\w*\b|(?:[a-z]+\s+)?language skills\b|willingness.*communicat|a customer.focused.*mindset|patience,?\s+attention)",
             text,
             re.I,
         )
@@ -571,13 +582,13 @@ def needs_responsibility(passage):
 
     return 'responsibility' in passage.get('hints', []) and bool(re.match(
         r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział)\b',
-        clean_source_line(passage['text']), re.I)) and not needs_assessment(passage)
+        condition_text(passage), re.I)) and not needs_assessment(passage)
 
 
 def objective_condition(passage):
     import re
 
-    text = clean_source_line(passage["text"])
+    text = condition_text(passage)
     tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+(?:\.\d+)?\+?\s*years?\b.*\bexperience\b", text, re.I)
     language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?|this role requires)\b", text, re.I) and re.search(
         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
