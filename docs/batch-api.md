@@ -89,7 +89,8 @@ returns the same batch, including after completion (`200`), without generating
 again. A changed payload returns `409`. Lookup/admission is serialized across
 processes. Use a new key for an intentional rerun, preferably just failed URLs.
 Other errors: `401` unauthenticated, `403` CSRF/origin/demo denied, `413` oversized
-HTTP body, `422` invalid input, `429` rate/queue/storage admission limit.
+HTTP body, `422` invalid input, `429` rate/queue admission limit, `507` account
+storage or file-count quota reached.
 
 ## Security and operational limits
 

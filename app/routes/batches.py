@@ -19,7 +19,8 @@ router = APIRouter(prefix='/api/v1/batches', tags=['Batch CV generation'],
                               403: {'description': 'CSRF validation failed or demo account denied'},
                               409: {'description': 'Idempotency key conflicts with an existing payload'},
                               413: {'description': 'Request body exceeds the limit'},
-                              429: {'description': 'Rate, queue or storage limit reached'}})
+                              429: {'description': 'Rate or queue limit reached'},
+                              507: {'description': 'Account storage or file-count quota reached'}})
 ClientKey = Annotated[str, Header(alias='Idempotency-Key', min_length=8, max_length=128,
                                 pattern=r'^[A-Za-z0-9._:-]+$')]
 CSRF = Annotated[str, Header(alias='X-CSRF-Token')]

@@ -2,6 +2,7 @@
 import json
 
 import pytest
+from fastapi import HTTPException
 from starlette.testclient import TestClient
 
 from app.main import app
@@ -115,3 +116,15 @@ def test_batch_root_path_urls(monkeypatch):
         assert response.json()['status_url'].startswith('/tailor/api/v1/batches/')
         assert response.headers['Location'] == response.json()['status_url']
         assert client.get(response.json()['status_url']).status_code == 200
+
+
+def test_batch_security_storage_quota_before_admission(client, monkeypatch):
+    login(client)
+
+    def over_quota():
+        raise HTTPException(507, 'Synthetic storage quota reached')
+
+    monkeypatch.setattr(app.state.resource_budget, 'check_disk', over_quota)
+    assert client.post('/api/v1/batches', json={'urls': ['https://example.com']},
+                       headers=headers(client)).status_code == 507
+    assert not list(app.state.task_manager.tasks_dir.glob('*.json'))
