@@ -5,7 +5,9 @@
   <div>
     <p class="eyebrow">BACKGROUND TASK</p>
     <h1 id="task-title">
-      {% if task.kind == 'benchmark' %}
+      {% if task.kind == 'batch' %}
+        Processing selected job offers
+      {% elif task.kind == 'benchmark' %}
         Benchmarking offer analysis
       {% elif task.kind == 'compare' %}
         Comparing AI models

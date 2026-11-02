@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
 from app.core.request_limits import RequestSizeMiddleware
 from app.core.security import FixedWindowLimiter, new_csrf_token, validate_csrf
+from app.routes.batches import router as batch_router
 from app.routes.benchmarks import router as benchmark_router
 from app.routes.custom_cvs import router as custom_cv_router
 from app.routes.web import router
@@ -260,7 +261,7 @@ async def request_context(request: Request, call_next):
                     # Queue admission/controls do not modify profile/artifacts.
                     # The export worker owns the mutation lock during CPU work;
                     # repeated admission and pause/reject must remain responsive.
-                    scheduling = path.startswith('/queue/') or path == '/api/v1/benchmarks' or (
+                    scheduling = path.startswith('/queue/') or path in {'/api/v1/benchmarks', '/api/v1/batches', '/api/v1/batches/upload'} or (
                         generation and getattr(request.state, 'background_export', False))
                     if not public and path != '/logout' and not scheduling:
                         mutations = request.app.state.resource_budget.mutation_slots
@@ -383,6 +384,7 @@ def create_app(settings=None, shared_account=False):
     application.include_router(router)
     application.include_router(custom_cv_router)
     application.include_router(benchmark_router)
+    application.include_router(batch_router)
     if not shared_account:
         application.add_middleware(AccountRoutingMiddleware)
         application.add_middleware(ConfiguredSessionMiddleware, settings=settings)
