@@ -228,8 +228,8 @@ The platform's runtime environment and dependency versions are strictly pinned a
 | **Argon2-cffi** | `25.1.0` | Security | Argon2id password hashing & credential storage |
 | **itsdangerous** | `2.2.0` | Security | Cryptographic signing & HMAC summary review attestation |
 | **email-validator** | `2.3.0` | Validation | RFC-compliant email address validation |
-| **pytest** | `9.1.1` | Testing | Automated test runner and assertion framework |
-| **pytest-asyncio** | `1.4.0` | Testing | Asynchronous test execution for pytest |
+| **pytest** | `9.2.0` | Testing | Automated test runner and assertion framework |
+| **pytest-asyncio** | `1.4.1` | Testing | Asynchronous test execution for pytest |
 | **Ruff** | `0.17.2` | Tooling | Fast Python linter and code style enforcement |
 | **Jsonschema** | `4.25.1` | Dependency | Application dependency |
 | **Tokenizers** | `0.22.2` | Dependency | Application dependency |
