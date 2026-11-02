@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     profile_mode: str = Field(default="production", pattern="^(production|sample)$")
     request_timeout_seconds: float = 60.0
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen3.5:9b"
+    ollama_model: str = "gemma4:12b-it-q4_K_M"
     ollama_connect_timeout_seconds: float = 10.0
     ollama_read_timeout_seconds: float = 540.0
     ollama_timeout_seconds: float = 540.0
