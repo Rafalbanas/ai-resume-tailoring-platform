@@ -6,8 +6,9 @@
   <form action="{{ app_root_path|default('') }}/profile/contact" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Email<input type="email" name="email" value="{{ personal.email }}" autocomplete="email" required></label>
+    <label>Alternative email <small>optional — also included in new CV previews and exports</small><input type="email" name="secondary_email" value="{{ personal.secondary_email }}" autocomplete="email"></label>
     {% if personal.website %}<p>Portfolio: <a href="{{ personal.website }}">{{ personal.website }}</a></p>{% endif %}
-    <button class="primary" type="submit">Save email</button>
+    <button class="primary" type="submit">Save contact emails</button>
   </form>
 </section>
 <div class="page-head"><div><p class="eyebrow">CANDIDATE / PROFILE</p><h1>Profile photo</h1><p>Private local asset used only when enabled for a CV.</p></div></div>
@@ -89,4 +90,3 @@
   </form>
 </section>
 {% endblock %}
-

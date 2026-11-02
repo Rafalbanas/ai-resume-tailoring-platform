@@ -55,6 +55,13 @@ def contacts(profile: CandidateProfile) -> list[Contact]:
     if personal.location.strip():
         result.append(Contact("Location", personal.location.strip()))
     result.append(Contact("Email", email, f"mailto:{email}"))
+    if personal.secondary_email:
+        try:
+            secondary = validate_email(str(personal.secondary_email), check_deliverability=False, test_environment=True).normalized
+        except ValueError as exc:
+            raise ValueError("The alternative email address must be valid before exporting a CV.") from exc
+        if secondary.casefold() != email.casefold():
+            result.append(Contact("Alternative email", secondary, f"mailto:{secondary}"))
     if personal.phone.strip():
         result.append(Contact("Phone", personal.phone.strip()))
     for label, value in (("LinkedIn", personal.linkedin), ("Website", personal.website), ("GitHub", personal.github)):

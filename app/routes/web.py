@@ -1125,7 +1125,10 @@ async def candidate_profile(request: Request):
 
 
 @router.post("/profile/contact")
-async def save_profile_contact(request: Request, email: Annotated[str, Form()], csrf_token: Annotated[str, Form()]):
+async def save_profile_contact(
+    request: Request, email: Annotated[str, Form()], csrf_token: Annotated[str, Form()],
+    secondary_email: Annotated[str | None, Form()] = None,
+):
     guard(request)
     limit_request(request)
     validate_csrf(csrf_token, request.cookies.get(request.app.state.settings.csrf_cookie_name, ""), request.app.state.settings.csrf_secret)
@@ -1136,7 +1139,14 @@ async def save_profile_contact(request: Request, email: Annotated[str, Form()], 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Enter one valid email address.") from exc
     profile = request.app.state.profile
-    updated_profile = profile.model_copy(update={"personal": profile.personal.model_copy(update={"email": address})})
+    changes = {"email": address}
+    if "secondary_email" in await request.form():
+        alternative = (secondary_email or "").strip()
+        try:
+            changes["secondary_email"] = validate_email(alternative, check_deliverability=False).normalized if alternative else ""
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Enter one valid alternative email address, or leave it empty.") from exc
+    updated_profile = profile.model_copy(update={"personal": profile.personal.model_copy(update=changes)})
     save_master_profile(updated_profile, request.app.state.settings)
     request.app.state.profile = updated_profile
     request.app.state.skills_bank.profile = updated_profile
