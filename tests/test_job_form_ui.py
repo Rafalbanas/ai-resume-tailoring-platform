@@ -124,3 +124,47 @@ def test_offer_failure_explains_reason_and_keeps_entered_text(job_page, reason, 
     expect(page.locator('#fetch-job')).to_be_enabled()
     assert page.locator('#job-description').input_value() == 'Support verified Python automation and Linux workflows.'
     assert not errors
+
+def test_ollama_model_label_updates_on_change():
+    env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(['html']))
+    html = env.get_template('index.html').render(
+        request=SimpleNamespace(state=SimpleNamespace(authenticated=False)), asset_version='test',
+        csrf_token='synthetic', fallback_enabled=True, ollama_model='synthetic', gemini_model='synthetic',
+        ollama_models=['model1', 'model2'], selected_ollama_model='model1')
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        def serve(route):
+            if route.request.url.split('?')[0].endswith('/static/app.js'):
+                route.fulfill(body=Path('static/app.js').read_text(), content_type='application/javascript')
+            elif route.request.url == 'http://fixture.test/':
+                route.fulfill(body=html, content_type='text/html', headers={
+                    'Content-Security-Policy': "default-src 'self'; script-src 'self'; connect-src 'self'"})
+            else:
+                route.fulfill(body='')
+        page.route('**/*', serve)
+        page.goto('http://fixture.test/')
+
+        # Initial check
+        expect(page.locator('#ollama-engine-option')).to_have_text('Ollama (model1)')
+
+        # Select 'model2'
+        page.select_option('#select-ollama-model', 'model2')
+        expect(page.locator('#ollama-engine-option')).to_have_text('Ollama (model2)')
+
+        # Select "Default model" (value "")
+        page.select_option('#select-ollama-model', '')
+        expect(page.locator('#ollama-engine-option')).to_have_text('Ollama (synthetic)')
+
+        browser.close()
+        assert not errors
+
+def test_ollama_model_rendering_default():
+    env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(['html']))
+    html = env.get_template('index.html').render(
+        request=SimpleNamespace(state=SimpleNamespace(authenticated=False)), asset_version='test',
+        csrf_token='synthetic', fallback_enabled=True, ollama_model='synthetic', gemini_model='synthetic',
+        ollama_models=['model1', 'model2'], selected_ollama_model='')
+    assert 'Ollama (synthetic)' in html

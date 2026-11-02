@@ -29,7 +29,7 @@
     <label>AI Engine
       <select id="llm_provider" name="llm_provider" class="provider-select">
         <option value="auto" {% if llm_provider == 'auto' or not llm_provider %}selected{% endif %}>Auto (Ollama)</option>
-        <option value="ollama" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama ({{ ollama_model }})</option>
+        <option value="ollama" id="ollama-engine-option" {% if llm_provider == 'ollama' %}selected{% endif %}>Ollama ({{ selected_ollama_model if selected_ollama_model else ollama_model }})</option>
         <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Gemini ({{ gemini_model }})</option>
       </select>
       <small class="field-hint">Using Gemini sends the data needed for analysis to Google's external API.</small>
@@ -39,7 +39,7 @@
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <div class="form-grid">
     <label>Ollama model
-      <select name="ollama_model">
+      <select name="ollama_model" id="select-ollama-model" data-default="{{ ollama_model }}">
         <option value="">Default model ({{ ollama_model }})</option>
         {% for model in ollama_models|default([]) %}
         <option value="{{ model }}" {% if selected_ollama_model == model %}selected{% endif %}>{{ model }}</option>
