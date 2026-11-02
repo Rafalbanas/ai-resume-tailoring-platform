@@ -724,6 +724,17 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  const ollamaModelSelect = document.getElementById('select-ollama-model');
+  const ollamaEngineOption = document.getElementById('ollama-engine-option');
+  if (ollamaModelSelect && ollamaEngineOption) {
+    ollamaModelSelect.addEventListener('change', () => {
+      const value = ollamaModelSelect.value;
+      const defaultValue = ollamaModelSelect.dataset.default;
+      const modelName = value !== "" ? value : defaultValue;
+      ollamaEngineOption.textContent = `Ollama (${modelName})`;
+    });
+  }
 });
 
 const providerSelect = document.getElementById('llm_provider');
