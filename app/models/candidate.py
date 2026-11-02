@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -5,6 +7,7 @@ class Personal(BaseModel):
     name: str = ""
     location: str = ""
     email: EmailStr | str = ""
+    secondary_email: EmailStr | Literal[""] = ""
     phone: str = ""
     linkedin: str = ""
     website: str = ""

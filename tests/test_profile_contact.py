@@ -14,6 +14,7 @@ from app.services.docx_generator import generate_docx
 from app.services.fact_validator import FactValidator
 from app.services.mock_provider import MockAIProvider
 from app.services.pdf_generator import PDFGenerator
+from app.services.resume_export import contacts
 from tests.test_shared_login import runtimes, shared_app, sign_in  # noqa: F401
 
 
@@ -50,8 +51,10 @@ def test_edit_email_is_account_scoped_and_preserves_history(shared_app, account,
 
 
 @pytest.mark.parametrize('layout', ['modern_sidebar', 'ats_classic'])
-def test_tailoring_preview_and_exports_preserve_single_profile_email(tmp_path, profile, layout):
+@pytest.mark.parametrize('secondary_email', ['', 'alternative@example.com'])
+def test_tailoring_preview_and_exports_preserve_profile_emails(tmp_path, profile, layout, secondary_email):
     profile.personal.email = 'new@example.com'
+    profile.personal.secondary_email = secondary_email
     profile.personal.website = 'https://portfolio.example.com'
     before = profile.model_dump()
     job = JobRequest(company='Example', role='Support Engineer', job_description=(
@@ -62,22 +65,64 @@ def test_tailoring_preview_and_exports_preserve_single_profile_email(tmp_path, p
     assert profile.model_dump() == before
     assert 'personal' not in resume.model_dump() and 'email' not in resume.model_dump()
     generator = PDFGenerator(Path('templates'), Path('static'), tmp_path)
+    emails = ['new@example.com'] + ([secondary_email] if secondary_email else [])
+    mailto_links = [f'mailto:{email}' for email in emails]
     html = BeautifulSoup(generator.render_html(resume, profile, template_name=layout), 'html.parser')
-    assert [a['href'] for a in html.select('a[href^="mailto:"]')] == ['mailto:new@example.com']
+    assert [a['href'] for a in html.select('a[href^="mailto:"]')] == mailto_links
     preview = BeautifulSoup(generator.render_preview(resume, profile, template_name=layout), 'html.parser')
-    assert [a['href'] for a in preview.select('a[href^="mailto:"]')] == ['mailto:new@example.com']
+    assert [a['href'] for a in preview.select('a[href^="mailto:"]')] == mailto_links
     assert preview.select_one('a[href="https://portfolio.example.com"]')
     pdf, docx = tmp_path / 'new.pdf', tmp_path / 'new.docx'
     generator.generate(resume, profile, pdf, template_name=layout)
     generate_docx(resume, profile, docx, template_name=layout)
     text = '\n'.join(p.extract_text() for p in PdfReader(pdf).pages)
-    assert text.count('new@example.com') == 1
     with ZipFile(docx) as archive:
         xml = archive.read('word/document.xml').decode()
         rels = archive.read('word/_rels/document.xml.rels').decode()
-    assert xml.count('new@example.com') == 1
-    assert 'mailto:new@example.com' in rels
+    for email in emails:
+        assert text.count(email) == 1
+        assert xml.count(email) == 1
+        assert f'mailto:{email}' in rels
     assert 'https://portfolio.example.com' in rels
     for forbidden in ('recruiter@example.com', 'attacker@example.com'):
         assert forbidden not in text + xml + str(preview)
     assert profile.model_dump() == before
+
+
+@pytest.mark.parametrize('account', ['owner', 'demo'])
+def test_alternative_email_is_validated_saved_preserved_and_clearable(shared_app, account):  # noqa: F811
+    with TestClient(shared_app) as client:
+        owner, demo = runtimes(shared_app)
+        target, other = (owner, demo) if account == 'owner' else (demo, owner)
+        other_before = other.state.settings.master_profile_path.read_bytes()
+        assert sign_in(client, account).status_code == 303
+        token = client.cookies.get('csrf_token')
+        form = {'email': 'primary@example.com', 'secondary_email': 'alternative@example.com', 'csrf_token': token}
+        assert client.post('/profile/contact', data={**form, 'csrf_token': 'wrong'}).status_code == 403
+        assert client.post('/profile/contact', data=form, follow_redirects=False).status_code == 303
+        assert target.state.profile.personal.secondary_email == 'alternative@example.com'
+        saved = json.loads(target.state.settings.master_profile_path.read_text())
+        assert saved['personal']['secondary_email'] == 'alternative@example.com'
+        page = BeautifulSoup(client.get('/profile').text, 'html.parser')
+        assert page.select_one('input[name=secondary_email]')['value'] == 'alternative@example.com'
+        before = target.state.settings.master_profile_path.read_bytes()
+        for invalid in ('bad', 'one@example.com, two@example.com'):
+            response = client.post('/profile/contact', data={**form, 'secondary_email': invalid})
+            assert response.status_code == 422
+            assert target.state.settings.master_profile_path.read_bytes() == before
+        # Older clients updating only the primary address must not erase the backup.
+        assert client.post('/profile/contact', data={
+            'email': 'updated@example.com', 'csrf_token': token,
+        }, follow_redirects=False).status_code == 303
+        assert target.state.profile.personal.secondary_email == 'alternative@example.com'
+        assert client.post('/profile/contact', data={
+            **form, 'secondary_email': '',
+        }, follow_redirects=False).status_code == 303
+        assert target.state.profile.personal.secondary_email == ''
+        assert other.state.settings.master_profile_path.read_bytes() == other_before
+
+
+def test_duplicate_alternative_email_is_not_exported_twice(profile):
+    profile.personal.email = 'same@example.com'
+    profile.personal.secondary_email = 'same@example.com'
+    assert [item.target for item in contacts(profile) if item.target.startswith('mailto:')] == ['mailto:same@example.com']
