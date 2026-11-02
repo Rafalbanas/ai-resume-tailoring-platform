@@ -28,14 +28,14 @@ NEEDED = re.compile(
 QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
     r'(?:required|mandatory|essential|minimum)\s+(?:technical\s+and\s+professional\s+|technical\s+|professional\s+)?expertise|'
-    r'professional\s+requirements|idealnie abyś posiadał/a)\s*:?$', re.I,
+    r'professional\s+requirements|what sets you apart|idealnie abyś posiadał/a)\s*:?$', re.I,
 )
-DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
+DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|what you(?:[’\x27]ll| will) achieve|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
     "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|what can you expect from us|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get|why [\w &.\-]+\?)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }
