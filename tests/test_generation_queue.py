@@ -40,7 +40,7 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
         assert active == 1
         entered.set()
         assert release.wait(5)
-        output.write_bytes(b"%PDF " + output.parent.name.encode())
+        output.write_bytes(b"%PDF " + resume.professional_summary.encode())
         active -= 1
 
     async with (
@@ -51,11 +51,17 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
         from app.core import body_deadline
 
         monkeypatch.setattr(body_deadline, "FORM_BODY_SECONDS", 0.2)
-        drafts = [seed(app, resume_payload, i) for i in range(3)]
+        summaries = [f"Supports Python automation for the {team} support team." for team in ("Alpha", "Bravo", "Charlie")]
+        drafts = []
+        for i, summary in enumerate(summaries):
+            source_id = f"summary:{len(app.state.profile.summary_facts)}"
+            app.state.profile.summary_facts.append(summary)
+            payload = {**resume_payload, "professional_summary": summary, "summary_source_fact_ids": [source_id]}
+            drafts.append(seed(app, payload, i))
         monkeypatch.setattr(app.state.pdf_generator, "fit_resume", lambda r, *a, **k: (r, []))
         monkeypatch.setattr(app.state.pdf_generator, "generate", pdf)
         monkeypatch.setattr(
-            app.state, "docx_generator", lambda r, p, o, **k: o.write_bytes(b"docx " + o.parent.name.encode())
+            app.state, "docx_generator", lambda r, p, o, **k: o.write_bytes(b"docx " + r.professional_summary.encode())
         )
         tasks = [
             asyncio.create_task(
@@ -82,8 +88,8 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
             saved = app.state.storage.load_application(slug)
             assert saved[0].company == f"Example {i}"
             folder = app.state.storage.application_folder(slug)
-            assert (folder / "resume.pdf").read_bytes() == b"%PDF " + slug.encode()
-            assert (folder / "resume.docx").read_bytes() == b"docx " + slug.encode()
+            assert (folder / "resume.pdf").read_bytes() == b"%PDF " + summaries[i].encode()
+            assert (folder / "resume.docx").read_bytes() == b"docx " + summaries[i].encode()
         assert app.state.resource_budget.generation_slots._value == 4
         assert app.state.resource_budget.mutation_slots._value == 1
 
