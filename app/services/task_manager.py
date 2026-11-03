@@ -41,6 +41,7 @@ class TaskKind(str, Enum):
     CUSTOM_EDIT = "custom_edit"
     BENCHMARK = "benchmark"
     EXPORT = "export"
+    BATCH = "batch"
 
 
 class TaskRecord(BaseModel):
@@ -153,6 +154,8 @@ class TaskManager:
             job = {}
         if task.kind == TaskKind.BENCHMARK:
             job = {'company': 'Benchmark', 'role': f"{len(task.payload.get('benchmark', {}).get('urls', []))} offers · full / cleaned"}
+        elif task.kind == TaskKind.BATCH:
+            job = {'company': 'Batch CV generation', 'role': f"{len(task.payload.get('batch', {}).get('urls', []))} selected offers"}
         return {'task_id': task.task_id, 'company': str(job.get('company', '')),
                 'role': str(job.get('role', '')), 'kind': task.kind.value, 'stage': task.stage,
                 'started_at': task.started_at, 'model': task.token_usage.get('model')}
@@ -224,6 +227,10 @@ class TaskManager:
                     task.completed_at = now
                     task.error = "Task interrupted by an application restart. Please retry."
                     task.error_status_code = 500
+                    if task.kind == TaskKind.BATCH and task.result:
+                        for item in task.result.get('items', []):
+                            if item.get('status') in {'queued', 'running'}:
+                                item.update(status='failed', error=task.error)
                     self._save_task(task)
                     recovered += 1
             except Exception as exc:
@@ -291,6 +298,22 @@ class TaskManager:
     def create_task(self, kind: TaskKind, payload: dict[str, Any], idempotency_key: str) -> TaskRecord:
         with self._admission():
             return self._create_task(kind, payload, idempotency_key)
+
+    def get_or_create_idempotent(self, kind: TaskKind, payload: dict[str, Any], key: str) -> TaskRecord:
+        """Serialize lookup + admission across processes, including retained results."""
+        descriptor = os.open(self.tasks_dir / '.idempotency.lock', os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            existing = self.find_by_idempotency_key(key)
+            if existing is not None:
+                if existing.kind != kind or existing.payload != payload:
+                    raise HTTPException(409, 'Idempotency-Key already belongs to a different request')
+                return existing
+            task = self.create_task(kind, payload, key)
+            self.retain_history(task)
+            return task
+        finally:
+            os.close(descriptor)
 
     def _create_task(self, kind: TaskKind, payload: dict[str, Any], idempotency_key: str) -> TaskRecord:
         task_id = uuid4().hex
@@ -371,7 +394,8 @@ class TaskManager:
             try:
                 await asyncio.wait_for(
                     self._execute_task(task, app_state),
-                    timeout=self.budget_seconds,
+                    timeout=(self.budget_seconds * len(task.payload['batch']['urls']) + 60
+                             if task.kind == TaskKind.BATCH else self.budget_seconds),
                 )
             except (TimeoutError, asyncio.TimeoutError):
                 exec_duration = time.perf_counter() - wall_start
@@ -450,6 +474,9 @@ class TaskManager:
             await self._execute_benchmark(task, app_state)
         elif task.kind == TaskKind.EXPORT:
             await self._execute_export(task, app_state)
+        elif task.kind == TaskKind.BATCH:
+            from app.services.batch import run_batch
+            await run_batch(self, task, app_state)
         else:
             raise ValueError(f"Unknown task kind {task.kind}")
 
@@ -535,6 +562,14 @@ class TaskManager:
         llm_provider = task.payload.get("llm_provider", "auto")
         provider = app_state.provider
         selected_model = task.payload.get("ollama_model")
+        gemini_model = task.payload.get('gemini_model')
+        if gemini_model and 'gemini' in provider.providers:
+            # Per-request selection must not mutate the shared provider or affect
+            # another task, including when Gemini is reached via fallback.
+            provider = copy(provider)
+            provider.providers = dict(provider.providers)
+            provider.providers['gemini'] = copy(provider.providers['gemini'])
+            provider.providers['gemini'].model = gemini_model
         if ((selected_model or "ollama_context" in task.payload)
                 and provider.resolve_chain(llm_provider)[0] == "ollama"):
             provider = copy(provider)

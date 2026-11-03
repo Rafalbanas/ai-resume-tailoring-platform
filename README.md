@@ -8,7 +8,7 @@ See the [documentation index](docs/README.md) for setup, operations, feature gui
 
 > [!IMPORTANT]
 > **Essential Operating Principles & Disclaimers:**
-> - **Single-posting analysis only**: CVTailor fetches and analyzes only explicitly provided job postings (one URL or pasted text at a time). It does **not** crawl or scrape job portals en masse.
+> - **Explicitly selected postings only**: CVTailor fetches and analyzes user-provided postings, individually or through the bounded [batch API](docs/batch-api.md) (up to 20 URLs, processed sequentially). It does **not** discover offers or crawl job portals en masse.
 > - **Documented evidence assessment, not hiring probability**: Match scores (`HIGH` / `MEDIUM` / `LOW` / `UNRELIABLE`) and recommendations (`APPLY` / `REASONABLE STRETCH` / `SKIP` / `RETRY` / `REVIEW`) evaluate alignment between job requirements and documented facts in the candidate profile. They do **not** represent probability of employment or an official ATS ranking.
 > - **Separation of qualification match from role alignment**: Qualification scoring assesses documented competencies against required skills, while role recommendations incorporate seniority fit, domain context, and requirement completeness.
 > - **Fact validation bounds claims, not guarantees zero errors**: With Truth Lock enabled, the Python-side validator eliminates ungrounded statements and unverified skills by mapping claims back to verified profile facts. A document-specific manual editing switch is available for owner-authored CVs. However, human review of the analysis, profile facts, and rendered exports is always required before submitting an application.
@@ -24,6 +24,10 @@ Open a saved CV in **Edit CV** or its preview and set **Validation level** to **
 Manual edits are not marked as verified: changed skill IDs are cleared, changed summaries lose their source citations/attestation, and changed bullets/projects receive explicit `manual:` references. Authentication, CSRF, typed fields, summary confirmation, export quality checks and staged PDF/DOCX rollback remain active. Turning validation back on audits the saved content and refuses unsupported claims instead of relabelling them as verified. Restore the generated version or regenerate from updated profile evidence if needed. No profile, Skills Bank or existing CV is changed simply by adding this feature. See [manual editing details](docs/safe-manual-cv-edits.md).
 
 ## Job tailoring control
+
+For file-based automation, the [batch API](docs/batch-api.md) accepts a TXT URL
+list or JSON, selects the AI provider/Ollama model and CV theme, and retains
+ordinary analyses and generated documents in History.
 
 Set **Job tailoring** before submitting the job offer (default **0** retains relevance-first retrieval): **0** prioritizes relevant facts and job-focused wording, **1** favors profile order and source wording, and intermediate values blend these goals (step 0.1). This is independent of the per-CV Truth Lock setting. New AI drafts always use full Truth Lock. The value travels with the job, retries, idempotency key and saved application. On the match report, adjust it and choose **Generate new draft · reuse analysis** before exporting. Only submit when ready; moving the slider makes no request. From an existing CV, **Create a new version with different job tailoring** reuses the saved offer analysis and generates a new draft from current profile facts without changing that CV or copying manual additions.
 
