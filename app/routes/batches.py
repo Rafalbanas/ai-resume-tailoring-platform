@@ -65,7 +65,9 @@ async def batch_options(request: Request):
     return JSONResponse({'providers': ['auto', *request.app.state.providers], **options,
                          'gemini_model': request.app.state.settings.gemini_model,
                          'templates': ['ats_classic', 'modern_sidebar'], 'max_urls': 20,
-                         'max_file_bytes': 65536}, headers={'Cache-Control': 'no-store'})
+                         'max_file_bytes': 65536, 'default_allow_fallback': False,
+                         'automatic_fallback_enabled': request.app.state.provider.fallback_enabled},
+                        headers={'Cache-Control': 'no-store'})
 
 
 @router.post('', status_code=202, response_model=BatchResponse,

@@ -306,7 +306,17 @@ class TaskManager:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
             existing = self.find_by_idempotency_key(key)
             if existing is not None:
-                if existing.kind != kind or existing.payload != payload:
+                existing_payload = existing.payload
+                incoming_payload = payload
+                if existing.kind == kind == TaskKind.BATCH:
+                    # Newly introduced optional fields must not turn a retry of
+                    # an older batch into a conflict (or encourage a paid rerun).
+                    from app.models.batch import BatchRequest
+                    existing_payload = {**existing.payload,
+                        'batch': BatchRequest.model_validate(existing.payload['batch']).model_dump(mode='json')}
+                    incoming_payload = {**payload,
+                        'batch': BatchRequest.model_validate(payload['batch']).model_dump(mode='json')}
+                if existing.kind != kind or existing_payload != incoming_payload:
                     raise HTTPException(409, 'Idempotency-Key already belongs to a different request')
                 return existing
             task = self.create_task(kind, payload, key)
@@ -561,6 +571,9 @@ class TaskManager:
             job._source_resume = source_resume.model_dump(mode="json")
         llm_provider = task.payload.get("llm_provider", "auto")
         provider = app_state.provider
+        if 'allow_fallback' in task.payload or task.idempotency_key.startswith('batch:'):
+            provider = copy(provider)
+            provider.fallback_enabled = provider.fallback_enabled and task.payload.get('allow_fallback') is True
         selected_model = task.payload.get("ollama_model")
         gemini_model = task.payload.get('gemini_model')
         if gemini_model and 'gemini' in provider.providers:

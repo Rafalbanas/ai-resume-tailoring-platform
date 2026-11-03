@@ -48,7 +48,7 @@ async def run_batch(manager, task, state):
                     created_at=now(), started_at=now(), keep_history=True,
                     payload={'job': job.model_dump(mode='json'), 'llm_provider': spec.llm_provider,
                              'ollama_model': spec.ollama_model, 'ollama_context': spec.ollama_context,
-                             'gemini_model': spec.gemini_model})
+                             'gemini_model': spec.gemini_model, 'allow_fallback': spec.allow_fallback})
                 manager._save_task(child)
                 item['task_id'] = child.task_id
                 # Normal provider selection, validators, diagnostics, draft storage and token tracking.

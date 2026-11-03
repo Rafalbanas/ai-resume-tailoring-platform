@@ -1,7 +1,7 @@
 """Bounded, canonical batch input shared by JSON and TXT submissions."""
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictBool, field_validator
 
 
 def parse_url_file(content: bytes) -> list[str]:
@@ -30,6 +30,7 @@ class BatchRequest(BaseModel):
     template_name: Literal['modern_sidebar', 'ats_classic'] = 'ats_classic'
     tailoring_level: float = Field(default=0.0, ge=0.0, le=1.0, allow_inf_nan=False)
     export: bool = True
+    allow_fallback: StrictBool = False
 
     @field_validator('urls', mode='after')
     @classmethod
