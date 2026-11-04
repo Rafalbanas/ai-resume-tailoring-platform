@@ -205,7 +205,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
     def heading_key(value):
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
 
-    headings = set() if classified else {heading_key(s) for s in extract_sections(job_text)[1]}
+    literal_units, literal_headings = extract_sections(job_text)
+    headings = set() if classified else {heading_key(s) for s in literal_headings}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "keywords", "organization", "responsibility", "competency", "context"}
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
@@ -273,7 +274,18 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             if req.status == Status.STRONG:
                 req.status = Status.PARTIAL if entries else Status.MISSING
         source_units = [u for u in units if any(clean_source_line(quote) in clean_source_line(u.quote) for quote in quotes)]
-        qualifications = [u for u in source_units if u.category in {"mandatory", "preferred", "nice_to_have"}]
+        # Check source priority independently of the model disposition map: a
+        # preferred model row cannot redefine a literal minimum as optional.
+        from app.services.ollama_analysis import assessment_priority
+        literal_priorities = [assessment_priority({'text': quote, 'hints': [u.category for u in literal_units
+            if clean_source_line(quote) in clean_source_line(u.quote)]}) for quote in quotes]
+        if not role and 'mandatory' in literal_priorities and req.priority != 'mandatory':
+            req.priority = 'mandatory'
+            note = 'Explicit mandatory source wording corrected an inconsistent optional priority.'
+            if note not in req.reason:
+                req.reason += ' ' + note
+        priority_units = [u for u in literal_units if any(clean_source_line(quote) in clean_source_line(u.quote) for quote in quotes)]
+        qualifications = [u for u in priority_units if u.category in {"mandatory", "preferred", "nice_to_have"}]
         preferred = [u for u in qualifications if u.category in {"preferred", "nice_to_have"}]
         boilerplate = {
             "knowledge",
@@ -388,7 +400,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
                 tenure_ids = [entry.source_id for entry in relevant if entry.kind == 'experience'
                               and not academic_entry(entry) and ACTIVITY.search(entry.text)
                               and (not TRAINING.search(scope) or TRAINING.search(entry.text))]
-            tenure = validator.matcher.cited_tenure(tenure_ids, minimum)
+            tenure = validator.matcher.cited_tenure(tenure_ids, minimum, scope=scope)
             req.required_years, req.observed_years = minimum, tenure.observed_years
             req.status = tenure.status
             req.reason += " " + tenure.reason

@@ -502,5 +502,9 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     if semantic and any(r.interpretation_uncertain for r in requirements):
         result.recommendation = Recommendation.REVIEW
         result.qualification_assessment += ' Some source priorities or combined conditions require review; see individual clarifications.'
+    tenure_review = any(r.required_years is not None and r.status != RequirementStatus.STRONG for r in mandatory)
+    if tenure_review and result.recommendation != Recommendation.SKIP:
+        result.recommendation = Recommendation.REVIEW
+        result.qualification_assessment += ' Mandatory specialist tenure is not fully established; review dated, relevant employment evidence before applying.'
     result.reasoning_summary = f"Source review: {len(result.strong_matches)} confirmed, {len(result.partial_matches)} partial matches, {len(result.missing_requirements)} not confirmed in the profile. Mandatory conditions requiring review: {len(blockers)}. Preferred requirements are shown separately and do not create mandatory blockers. This evaluates documented evidence, not hiring probability or an ATS score."
     return result

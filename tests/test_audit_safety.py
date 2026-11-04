@@ -41,11 +41,15 @@ def test_shared_words_cannot_authorize_new_claims(profile, resume_payload, suffi
 def test_unconfirmed_mandatory_condition_requires_review_without_inventing_gap(profile):
     job = 'Requirements:\nPython\nLinux\nMinimum 6 years as a SAP consultant\nNice to have:\nn8n\n'
     result = AnalysisValidator(profile).validate(analysis(strong=['Python', 'Linux', 'n8n']), job)
-    assert result.recommendation == 'REASONABLE_STRETCH'
+    # Unconfirmed mandatory tenure needs evidence review, not an optimistic
+    # stretch recommendation or an invented claim of inability.
+    assert result.recommendation == 'REVIEW'
     assert result.recommendation != 'APPLY'
     gap = next(r for r in result.requirements if '6 years' in r.name)
     assert gap.priority == 'mandatory'
     assert gap.status != 'strong'
+    assert gap.status != 'absent'
+    assert gap.required_years == 6
     assert next(r for r in result.requirements if r.name == 'n8n').priority == 'preferred'
     assert all(r.source_quote in job for r in result.requirements)
 

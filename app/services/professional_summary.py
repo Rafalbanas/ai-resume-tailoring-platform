@@ -43,7 +43,7 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
 def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None) -> tuple[str, list[str]]:
     """Build up to four short sentences from attested clauses.
 
-    Only punctuation/capitalization is composed. The one L1/L2 historical clause
+    Only punctuation/capitalization and a project-scope label are composed. The one L1/L2 historical clause
     is extracted from an explicit employment support statement, never a title.
     Projects can supply integration evidence, but cannot become job experience.
     """
@@ -65,6 +65,9 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         if not entry or (entry.source_id in used and not reuse):
             return
         clause = (text or entry.text).strip().rstrip(".!?")
+        if entry.kind == 'project':
+            # Fact type, not the target role, establishes this scope.
+            clause = 'Project work: ' + clause
         candidate = [list(g) for g in groups]
         candidate[index].append(clause)
         result = " ".join("; ".join(g) + "." for g in candidate if g)
