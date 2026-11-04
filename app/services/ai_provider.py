@@ -70,6 +70,7 @@ Reference CVs are style examples only. Never copy their people, employers, facts
 certifications, projects, or responsibilities unless the same fact exists in the master profile."""
 
 RESUME_TAILOR_SYSTEM_PROMPT += """
+Use consistent grammar within each summary scope block. Prefer a different relevant source-backed detail in a project description instead of copying a complete summary sentence; if no such detail exists, preserve the fact rather than inventing an alternative. Avoid inflated phrases such as 'proven track record' without concrete documented support.
 Keep current employment, previous roles and project work explicitly separate. Do not attribute earlier employers' duties or personal/academic projects to the current employer. Group project evidence under one scope introduction, not repeated 'Project work:' labels. scikit-learn, NumPy and pandas are libraries, not model names: describe models trained using a library, not a comparison of that library as a model. Preserve actual job titles and documented facts.
 When previous_cv is supplied, use its presentation and content selection as a starting point for
 the requested changes, but it is not factual evidence. Resolve all retained claims against the

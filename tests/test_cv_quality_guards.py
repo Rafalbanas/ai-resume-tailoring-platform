@@ -155,7 +155,7 @@ def test_summary_explicitly_separates_project_work_from_employer(profile):
     catalog = FactCatalog(profile)
     text, ids = build_summary(catalog, 'AI developer\nRequirements\nFastAPI local models integration')
     assert 'Support Engineer at Example Ltd.' in text
-    assert 'Project work: Integrated local models' in text
+    assert 'Project work includes integrating local models' in text
     assert any(catalog.get(source).kind == 'project' for source in ids)
 
 
@@ -169,7 +169,7 @@ def test_approved_summary_cannot_silently_move_project_work_into_employment(prof
     resume.summary_attestation = sign_summary(resume, profile, 'synthetic-key')
     job = JobRequest(company='Synthetic', role='AI developer', job_description='Requirements\nFastAPI local models integration.')
     checked = FactValidator(profile, review_key='synthetic-key').validate(resume, job).resume
-    assert 'Project work:' in checked.professional_summary
+    assert 'Project work includes' in checked.professional_summary
     assert valid_source_summary(checked, profile, 'synthetic-key')
     assert not valid_summary_attestation(checked, profile, 'synthetic-key')
     second = FactValidator(profile, review_key='synthetic-key').validate(checked, job).resume

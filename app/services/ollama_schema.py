@@ -3,6 +3,31 @@
 from copy import deepcopy
 
 
+def concise_resume_schema():
+    """Bound a fresh CV retry, never salvage or truncate an incomplete document.
+
+    Employment/education identities and ownership rules remain unchanged. Only
+    optional selection counts and generated prose are reduced to fit the same
+    configured output budget.
+    """
+    from app.models.resume import TailoredResume
+
+    schema = TailoredResume.model_json_schema()
+    props, defs = schema['properties'], schema['$defs']
+    props['professional_summary']['maxLength'] = 360
+    props['summary_source_fact_ids']['maxItems'] = 4
+    props['core_skills']['maxItems'] = 12
+    props['selected_skill_ids']['maxItems'] = 12
+    props['projects']['maxItems'] = 2
+    defs['ResumeExperience']['properties']['bullets']['maxItems'] = 2
+    defs['ResumeBullet']['properties']['text']['maxLength'] = 240
+    defs['ResumeBullet']['properties']['source_fact_ids']['maxItems'] = 2
+    defs['ResumeProject']['properties']['description']['maxLength'] = 320
+    defs['ResumeProject']['properties']['technologies']['maxItems'] = 6
+    defs['ResumeProject']['properties']['source_fact_ids']['maxItems'] = 3
+    return schema
+
+
 def choices(array, values, minimum=0):
     values = list(dict.fromkeys(values))
     if values:
@@ -22,7 +47,7 @@ def resume_schema(schema, catalog, skills, skill_ids, history):
     choices(props["summary_source_fact_ids"], [e["source_id"] for e in catalog], 1)
     choices(props["core_skills"], skills)
     choices(props["selected_skill_ids"], skill_ids)
-    props["selected_skill_ids"]["maxItems"] = min(16, len(set(skill_ids)))
+    props["selected_skill_ids"]["maxItems"] = min(props['selected_skill_ids'].get('maxItems', 16), len(set(skill_ids)))
 
     def variants(field, definition, kind):
         entries = [e for e in catalog if e["type"] == kind]

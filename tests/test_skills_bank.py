@@ -8,6 +8,7 @@ from app.models.job import JobAnalysis, JobRequest, MatchLevel, Recommendation
 from app.models.resume import TailoredResume
 from app.models.skills import SkillEvidence, SkillsDocument, VerifiedSkill
 from app.services.analysis_validator import AnalysisValidator
+from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
 from app.services.resume_editor import apply_resume_edits
 from app.services.skills_bank import SkillsBank, SkillsConfigurationError
@@ -257,7 +258,13 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
         "Automates repeatable infrastructure and support workflows with Python and cross-tier."
     )
     result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
-    assert profile.summary_facts[0] in result.resume.professional_summary
+    expected = 'Support Engineer at Example Ltd. Broader experience includes automating repeatable infrastructure and support workflows with Python.'
+    assert expected in result.resume.professional_summary
+
+    catalog = FactCatalog(profile)
+    summary_entry = next(e for e in catalog.prompt_entries if e.kind == 'summary' and e.text == profile.summary_facts[0])
+    assert summary_entry.source_id in result.resume.summary_source_fact_ids
+    assert 'cross-tier' not in result.resume.professional_summary
     assert result.resume.professional_summary.endswith(".")
     assert any("source sentences" in warning for warning in result.warnings)
 

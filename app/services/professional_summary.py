@@ -3,6 +3,40 @@ import re
 
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 
+_ACTIVITY_VERBS = {
+    'integrated': 'integrating', 'integrates': 'integrating',
+    'used': 'using', 'uses': 'using', 'automated': 'automating', 'automates': 'automating',
+    'implemented': 'implementing', 'implements': 'implementing',
+    'developed': 'developing', 'develops': 'developing',
+    'supported': 'supporting', 'supports': 'supporting',
+    'provided': 'providing', 'provides': 'providing',
+    'analyzed': 'analyzing', 'analyzes': 'analyzing',
+    'built': 'building', 'maintained': 'maintaining', 'maintains': 'maintaining',
+}
+
+
+def activity_clause(text: str) -> str | None:
+    """Only inflect a known initial verb; never infer tense, scope or a result.
+
+    Unknown subjects, negations, plans and conditional clauses remain verbatim.
+    """
+    text = text.strip().rstrip('.!?')
+    verb, separator, rest = text.partition(' ')
+    if (separator and verb.casefold() in _ACTIVITY_VERBS
+            and not re.match(r'(?:to|by)\b', rest, re.I)):
+        return _ACTIVITY_VERBS[verb.casefold()] + ' ' + rest
+    return None
+
+
+def summary_contains_clause(summary: str, text: str) -> bool:
+    """Compare complete literal/activity clauses, not fuzzy semantic overlap."""
+    variants = [text.strip().rstrip('.!?'), activity_clause(text)]
+    activities = '|'.join(sorted(set(_ACTIVITY_VERBS.values())))
+    start = r'(?:^|[.!?;:]\s*|\b(?:includes|involved|and)\s+)'
+    end = r'(?=[.!?;]|$| and (?:' + activities + r')\b)'
+    return any(value and re.search(start + re.escape(value) + end, summary, re.I)
+               for value in variants)
+
 
 def employment_scope_issue(value: str, entries, profile) -> bool:
     """An employer introduction cannot borrow another employer's cited duties.
@@ -94,6 +128,16 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                              else part for i, part in enumerate(parts))
 
         sentences = []
+        def scoped(label, parts):
+            activities = [activity_clause(part) for part in parts]
+            lead = {'Project work: ': 'Project work includes ',
+                    'Previous roles: ': 'Previous roles involved ',
+                    'Background: ': 'Broader experience includes '}[label]
+            # Keep one scope block. A clause outside this small inflection map
+            # retains its original wording and scope rather than being guessed.
+            return ((lead + ' and '.join(activities)) if all(activities)
+                    else label + clauses(parts)) + '.'
+
         for index, group in enumerate(values):
             if not group:
                 continue
@@ -102,9 +146,10 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 for clause in group:
                     label = next((prefix for prefix in scopes if prefix and clause.startswith(prefix)), '')
                     scopes[label].append(clause[len(label):])
-                sentences.extend(label + clauses(parts) + '.' for label, parts in scopes.items() if parts)
+                sentences.extend(scoped(label, parts) if label else clauses(parts) + '.'
+                                 for label, parts in scopes.items() if parts)
             else:
-                sentences.append(('Project work: ' if index == 2 else '') + clauses(group) + '.')
+                sentences.append(scoped('Project work: ', group) if index == 2 else clauses(group) + '.')
         return ' '.join(sentences)
 
     def add(index, entry, text=None, *, reuse=False):
