@@ -27,7 +27,7 @@ NEGATIVE = re.compile(r'\b(?:no (?:prior )?(?:practical |professional |hands.on 
 SQL_ADVANCED = re.compile(r'\b(?:dba|database administration|cluster\w*|replication|performance tuning|query optimi[sz]ation)\b', re.I)
 API_DEBUG = re.compile(r'\b(?:debug\w*|troublesho(?:ot\w*|t)|oauth|authentication flows?|auth)\b', re.I)
 LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|solid|advanced|expert|fluency|fluent|awareness|familiarity|basic knowledge|understanding|practical knowledge|hands.on experience|professional experience|proficiency|basic|working knowledge|hands.on)\b\+?', re.I)
-YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat)\b', re.I)
+YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat|lata|rok|roku)\b', re.I)
 
 
 def required_level(text: str) -> str:
@@ -171,9 +171,38 @@ class EvidenceMatcher:
             reasons.append(f'{lang}: documented {", ".join(dict.fromkeys(declared)) or "use only"}; required {required or required_level(name) or "language knowledge"}.')
         return self._result(entries, all(confirmations), ' '.join(reasons))
 
-    def cited_tenure(self, ids, minimum):
+    @staticmethod
+    def _specialist_tenure_entries(entries, scope):
+        """Generic support/SQL duties do not prove named specialist tenure.
+
+        Apply only explicit domain ceilings, not job-title inference. Other
+        domains retain the model's cited-duty interpretation.
+        """
+        domains = [
+            (r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*)\b',
+             r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*|offensive security|red[ -]team(?:ing)?)\b'),
+            (r'\b(?:data engineer\w*|inżynieri\w* danych)\b',
+             r'\b(?:data engineer\w*|inżynieri\w* danych|ETL|ELT|data pipelines?|data warehouse\w*|data lakes?|PySpark|Airflow)\b'),
+            (r'\b(?:cyber.?security|information security|AI security)\b',
+             r'\b(?:cyber.?security|information security|AI security|security (?:operations|architecture|consulting|incidents?|audits?|assessments?)|incident response|threat (?:detection|hunting)|penetration test\w*|DLP|CASB|DSPM)\b'),
+        ]
+        # A broader security label must not relax an explicit pentesting scope.
+        pattern = next((evidence for domain, evidence in domains if re.search(domain, scope, re.I)), None)
+        if pattern is None:
+            return entries
+        negated_experience = (
+            r'\b(?:no|without)\s+(?:(?:prior|commercial|professional|practical)\s+)*(?:experience|knowledge)\b'
+            r'|\b(?:do|does|have|has)\s+not\s+(?:have|performed|conducted)\b'
+            r'|\bnever\s+(?:performed|conducted)\b|\bbrak\s+(?:komercyjnego\s+)?doświadczen\w*'
+        )
+        return [entry for entry in entries if re.search(pattern, entry.text, re.I)
+                and not re.search(negated_experience, entry.text, re.I)
+                and not re.search(r'\bcourse\b|training course|\bstudied\b|\blearned\b', entry.text, re.I)]
+
+    def cited_tenure(self, ids, minimum, *, scope=''):
         """Use LLM-selected duties; compute interval union without title heuristics."""
         selected = [e for e in self.entries if e.source_id in ids and e.kind == 'experience' and not NEGATIVE.search(e.text)]
+        selected = self._specialist_tenure_entries(selected, scope)
         owners = {e.owner_index for e in selected}
         intervals = []
         for index, exp in enumerate(self.catalog.profile.experience):
@@ -199,10 +228,13 @@ class EvidenceMatcher:
         support_role = bool(re.search(r'\bit support\b|technical support|product support|customer.facing technical|software development', name, re.I))
         systems_role = bool(re.search(r'system(?:s)? engineer(?:ing)?|system(?:s)? administrat|infrastructure', name, re.I))
         similar_role = bool(re.search(r'similar|related|equivalent', name, re.I))
+        specialist_scope = bool(re.search(r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*|data engineer\w*|inżynieri\w* danych|cyber.?security|information security|AI security)\b', name, re.I))
         intervals, entries, periods = [], [], []
         for index, exp in enumerate(self.catalog.profile.experience):
             facts = [e for e in self.entries if e.kind == 'experience' and e.owner_index == index and not NEGATIVE.search(e.text)]
-            if systems_role:
+            if specialist_scope:
+                relevant = self._specialist_tenure_entries(facts, name)
+            elif systems_role:
                 core = r'(?:deploy|configur|administ|maintain|manag)\w*.*(?:windows server|vmware|esxi|active directory|infrastructure|linux|servers?)'
                 related = r'(?:support|troubleshoot)\w*.*(?:windows|active directory|dns|dhcp|vpn|network|connectivity)|(?:network|vpn).*operations'
                 relevant = [e for e in facts if re.search(core, e.text, re.I) or (similar_role and re.search(related, e.text, re.I))]
@@ -222,11 +254,12 @@ class EvidenceMatcher:
             else:
                 terms = [v for v in ('Python', 'SQL', 'SAP', 'JavaScript', 'Linux', 'Windows', 'Kubernetes') if re.search(r'\b' + v + r'\b', name, re.I)]
                 relevant = [e for e in facts if terms and all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in terms)]
+            relevant = self._specialist_tenure_entries(relevant, name)
             entries.extend(relevant)
             start, end = _month(exp.start, end=False, as_of=self.as_of), _month(exp.end, end=True, as_of=self.as_of)
             if relevant and start and end and start < min(end, self.as_of):
                 intervals.append((start, min(end, self.as_of)))
-                scope = 'systems administration/infrastructure' if systems_role and any(re.search(core, e.text, re.I) for e in relevant) else 'related Windows/network technical troubleshooting' if systems_role else 'relevant duties'
+                scope = 'explicit specialist duties' if specialist_scope else 'systems administration/infrastructure' if systems_role and any(re.search(core, e.text, re.I) for e in relevant) else 'related Windows/network technical troubleshooting' if systems_role else 'relevant duties'
                 periods.append(f'{exp.company}: {exp.start} – {exp.end} ({scope})')
         merged = []
         for start, end in sorted(intervals):

@@ -543,7 +543,7 @@ def needs_assessment(passage):
     if text.endswith(":") or len(text.split()) < 2:
         return False
     if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
-        r'^(?:wiedza\b|odpowiedzialność\b)', text, re.I
+        r'^(?:wiedza\b|odpowiedzialność\b|głębok\w*\s+(?:inżynieryjne\s+)?zrozumieni\w*|biegłość\b)', text, re.I
     ):
         return True
     return bool(
@@ -589,7 +589,10 @@ def objective_condition(passage):
     import re
 
     text = condition_text(passage)
-    tenure = re.match(r"^(?:(?:at least|minimum|at minimum)\s+)?\d+(?:\.\d+)?\+?\s*years?\b.*\bexperience\b", text, re.I)
+    tenure = re.match(
+        r"^(?:(?:at least|minimum(?: of)?|min\.?|at minimum|co najmniej)\s+)?"
+        r"\d+(?:\.\d+)?\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*"
+        r"(?:years?|lat|lata|rok|roku)\b.*\b(?:experience|doświadczen\w*)\b", text, re.I)
     language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?|this role requires)\b", text, re.I) and re.search(
         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
     )

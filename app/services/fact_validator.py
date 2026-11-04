@@ -194,7 +194,11 @@ class FactValidator:
                     and valid_summary_attestation(draft, self.profile, self.review_key))
         if reviewed:
             model_ids = [e.source_id for e in summary_entries]
+        project_scope_missing = any(e.kind == 'project' for e in summary_entries) and not re.search(
+            r'\bproject\w*\b|\bportfolio\b|\bthesis\b|\bacademic\b|\bprojekt\w*\b',
+            draft.professional_summary, re.I)
         if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
+                or project_scope_missing
                 or (sentence_count > 5 and not reviewed)
                 or not (reviewed or self.catalog.supports_paraphrase(draft.professional_summary, model_ids))):
             if draft.professional_summary != summary:
@@ -202,6 +206,7 @@ class FactValidator:
             draft.professional_summary = summary
             draft.summary_source_fact_ids = summary_ids
             draft.summary_attestation = ''
+            reviewed = False
         else:
             draft.summary_source_fact_ids = model_ids
         draft.professional_summary = deduplicate_summary(draft.professional_summary, self.catalog)
@@ -626,11 +631,11 @@ class FactValidator:
     def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
         profile_projects = {project.name.casefold(): project for project in self.profile.projects}
 
-        def score(project: ResumeProject) -> tuple[float, int, int]:
+        def score(project: ResumeProject) -> tuple[int, float, int]:
             source = profile_projects.get(project.name.casefold())
             technologies = source.technologies if source else project.technologies
             relevance = self._project_relevance(project, job)
             evidence_priority = max((self.fact_priorities.get(i, 0) for i in project.source_fact_ids), default=0)
-            return evidence_priority, relevance, len(technologies)
+            return relevance, evidence_priority, len(technologies)
 
         return sorted(projects, key=score, reverse=True)

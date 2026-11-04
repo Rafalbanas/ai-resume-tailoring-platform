@@ -19,7 +19,7 @@ class SourceUnit:
     uncertain: bool = False
 
 
-PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane)\s*:?$', re.I)
+PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane|ideally,? you[’\x27]ll also have)\s*:?$', re.I)
 MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze wymagania|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
 NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
@@ -28,14 +28,15 @@ NEEDED = re.compile(
 QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
     r'(?:required|mandatory|essential|minimum)\s+(?:technical\s+and\s+professional\s+|technical\s+|professional\s+)?expertise|'
-    r'professional\s+requirements|what sets you apart|idealnie abyś posiadał/a)\s*:?$', re.I,
+    r'professional\s+requirements|what sets you apart|idealnie abyś posiadał/a|'
+    r'jakie kompetencje są dla nas ważne\??|to qualify for the role,? you must have)\s*:?$', re.I,
 )
-DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|what you(?:[’\x27]ll| will) achieve|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??)\s*:?$', re.I)
+DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|what you(?:[’\x27]ll| will) achieve|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??|jakie działania będą należeć do ciebie\??)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
     "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|what can you expect from us|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get|why [\w &.\-]+\?)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|what can you expect from us|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|co zyskujesz,? dołączając do [^?]+\?|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get|why [\w &.\-]+\?)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji)\s*:?$', re.I),
 }

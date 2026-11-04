@@ -28,6 +28,12 @@ Manual edits are not marked as verified: changed skill IDs are cleared, changed 
 
 ## Job tailoring control
 
+New analyses include [source-grounded quality guards](docs/cv-quality-guards.md):
+literal minimum tenure cannot silently become optional, specialist years need
+relevant employment evidence, and project work is labelled separately from an
+employer's duties in source-composed summaries. These checks do not rewrite
+existing CVs or turn match scores into hiring probabilities.
+
 For file-based automation, the [batch API](docs/batch-api.md) accepts a TXT URL
 list or JSON, selects the AI provider/Ollama model and CV theme, and retains
 ordinary analyses and generated documents in History.
