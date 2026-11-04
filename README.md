@@ -15,6 +15,9 @@ See the [documentation index](docs/README.md) for setup, operations, feature gui
 > - **Third-party data transmission with Gemini**: While local Ollama inference keeps data strictly on your machine, configuring or falling back to Google Gemini transmits job and candidate analysis data to Google's Generative Language API.
 > - **Security posture**: The platform is built for private, single-owner self-hosting. It implements Argon2id authentication, SQLite server-revocable sessions, CSRF tokens, SSRF guards, and rate limiting. It does **not** claim data encryption at rest, immunity to prompt injection, universal ATS compatibility, or public multi-tenant SaaS readiness.
 
+## Batch URL file automation / macOS quickstart
+For file-based automation, the [batch API](docs/batch-api.md) accepts a TXT URL list or JSON, selects the AI provider/Ollama model, and retains ordinary analyses and generated documents in History. See the [Polish quickstart (macOS)](docs/batch-api-macos-pl.md) for a practical guide to macOS terminal automation.
+
 ---
 
 ## Per-CV Truth Lock switch

@@ -455,9 +455,14 @@ async def retry_task(
         attempt=str(time.time()),
     )
     request.app.state.task_manager.retain_history(task)
+    retry_payload = dict(task.payload)
+    if task.idempotency_key.startswith('batch:'):
+        # Older batch children predate explicit consent. Do not lose their local
+        # default when a UI retry receives a new, non-batch idempotency key.
+        retry_payload.setdefault('allow_fallback', False)
     new_task = request.app.state.task_manager.create_task(
         kind=task.kind,
-        payload=task.payload,
+        payload=retry_payload,
         idempotency_key=retry_key,
     )
 

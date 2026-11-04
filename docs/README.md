@@ -11,6 +11,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Processing isolation and resource budgets](processing-security.md)
 - [Private and demo accounts](recording-demo.md)
 - [n8n setup](n8n-setup.md)
+- [Batch URL file automation / macOS quickstart (Polish)](batch-api-macos-pl.md)
 - [Kubernetes practice lab](kubernetes-lab.md)
 
 ## Architecture and features
@@ -27,6 +28,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 ## Security and historical evidence
 
 - [Security policy](../SECURITY.md)
+- [Batch API security review and fixes (2026-11-03)](security/batch-api-audit-2026-11-03.md)
 - [Security follow-up and deployment limitations](security-audit-2026-10-17-followup.md)
 - [Login security audit](security/login-audit-2026-10-16/REPORT.md)
 - [Archived repair reports, verification results and migration plan](archive/README.md)

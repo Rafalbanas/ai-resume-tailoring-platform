@@ -1,5 +1,7 @@
 # Batch CV API
 
+[Polish quickstart (macOS)](./batch-api-macos-pl.md)
+
 The owner-only API processes explicitly selected job URLs **sequentially**, without
 discovering/crawling additional offers. It saves ordinary analyses/drafts in
 **History** and optionally generates PDF/DOCX using the normal export pipeline.
@@ -27,7 +29,7 @@ CSRF=$(awk '$6 == "csrf_token" {print $7}' cookies.txt | tail -1)
 curl -fsS -b cookies.txt -H "X-CSRF-Token: $CSRF" \
   -H 'Idempotency-Key: my-offers-2026-11-02-v1' \
   -F 'file=@jobs.txt;type=text/plain' \
-  -F 'options={"llm_provider":"ollama","ollama_model":"gemma4:latest","template_name":"ats_classic","tailoring_level":0.3}' \
+  -F 'options={"llm_provider":"ollama","ollama_model":"gemma4:12b-it-q4_K_M","template_name":"ats_classic","tailoring_level":0.3}' \
   "$BASE/api/v1/batches/upload"
 ```
 
@@ -42,7 +44,7 @@ example. `options` is a JSON object without `urls`; unknown fields are rejected.
 {
   "urls": ["https://justjoin.it/job-offer/example", "https://nofluffjobs.com/pl/job/example"],
   "llm_provider": "ollama",
-  "ollama_model": "gemma4:latest",
+  "ollama_model": "gemma4:12b-it-q4_K_M",
   "ollama_context": 65536,
   "template_name": "ats_classic",
   "tailoring_level": 0.0,
@@ -59,6 +61,11 @@ example. `options` is a JSON object without `urls`; unknown fields are rejected.
 - `template_name`: `ats_classic` (default), `modern_sidebar`.
 - `tailoring_level`: 0–1, with the same meaning as the UI.
 - `export`: true (default) generates PDF/DOCX; false saves analyses/drafts only.
+- `allow_fallback`: strict JSON boolean, **false by default**. With `ollama`, a local
+  failure will not silently send candidate/job data to Gemini. Explicit `true`
+  permits the existing fallback chain only if the global fallback setting also
+  allows it; it cannot override an owner's global disable. The policy is retained
+  with each child task/retry without changing the shared router or other tasks.
 
 `GET /api/v1/batches/options` lists configured providers, installed Ollama models,
 the default Gemini model, themes and limits. These routes and typed contracts
@@ -108,9 +115,11 @@ storage or file-count quota reached.
 - Truth Lock stays enabled. AI summary confirmation is **never automatic**:
   open the returned analysis, review/confirm and export. Layout failures similarly
   retain the draft instead of weakening export checks.
-- Existing fallback preferences apply. `auto` uses the configured primary, not
-  necessarily local inference. Gemini primary **or fallback** transmits job and
-  candidate facts to Google. Disable cloud fallback in settings if inappropriate.
+- Batch fallback is opt-in (`allow_fallback: false` by default). A primary explicitly
+  selected as Gemini still transmits data to Google; choosing `ollama` and leaving
+  fallback disabled keeps generation local. Explicit fallback permission is also
+  bounded by global settings. Older deployments without this option follow the
+  global preference; disable cloud fallback in settings if inappropriate.
 - Restart recovery marks unfinished work failed; it does not silently rerun paid
   work. Completed items and drafts remain available. No migration, dependency,
   new environment variable, service or deployment is required.
@@ -120,7 +129,8 @@ storage or file-count quota reached.
 Run from the repository root:
 
 ```sh
-.venv/bin/pytest -q tests/test_batch_models.py tests/test_batch_security.py tests/test_batch_api.py
+.venv/bin/pytest -q tests/test_batch_models.py tests/test_batch_security.py tests/test_batch_api.py \
+  tests/test_batch_fallback_policy.py tests/test_batch_security_audit.py tests/test_draft_export_transaction.py
 .venv/bin/ruff check .
 ```
 
@@ -134,6 +144,10 @@ Run from the repository root:
   task-local Gemini selection and restart recovery.
 - Existing `test_job_extractors.py` and `test_browser_extractor_security.py`
   cover the shared extractor security boundary in greater depth.
+- The fallback-policy, security-audit and export-transaction tests cover explicit
+  cloud consent, legacy child retries, cross-session CSRF replay, quota rechecks
+  and staged publication/rollback. See the [security review](security/batch-api-audit-2026-11-03.md)
+  for findings, fixes and residual limitations.
 
 Tests use synthetic profiles and mock external services; they do not prove that
 live portals or paid providers are currently available. Review every generated

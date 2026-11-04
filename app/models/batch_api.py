@@ -46,3 +46,5 @@ class BatchOptionsResponse(BaseModel):
     templates: list[str]
     max_urls: int
     max_file_bytes: int
+    default_allow_fallback: bool
+    automatic_fallback_enabled: bool
