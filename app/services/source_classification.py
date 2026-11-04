@@ -1,6 +1,7 @@
 """Resolve complete model classifications against literal source, independent of layout."""
 from app.services.job_sections import SourceUnit, clean_source_line, extract_sections, normalize_source_layout
 from app.services.semantic_requirements import resolve_source_quotes
+from app.services.source_dispositions import known_source_context
 
 
 def model_source_units(candidate, text):
@@ -47,18 +48,19 @@ def model_source_units(candidate, text):
             issues.append('A model source classification had no verifiable original source quote.')
             continue
         for literal in resolved:
+            from app.services.ollama_analysis import assessment_priority, needs_assessment, needs_responsibility
             literal_category, literal_row, literal_name = category, row, name
-            if clean_source_line(literal) in portal_levels:
-                # Repeated regular/B2/etc. tokens belong to the portal stack,
-                # not independent duties/qualifications. Models may attach the
-                # same spelling to different rows: preserve literal coverage,
-                # but never score it or invent a source-classification conflict.
+            passage = {'text': literal, 'hints': list(source_hints.get(clean_source_line(literal), []))}
+            if clean_source_line(literal) in portal_levels or known_source_context(passage):
+                # Portal levels and known administrative text have canonical
+                # context dispositions. Preserve literal coverage without
+                # allowing model labels to create scored qualifications.
                 literal_category, literal_row, literal_name = 'context', None, literal
+            elif literal_category in {'mandatory', 'preferred', 'nice_to_have'} and needs_responsibility(passage):
+                issues.append(f'Explicit responsibility was scored as a qualification: {literal}')
             # Literal candidate-condition guards are independent of section names.
             # A complete context map cannot silently discard explicit conditions.
             if literal_category in {'context', 'responsibility', 'competency'}:
-                from app.services.ollama_analysis import assessment_priority, needs_assessment, needs_responsibility
-                passage = {'text': literal, 'hints': list(source_hints.get(clean_source_line(literal), []))}
                 if literal_category in {'context', 'responsibility'} and needs_assessment(passage):
                     issues.append(f'Candidate condition was classified as context: {literal}')
                 elif literal_category == 'competency' and assessment_priority(passage) is not None:
@@ -85,4 +87,10 @@ def model_source_units(candidate, text):
             if (unit.quote == other.quote and unit.category != other.category
                     and {unit.category, other.category} != {'competency', 'responsibility'}):
                 issues.append(f'Conflicting model source classifications: {unit.quote}')
-    return units, list(dict.fromkeys(issues))
+    unique = []
+    for unit in units:
+        if unit.category in {'context', 'responsibility'} and any(
+                prior.quote == unit.quote and prior.category == unit.category for prior in unique):
+            continue
+        unique.append(unit)
+    return unique, list(dict.fromkeys(issues))

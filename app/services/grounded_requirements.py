@@ -245,6 +245,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     for issue in source_issues:
         for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: ',
                        'Explicit qualification was excluded from qualification scoring: ',
+                       'Explicit responsibility was scored as a qualification: ',
                        'Explicit responsibility was classified as context: '):
             if issue.startswith(prefix):
                 result.unassessed_source_passages.append(issue[len(prefix):])

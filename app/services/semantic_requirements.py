@@ -8,6 +8,7 @@ stricter fact boundary.
 
 import re
 
+from app.models.job import RequirementPriority
 from app.models.job import RequirementStatus as Status
 from app.services.evidence_matching import NEGATIVE, required_level, required_years, scoring_key
 from app.services.fact_catalog import normalized_tokens
@@ -206,7 +207,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
 
     literal_units, literal_headings = extract_sections(job_text)
-    headings = set() if classified else {heading_key(s) for s in literal_headings}
+    headings = {heading_key(s) for s in literal_headings}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "keywords", "organization", "responsibility", "competency", "context"}
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
@@ -219,6 +220,13 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         if all(heading_key(quote) in headings for quote in quotes):
             # A recognized section title has no qualification content itself.
             # Keep its body available for the model instead of scoring the title.
+            continue
+        from app.services.ollama_analysis import needs_responsibility
+        from app.services.source_dispositions import known_source_context
+        passages = [{'text': quote, 'hints': [u.category for u in literal_units
+                    if clean_source_line(quote) == clean_source_line(u.quote)]} for quote in quotes]
+        if all(known_source_context(passage) or (not role and needs_responsibility(passage)) for passage in passages):
+            validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if not classified and all(
@@ -280,7 +288,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         literal_priorities = [assessment_priority({'text': quote, 'hints': [u.category for u in literal_units
             if clean_source_line(quote) in clean_source_line(u.quote)]}) for quote in quotes]
         if not role and 'mandatory' in literal_priorities and req.priority != 'mandatory':
-            req.priority = 'mandatory'
+            req.priority = RequirementPriority.MANDATORY
             note = 'Explicit mandatory source wording corrected an inconsistent optional priority.'
             if note not in req.reason:
                 req.reason += ' ' + note
@@ -315,7 +323,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             selected = exact_preference_scope or preferred
             clear = any(u.section.casefold().strip(" :") != "desired experience" for u in selected)
             if clear:
-                req.priority = "nice_to_have" if all(u.category == "nice_to_have" for u in selected) else "preferred"
+                req.priority = RequirementPriority.NICE_TO_HAVE if all(u.category == "nice_to_have" for u in selected) else RequirementPriority.PREFERRED
                 req.reason += (
                     " Explicit optional/preferred source wording corrected an inconsistent mandatory priority."
                 )
@@ -482,6 +490,10 @@ def merge_equivalent_source_rows(requirements):
 
     result = []
     for req in requirements:
+        # Priority words sometimes arrive in the model's free-text level field.
+        # They are not proficiency distinctions and cannot duplicate a score.
+        if req.required_level.casefold().strip() in {'optional', 'preferred', 'mandatory', 'nice to have', 'nice_to_have', 'unspecified'}:
+            req.required_level = ''
         match = None
         for previous in result:
             same_scope = (
