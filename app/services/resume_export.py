@@ -83,7 +83,12 @@ def prepare_resume(resume: TailoredResume, profile: CandidateProfile) -> Tailore
     check_export_content(resume)
     contacts(profile)
     prepared = deepcopy(resume)
-    from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues
+    from app.services.content_quality import (
+        deduplicate_bullets,
+        deduplicate_project_text,
+        deduplicate_text,
+        quality_issues,
+    )
     prepared.professional_summary = deduplicate_text(prepared.professional_summary)
     clean = []
     keys = set()
@@ -111,7 +116,7 @@ def prepare_resume(resume: TailoredResume, profile: CandidateProfile) -> Tailore
             keys.add(key)
     prepared.core_skills = clean
     for project in prepared.projects:
-        project.description = deduplicate_text(project.description)
+        project.description = deduplicate_project_text(project.description)
         if project.url:
             project.url = web_link(project.url)
         project.technologies = list(dict.fromkeys(

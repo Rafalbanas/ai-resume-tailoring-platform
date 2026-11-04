@@ -66,14 +66,15 @@ async def review_summary(provider, resume, profile):
     from app.services.content_quality import quality_issues, unfinished
     from app.services.fact_catalog import normalized_tokens
     from app.services.ml_terminology import ml_terminology_issue
-    from app.services.professional_summary import employment_scope_issue
+    from app.services.professional_summary import broken_activity_summary, employment_scope_issue
 
     resume.summary_attestation = ''  # Discard any model-supplied signature.
     catalog = FactCatalog(profile)
     ids = list(dict.fromkeys(resume.summary_source_fact_ids))
     entries = catalog.valid(ids)
     if (not resume.professional_summary.strip() or unfinished(resume.professional_summary)
-            or ml_terminology_issue(resume.professional_summary)):
+            or ml_terminology_issue(resume.professional_summary)
+            or broken_activity_summary(resume.professional_summary, entries)):
         return resume
     # Some servers do not enforce JSON-schema minItems. Recover citations only
     # through semantic review of actual profile facts, never a guessed ID.
@@ -101,6 +102,7 @@ async def review_summary(provider, resume, profile):
     reviewed_entries = catalog.valid(reviewed_ids)
     if (verdict.supported and not verdict.issues and reviewed_ids
             and len(reviewed_entries) == len(set(reviewed_ids))
+            and not broken_activity_summary(resume.professional_summary, reviewed_entries)
             and not employment_scope_issue(resume.professional_summary, reviewed_entries, profile)):
         resume.summary_source_fact_ids = [e.source_id for e in reviewed_entries]
         resume.summary_attestation = sign_summary(resume, profile, provider.summary_review_key)
