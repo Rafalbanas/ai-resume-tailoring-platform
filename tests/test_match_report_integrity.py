@@ -239,10 +239,17 @@ def test_compact_inventory_uses_same_context_boundaries():
 
     inventory = AnalysisInventory.build(JobRequest(company='Synthetic', role='IT', job_description=PL), support_profile())
     passages = list(inventory.passages.values())
-    assert not next(p for p in passages if 'Oferujemy' in p['text'])['context_only']
+    assert next(p for p in passages if 'Oferujemy' in p['text'])['context_only']
     assert passages[0]['context_only']
     assert next(p for p in passages if 'Budżet' in p['text'])['hints'] == ['benefits']
     assert next(p for p in passages if 'wizytami' in p['text'])['hints'] == ['employment']
+    assert next(p for p in passages if 'Budżet' in p['text'])['context_only']
+    assert not next(p for p in passages if p['text'] == 'Experience in IT support')['context_only']
+    for text, kind in [('Oferujemy', 'context'), ('Experience in IT support', 'requirement')]:
+        pid = next(pid for pid, passage in inventory.passages.items() if text in passage['text'])
+        schema = inventory.keyed_schema([pid])
+        ref = schema['properties']['assessments']['properties'][pid]['$ref'].split('/')[-1]
+        assert schema['$defs'][ref]['properties']['k']['enum'] == [kind]
 
 
 def test_qualification_in_context_section_is_kept_but_requires_review():

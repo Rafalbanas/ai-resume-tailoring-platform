@@ -21,6 +21,8 @@ probability, universal ATS compatibility, or complete understanding of every off
   passages are retained as context, not scored as preferred qualifications, even
   in a complete model disposition map. Genuine candidate conditions override an
   inherited administrative section; these checks are not a universal classifier.
+  Sparse legacy responses retain the existing fail-closed classification audit
+  when qualification-bearing words were extracted from administrative context.
 - Identical repeated qualification passages with the same source metadata are
   assessed once. The full original offer and occurrence inventory remain intact.
   Distinct priorities, levels and AND children are not merged. Priority words

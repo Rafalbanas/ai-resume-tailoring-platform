@@ -226,7 +226,14 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         passages = [{'text': quote, 'hints': [u.category for u in literal_units
                     if clean_source_line(quote) == clean_source_line(u.quote)]} for quote in quotes]
         if all(known_source_context(passage) or (not role and needs_responsibility(passage)) for passage in passages):
-            validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
+            # A sparse legacy response is not a complete disposition map. Keep
+            # its established fail-closed audit when qualification-bearing words
+            # were pulled out of context (e.g. a certification training budget).
+            # Full maps still use the bounded canonical context correction.
+            if not classified and any(REQUIREMENT_SIGNAL.search(quote) for quote in quotes):
+                validator._classification_issues.append(f'Model qualification rejected: context passage {quotes[0]}')
+            else:
+                validator._classification_corrections.append(f'Excluded model qualification from scoring: context passage {quotes[0]}')
             continue
         qualification_categories = {"mandatory", "preferred", "nice_to_have"}
         if not classified and all(
