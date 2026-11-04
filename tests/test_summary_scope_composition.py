@@ -31,9 +31,9 @@ def test_two_project_facts_have_one_scope_label_and_keep_both_citations(profile)
     project_entries = [e for e in catalog.prompt_entries if e.kind == 'project' and ':fact:' in e.source_id]
     priorities = {e.source_id: 100 - i for i, e in enumerate(project_entries)}
     text, ids = build_summary(catalog, 'AI developer\nPython HTTPX REST API JSON local models.', priorities=priorities)
-    assert text.count('Project work:') == 1
+    assert text.count('Project work includes') == 1
     for fact in facts:
-        assert fact.rstrip('.').casefold() in text.casefold()
+        assert fact.split(' ', 1)[1].rstrip('.').casefold() in text.casefold()
     assert {e.source_id for e in project_entries} <= set(ids)
     assert len(text) <= 700
 
@@ -45,9 +45,9 @@ def test_previous_employers_share_a_scope_block_not_the_current_employer(profile
     priorities = {e.source_id: 100 - i for i, e in enumerate(old)}
     text, ids = build_summary(catalog, 'Data developer\nSQL PowerShell Python automation.', priorities=priorities)
     assert text.startswith('Support Engineer at Example Ltd.')
-    assert text.count('Previous roles:') == 1
+    assert text.count('Previous roles involved') == 1
     for entry in old:
-        assert entry.text.rstrip('.').casefold() in text.casefold()
+        assert entry.text.split(' ', 1)[1].rstrip('.').casefold() in text.casefold()
         assert entry.source_id in ids
     assert not employment_scope_issue(text, catalog.valid(ids), profile)
 
@@ -80,7 +80,7 @@ def test_model_approval_does_not_allow_previous_duties_to_migrate_to_current_com
     job = JobRequest(company='Synthetic', role='Data developer', job_description='Requirements\nSQL and T-SQL operational verification.')
     checked = FactValidator(profile, review_key='synthetic-key').validate(resume, job).resume
     assert checked.professional_summary != text
-    assert 'Previous roles:' in checked.professional_summary
+    assert 'Previous roles involved' in checked.professional_summary
     assert valid_source_summary(checked, profile, 'synthetic-key')
     assert not valid_summary_attestation(checked, profile, 'synthetic-key')
     assert not employment_scope_issue(checked.professional_summary, catalog.valid(checked.summary_source_fact_ids), profile)
@@ -114,5 +114,5 @@ def test_model_approval_cannot_keep_repeated_project_labels(profile):
     resume.summary_attestation = sign_summary(resume, profile, 'synthetic-key')
     job = JobRequest(company='Synthetic', role='AI developer', job_description='Requirements\nPython HTTPX REST API local models.')
     checked = FactValidator(profile, review_key='synthetic-key').validate(resume, job).resume
-    assert checked.professional_summary.count('Project work:') == 1
+    assert checked.professional_summary.count('Project work includes') == 1
     assert not valid_summary_attestation(checked, profile, 'synthetic-key')

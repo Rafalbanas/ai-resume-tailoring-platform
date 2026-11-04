@@ -30,32 +30,36 @@ absence of competence. Model refusals/conflicting interpretations stay visible.
 
 ## Generated CV content
 
-Source-composed summaries explicitly label project facts, for example:
+Source-composed summaries use active natural wording for a small allowlist of known
+initial verbs, for example:
 
-> Support Engineer at Example Ltd. Project work: Integrated local models into a
-> FastAPI application.
+> Support Engineer at Example Ltd. Project work includes integrating local models
+> into a FastAPI application.
 
-The neutral label comes from the fact's project provenance, not from the job ad.
-It prevents an employer introduction from making project work appear to be a
-duty performed for that employer. No target occupation, invented achievement or
-new metric is added. A reviewed model summary citing project facts without
-project scope falls back to this source-composed form; a genuinely scoped natural
-summary still retains its exact-text owner-confirmation requirement.
+Other phrases like 'Previous roles involved using...' or 'Broader experience includes
+automating...' are permitted. Unknown, planned, or negated clauses retain verbatim
+neutral labels. No new facts/results are added; exact citations and the
+700-character bound are preserved.
 
 Projects are ranked by source-backed relevance to the supplied role/offer before
 secondary model-evidence priority. An unrelated citation should not put a less
 relevant academic project ahead of a more relevant backend/API project. Project
-selection remains lexical and locally computed, not a semantic-quality guarantee.
+descriptions prefer another relevant verified fact rather than copying a complete
+summary clause, only if an alternative exists; otherwise, the sole fact
+remains and the manual-preserve path is unchanged. Selection remains lexical
+and locally computed using exact/activity clause comparison, not fuzzy/semantic
+deduplication.
 
 The same factual validation, competence levels, summary signatures, mandatory
 review and PDF/DOCX layout/export checks remain in effect. These guards run
-locally and introduce no separate AI stage; existing batching, retry/recovery
+locally without a new routine AI stage; existing batching, retry/recovery
 and summary-review policies still apply. No new provider, dependency, environment
 variable or storage migration is introduced. Latency/token savings are not claimed.
 
-Deterministic source summaries group project clauses under one `Project work:`
-label, use `Previous roles:` for older employment and `Background:` for global
-facts. Summaries naming the current employer but citing earlier duties without
+Deterministic summaries keep one explicit scope block for projects, separate from
+older employment and global background. The neutral colon labels are retained only
+when a clause cannot be safely inflected.
+Summaries naming the current employer but citing earlier duties without
 explicit previous-role wording or the former employer fall back to source-composed
 text, even if signed by the model. This is a conservative, bounded heuristic,
 not complete semantic entailment.
@@ -66,6 +70,21 @@ scikit-learn models” or “using scikit-learn” remains allowed; XGBoost is n
 automatically rejected. All visible export text is checked before PDF/DOCX
 workers. Bad source wording is not automatically corrected and may block export
 pending source review.
+
+## Error handling and limits
+
+- Ollama final source-classification errors map literal quotes from completeness/
+  classification/evidence errors to all affected occurrence IDs. Only these
+  passages are retried within the existing shared analysis_recovery_calls budget. Titles,
+  tags, and duties are not forced into candidate qualifications. Conflicts
+  still fail closed if the model cannot reconcile; the system does not
+  automatically choose a category.
+- CV output_limit gets one fresh concise same-model same-output-budget retry,
+  preserving full evidence/employment/education ownership. No partial JSON is
+  accepted, and no retries are performed for context, HTTP, auth, or
+  invalid JSON failures. The bounded retry schema reduces optional detail with no
+  budget increase. This adds a call only when CV length limit occurs;
+  no new routine AI stage is introduced.
 
 ## Existing documents and use
 
@@ -86,7 +105,9 @@ employment even when it demonstrates useful transferable skills.
   tests/test_source_qualification_guards.py tests/test_llm_first_analysis.py \
   tests/test_tailoring_priorities.py tests/test_summary_confirmation.py \
   tests/test_summary_scope_composition.py tests/test_ml_terminology.py \
-  tests/test_cv_content_policy.py tests/test_ml_terminology_integration.py
+  tests/test_cv_content_policy.py tests/test_ml_terminology_integration.py \
+  tests/test_summary_editorial_quality.py tests/test_project_summary_repetition.py \
+  tests/test_generation_recovery.py
 ```
 
 The fixtures use fictional employers, profiles and offers. They cover known

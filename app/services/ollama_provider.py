@@ -334,7 +334,7 @@ class OllamaProvider(AIProvider):
                     # The incomplete JSON report itself is NEVER accepted.
                     from app.services.ollama_analysis import closed_rows
                     recovered = closed_rows(content)
-                raise OllamaAnalysisError("output_limit", "Ollama response was cut off at the output token limit; analysis is incomplete.", recovered=recovered)
+                raise OllamaAnalysisError("output_limit", "Ollama response was cut off at the output token limit; the response is incomplete.", recovered=recovered)
             if envelope.get("done") is False:
                 metrics["error_kind"] = "incomplete_response"
                 raise OllamaAnalysisError("incomplete_response", "Ollama returned a non-final response to a non-streaming request.")
@@ -401,7 +401,7 @@ class OllamaProvider(AIProvider):
                     try:
                         recovery_prompt = ""
                         if is_repair or repair:
-                            recovery_prompt = "\nTARGETED RECOVERY: These passages were previously left unassessed. Return a complete capability assessment (requirement or competency) for every candidate passage. Do not use context/responsibility for a candidate condition. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
+                            recovery_prompt = "\nTARGETED RECOVERY: Correct the supplied passages using the validation feedback and their complete source context. Assess every candidate condition as a requirement or competency; keep headings and metadata as context and actual duties as responsibilities. Repeated identical source passages must have consistent classifications and evidence. Keep unconfirmed facts missing; do not invent evidence. Minimum tenure and required language proficiency are qualifications."
                         if is_repair or repair:
                             recovery_prompt += "\nRECOVERY CONTRACT: Return {assessments: {PASSAGE_ID: assessment}}. Every supplied ID is a required key exactly once; do not return rows or repeat p inside its value. Preserve AND/OR inside components."
                         if repair_feedback:
@@ -478,17 +478,21 @@ class OllamaProvider(AIProvider):
             # Completed passages/evidence stay intact; structural source errors
             # cannot be fixed by more model calls and remain explicit failures.
             missing_quotes = set(validated.unassessed_source_passages)
-            rejected = validated.classification_issues + validated.evidence_issues
-            repair_feedback[:] = rejected + validated.completeness_issues
+            rejected = validated.classification_issues + validated.evidence_issues + validated.completeness_issues
+            repair_feedback[:] = list(dict.fromkeys(rejected))
             pending = [pid for pid, passage in inventory.passages.items()
                        if passage["text"] in missing_quotes or any(
-                           r.p == pid and r.n and r.n in issue for r in rows for issue in rejected)]
+                           issue.endswith(': ' + passage["text"]) for issue in rejected)
+                       or any(r.p == pid and r.n and r.n in issue for r in rows for issue in rejected)]
             if not pending or recovery_calls >= self.analysis_recovery_calls:
                 if pending:
                     raise coverage_error('Ollama analysis failed source coverage validation; incomplete analysis — review required.', pending)
                 raise OllamaAnalysisError('coverage', 'Ollama analysis failed source validation; review the source: ' + ' '.join(validated.completeness_issues + validated.classification_issues + validated.evidence_issues))
             for pid in pending:
-                inventory.passages[pid]["assessment_required"] = True
+                # A classification conflict can concern a title, tag or duty.
+                # Retrying it must not turn it into a scored qualification.
+                if inventory.passages[pid]["text"] in missing_quotes:
+                    inventory.passages[pid]["assessment_required"] = True
             rows[:] = [row for row in rows if row.p not in pending]
             # Smaller batches reduce repeated omissions and output pressure.
             await assess_batches([(pending, True)], repair=True)
@@ -534,17 +538,29 @@ class OllamaProvider(AIProvider):
         payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         from app.services.ollama_payload import compact_generation
         wire_payload = compact_generation(payload)
-        resume = await self._chat(
-            TailoredResume,
-            resume_system_prompt(job) + "\nInclude every employment and education owner exactly once. Bullet citations must belong to that employment. Never turn a missing requirement into expertise in the summary. "
+        prompt = (resume_system_prompt(job) + "\nInclude every employment and education owner exactly once. Bullet citations must belong to that employment. Never turn a missing requirement into expertise in the summary. "
             "For experience bullets, select facts relevant to the advertised duties. Write concise CV statements, not diagnostic anecdotes. "
-            "Preserve one-off scope, actual responsibility and proficiency; never imply repeated or advanced work from a single task. Respect tailoring_policy.",
-            wire_payload,
-            _completion_budget=self.resume_output,
-            source_catalog=payload["source_catalog"],
-            allowed_skills=allowed_skills,
-            allowed_skill_ids=allowed_skill_ids,
-        )
+            "Preserve one-off scope, actual responsibility and proficiency; never imply repeated or advanced work from a single task. Respect tailoring_policy.")
+        async def generate(*, concise=False):
+            from app.services.ollama_schema import concise_resume_schema
+            return await self._chat(
+                TailoredResume,
+                prompt + ("\nThe previous CV exceeded its output budget and was discarded. Generate a fresh concise CV, not a continuation. Keep all employment and education owners and exact citations. Use at most two short bullets per role, two relevant projects and six technologies per project. Do not repeat summary sentences in projects. Omit optional detail rather than facts' qualifications, negations or scope." if concise else ''),
+                wire_payload,
+                _completion_budget=self.resume_output,
+                _schema=concise_resume_schema() if concise else None,
+                source_catalog=payload["source_catalog"],
+                allowed_skills=allowed_skills,
+                allowed_skill_ids=allowed_skill_ids,
+            )
+        try:
+            resume = await generate()
+        except OllamaAnalysisError as exc:
+            if exc.kind != 'output_limit':
+                raise
+            # One bounded retry on the same model and budget, with the same full
+            # evidence. Never accept partial JSON or retry arbitrary failures.
+            resume = await generate(concise=True)
 
         if self.draft_review_enabled:
             from app.services.ollama_draft_review import review_draft

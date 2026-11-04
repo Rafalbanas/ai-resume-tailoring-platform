@@ -201,7 +201,7 @@ class FactValidator:
         from app.services.professional_summary import employment_scope_issue
         if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
                 or ml_terminology_issue(draft.professional_summary)
-                or len(re.findall(r'\bproject work\s*:', draft.professional_summary, re.I)) > 1
+                or len(re.findall(r'\bproject work(?:\s*:|\s+includes\b)', draft.professional_summary, re.I)) > 1
                 or project_scope_missing
                 or employment_scope_issue(draft.professional_summary, summary_entries, self.profile)
                 or (sentence_count > 5 and not reviewed)
@@ -322,7 +322,7 @@ class FactValidator:
             valid_ids = [entry.source_id for entry in entries]
             project.name = source.name
             project.url = source.url if source.url.startswith(("https://", "http://")) else ""
-            canonical_description = self._project_description(source, job)
+            canonical_description = self._project_description(source, job, summary=draft.professional_summary)
             attested_descriptions = {source.description, *source.facts}
             attested_descriptions.add(canonical_description)
             if project.description not in attested_descriptions:
@@ -331,6 +331,11 @@ class FactValidator:
                 project.description = canonical_description
             elif self.fact_priorities and project.description == source.description and not preserve_skills:
                 project.description = canonical_description
+            elif not preserve_skills and project.description != canonical_description:
+                from app.services.professional_summary import summary_contains_clause
+                if summary_contains_clause(draft.professional_summary, project.description):
+                    project.description = canonical_description
+                    warnings.append(f"Repeated summary detail replaced with other verified project evidence: {project.name}")
             project.source_fact_ids = [entry.source_id for entry in self.catalog.prompt_entries
                 if entry.kind == "project" and entry.owner_index == index and ":technology:" not in entry.source_id]
             verified_technologies = [
@@ -372,7 +377,7 @@ class FactValidator:
                     ResumeProject(
                         name=source.name,
                         url=source.url if source.url.startswith(("https://", "http://")) else "",
-                        description=self._project_description(source, job),
+                        description=self._project_description(source, job, summary=draft.professional_summary),
                         technologies=[
                             tech
                             for tech in source.technologies
@@ -505,10 +510,17 @@ class FactValidator:
         # administration. This is a bounded edit, not arbitrary paraphrasing.
         return re.sub(r"^Supported (.+) troubleshooting[.]$", r"Assisted with \1 troubleshooting.", text)
 
-    def _project_description(self, source, job: JobRequest) -> str:
+    def _project_description(self, source, job: JobRequest, *, summary: str = '') -> str:
+        from app.services.professional_summary import summary_contains_clause
         entries = [e for e in self.catalog.prompt_entries if e.kind == 'project'
-                   and e.owner_name == source.name and (':fact:' in e.source_id or ':description:' in e.source_id)]
+                    and e.owner_name == source.name and (':fact:' in e.source_id or ':description:' in e.source_id)]
         ranked = sorted(entries, key=lambda e: self._entry_relevance(e, job), reverse=True)
+        alternatives = [e for e in ranked if any(self._entry_relevance(e, job))
+                        and not summary_contains_clause(summary, e.text)]
+        # Avoid repeating summary evidence only when another relevant, verified
+        # detail exists. A project's sole description must not become empty.
+        if alternatives:
+            ranked = alternatives
         selected = []
         for entry in ranked:
             if not any(self._entry_relevance(entry, job)):
