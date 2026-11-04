@@ -52,7 +52,7 @@ def reference_schema(inventory, ids):
 
 
 async def indexed_interpretation(provider, inventory, *, validation_feedback=None):
-    pending = list(inventory.passages)
+    pending = inventory.unique_assessment_ids(list(inventory.passages))
     rows = []
     error_message = '; '.join(validation_feedback or [])
     for _attempt in range(2):

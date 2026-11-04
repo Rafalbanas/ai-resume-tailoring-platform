@@ -120,9 +120,12 @@ class AnalysisInventory:
     @classmethod
     def build(cls, job, profile, bank=None):
         from app.services.job_sections import normalize_source_layout
+        from app.services.source_dispositions import known_source_context
         layout = normalize_source_layout(job.job_description)
-        units, _ = extract_sections(layout)
+        units, headings = extract_sections(layout)
         passages = {}
+        heading_keys = {clean_source_line(h).rstrip(':').strip() for h in headings}
+        current_section = ''
         # Include unrecognized headings and all administrative/duty text, too.
         # A parser hint cannot silently remove a passage from model interpretation.
         for position, text in enumerate([job.role, *layout.splitlines()]):
@@ -130,7 +133,13 @@ class AnalysisInventory:
             if not text:
                 continue
             cleaned = clean_source_line(text)
+            if position and cleaned.rstrip(':').strip() in heading_keys:
+                current_section = cleaned.rstrip(':').strip()
             related = [u for u in units if u.quote.strip() in {text, cleaned}] if position else []
+            # The same literal may occur under different priorities. Do not
+            # combine its mandatory and preferred occurrences into one hint.
+            if len({u.section for u in related}) > 1:
+                related = [u for u in related if u.section == current_section]
             metadata = related or [u for u in units if cleaned in u.supporting_quotes]
             portal_level = bool(not related and metadata and all(
                 u.category == 'competency' and cleaned in u.supporting_quotes for u in metadata))
@@ -142,7 +151,7 @@ class AnalysisInventory:
                 "section": section,
                 # Keyword lists are presentation metadata, not qualifications.
                 # Explicit candidate conditions still override this hint below.
-                "context_only": position == 0 or portal_level or bool(hints) and set(hints) <= {"keywords"},
+                "context_only": position == 0 or portal_level or known_source_context({'text': text, 'hints': hints}),
             }
         matcher = EvidenceMatcher(FactCatalog(profile), bank)
         entries = matcher.entries
@@ -154,6 +163,28 @@ class AnalysisInventory:
             for i, e in enumerate(profile.experience)
         ]
         return cls(passages, evidence, owners, matcher, job.job_description)
+
+    def unique_assessment_ids(self, ids):
+        """Assess literal repeated qualifications once, retaining full source text.
+
+        Different source dispositions/sections stay independent. No fuzzy text
+        matching, changed levels or separate AND children are collapsed.
+        """
+        seen, result = set(), []
+        for pid in ids:
+            passage = self.passages[pid]
+            hints = set(passage.get('hints', []))
+            # Equivalent explicit qualification headings do not change an
+            # identical condition's scope. Unknown contexts remain distinct.
+            section = '' if hints and hints <= {'mandatory', 'preferred', 'nice_to_have'} else passage.get('section', '')
+            key = (passage['text'], tuple(sorted(hints)), section,
+                   passage.get('context_only', False))
+            if needs_assessment(passage):
+                if key in seen:
+                    continue
+                seen.add(key)
+            result.append(pid)
+        return result
 
     def payload(self, ids):
         from app.services.evidence_strength import evidence_strength
@@ -351,13 +382,18 @@ class AnalysisInventory:
                 "required": ["assessments"], "additionalProperties": False}
 
     def validate_rows(self, rows, ids):
+        from app.services.source_dispositions import known_source_context
         allowed = set(ids)
         if len(rows) > len(ids) * 3:
             raise OllamaAnalysisError("schema", "Ollama exceeded the bounded assessment row count.")
-        seen, valid = {}, []
+        seen, passage_keys, valid = {}, {}, []
         for row in rows:
             if row.p not in allowed:
                 raise OllamaAnalysisError("coverage", "Ollama referenced an unknown job passage.")
+            if known_source_context(self.passages[row.p]):
+                # A model cannot turn a heading/contact/interview/benefit into
+                # a qualification, including via the portable rows contract.
+                row = CompactAssessment(p=row.p, k='context')
             # An explicit minimum tenure / required language condition cannot
             # become an unweighted role tag. Correct category only; retain model
             # evidence/status for the independent factual/proficiency validator.
@@ -384,7 +420,10 @@ class AnalysisInventory:
                         "coverage", "Ollama returned conflicting duplicate assessments; review required."
                     )
                 continue
+            if row.p in passage_keys and passage_keys[row.p] != key:
+                raise OllamaAnalysisError('schema', f'Assessment {row.p} repeated a passage with different labels or dispositions; return one compound assessment with components.')
             seen[key] = row
+            passage_keys[row.p] = key
             valid.append(row)
         return valid
 
@@ -467,7 +506,8 @@ def plan_batches(inventory, output_limit, context_limit, prompt_tokens=None):
         return estimate_tokens(inventory.payload(ids)) + 1536 + output_limit
     # Keep existing deployment limits. Separate generated-output planning from
     # prompt/context reservations; batching is the escape hatch, not a bigger GPU.
-    for pid, passage in inventory.passages.items():
+    for pid in inventory.unique_assessment_ids(list(inventory.passages)):
+        passage = inventory.passages[pid]
         qualification = needs_assessment(passage)
         row_cost = 160 + min(1200, len(passage["text"]) // 6) if qualification else 100 if not passage["context_only"] else 8
         proposed = current + [pid]
@@ -537,11 +577,16 @@ def needs_assessment(passage):
     """Detect candidate capability passages left as context, not infer their status."""
     import re
 
+    from app.services.source_dispositions import polish_candidate_condition, source_heading
+    if source_heading(passage['text']):
+        return False
     if passage.get("assessment_required") or objective_condition(passage):
         return True
     text = condition_text(passage)
     if text.endswith(":") or len(text.split()) < 2:
         return False
+    if polish_candidate_condition(text):
+        return True
     if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
         r'^(?:wiedza\b|odpowiedzialność\b|głębok\w*\s+(?:inżynieryjne\s+)?zrozumieni\w*|biegłość\b)', text, re.I
     ):
@@ -581,7 +626,7 @@ def needs_responsibility(passage):
     import re
 
     return 'responsibility' in passage.get('hints', []) and bool(re.match(
-        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział)\b',
+        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział|projektowanie|budowanie|wdrażanie|rozwijanie|zapewnianie)\b',
         condition_text(passage), re.I)) and not needs_assessment(passage)
 
 
@@ -589,6 +634,13 @@ def objective_condition(passage):
     import re
 
     text = condition_text(passage)
+    from app.services.evidence_matching import required_years
+    from app.services.source_dispositions import polish_candidate_condition
+    if polish_candidate_condition(text):
+        if required_years(text) is not None and re.search(r'\bdoświadczeni\w*\b', text, re.I):
+            return True
+        if re.search(r'\bjęzyk\w*\b.*\b[ABC][12]\b', text, re.I):
+            return True
     tenure = re.match(
         r"^(?:(?:at least|minimum(?: of)?|min\.?|at minimum|co najmniej)\s+)?"
         r"\d+(?:\.\d+)?\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*"

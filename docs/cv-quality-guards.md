@@ -12,6 +12,22 @@ probability, universal ATS compatibility, or complete understanding of every off
 - Literal English/Polish minimum-tenure clauses, including numeric ranges and
   `min.` / `co najmniej`, cannot be silently classified as context. An incomplete
   disposition map remains `UNRELIABLE / RETRY`, not a high-confidence match.
+- Explicit Polish candidate predicates such as `Masz doświadczenie ... minimum
+  5 lat`, `Posiadasz praktyczne doświadczenie`, `Znasz` and `Posługujesz się
+  językiem ... B2` remain candidate conditions even if a model calls them duties.
+  Their source priority and literal minimum years are checked independently.
+- Polish prose headings for qualifications, duties, recruitment and contact
+  information delimit their own sections. Known headings and administrative
+  passages are retained as context, not scored as preferred qualifications, even
+  in a complete model disposition map. Genuine candidate conditions override an
+  inherited administrative section; these checks are not a universal classifier.
+  Sparse legacy responses retain the existing fail-closed classification audit
+  when qualification-bearing words were extracted from administrative context.
+- Identical repeated qualification passages with the same source metadata are
+  assessed once. The full original offer and occurrence inventory remain intact.
+  Distinct priorities, levels and AND children are not merged. Priority words
+  such as `optional` in a model's level field do not create a new proficiency
+  distinction or duplicate score. Conflicting interpretations still need review.
 - Model priorities are checked against the original source, independently of the
   model's own disposition map. A clear minimum in a mandatory section cannot
   become merely preferred. Genuine preferred qualifications remain optional.
@@ -107,7 +123,8 @@ employment even when it demonstrates useful transferable skills.
   tests/test_summary_scope_composition.py tests/test_ml_terminology.py \
   tests/test_cv_content_policy.py tests/test_ml_terminology_integration.py \
   tests/test_summary_editorial_quality.py tests/test_project_summary_repetition.py \
-  tests/test_generation_recovery.py
+  tests/test_generation_recovery.py tests/test_source_disposition_regressions.py \
+  tests/test_polish_source_headings.py
 ```
 
 The fixtures use fictional employers, profiles and offers. They cover known

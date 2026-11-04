@@ -388,7 +388,7 @@ class OllamaProvider(AIProvider):
         async def assess_batches(batches, *, repair=False):
             nonlocal recovery_calls
             for batch, is_repair in batches:
-                pending = batch
+                pending = inventory.unique_assessment_ids(batch)
                 while pending:
                     if is_repair or repair:
                         if recovery_calls >= self.analysis_recovery_calls:
@@ -418,7 +418,7 @@ class OllamaProvider(AIProvider):
                                 # budget as missing coverage. Never invent rows
                                 # or relax evidence validation to accept them.
                                 if recovery_calls >= self.analysis_recovery_calls:
-                                    unresolved = [pid for pid in inventory.passages
+                                    unresolved = [pid for pid in inventory.unique_assessment_ids(list(inventory.passages))
                                                   if not any(row.p == pid for row in rows)]
                                     incomplete = coverage_error(str(exc), unresolved)
                                     exc.partial_analysis = incomplete.partial_analysis
@@ -491,7 +491,8 @@ class OllamaProvider(AIProvider):
             for pid in pending:
                 # A classification conflict can concern a title, tag or duty.
                 # Retrying it must not turn it into a scored qualification.
-                if inventory.passages[pid]["text"] in missing_quotes:
+                if (inventory.passages[pid]["text"] in missing_quotes
+                        and needs_assessment(inventory.passages[pid])):
                     inventory.passages[pid]["assessment_required"] = True
             rows[:] = [row for row in rows if row.p not in pending]
             # Smaller batches reduce repeated omissions and output pressure.
