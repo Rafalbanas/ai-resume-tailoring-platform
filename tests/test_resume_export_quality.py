@@ -117,12 +117,14 @@ def test_summary_balances_employment_sql_api_language_and_projects():
         "projects": [{"name": "Integration project", "facts": ["Integrates REST API HTTP endpoints using Python, HTTPX and JSON."]}]})
     catalog = FactCatalog(p)
     text, ids = build_summary(catalog, "Technical Support Engineer\nSQL, REST API debugging and communication")
-    assert len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)) == 4
+    assert 3 <= len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)) <= 5
     assert len(text) <= 700
     for token in ["Example Telecom", "L1 and L2", "logs", "SQL", "HTTPX", "B2"]:
         assert token in text
     assert all(catalog.get(i) for i in ids)
     assert "API debugging" not in text and "B2+" not in text
+    assert 'previous roles included L1 and L2 support' not in text
+    assert 'Previous roles:' not in text
 
 
 def test_long_contacts_wrap_inside_sidebar(tmp_path, profile, resume_payload):

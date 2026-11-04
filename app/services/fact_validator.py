@@ -187,6 +187,7 @@ class FactValidator:
         sentence_count = len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", draft.professional_summary.strip()))
         from app.services.content_quality import deduplicate_bullets, deduplicate_text, quality_issues, unfinished
         from app.services.cv_content_policy import internal_annotation, networking_terminology_issue
+        from app.services.ml_terminology import ml_terminology_issue
         from app.services.summary_review import sign_source_summary, sign_summary, valid_summary_attestation
         reviewed = (all(self.catalog.get(i) for i in draft.summary_source_fact_ids)
                     and not internal_annotation(draft.professional_summary)
@@ -197,8 +198,12 @@ class FactValidator:
         project_scope_missing = any(e.kind == 'project' for e in summary_entries) and not re.search(
             r'\bproject\w*\b|\bportfolio\b|\bthesis\b|\bacademic\b|\bprojekt\w*\b',
             draft.professional_summary, re.I)
+        from app.services.professional_summary import employment_scope_issue
         if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
+                or ml_terminology_issue(draft.professional_summary)
+                or len(re.findall(r'\bproject work\s*:', draft.professional_summary, re.I)) > 1
                 or project_scope_missing
+                or employment_scope_issue(draft.professional_summary, summary_entries, self.profile)
                 or (sentence_count > 5 and not reviewed)
                 or not (reviewed or self.catalog.supports_paraphrase(draft.professional_summary, model_ids))):
             if draft.professional_summary != summary:

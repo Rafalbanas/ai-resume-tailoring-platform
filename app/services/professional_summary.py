@@ -4,6 +4,30 @@ import re
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 
 
+def employment_scope_issue(value: str, entries, profile) -> bool:
+    """An employer introduction cannot borrow another employer's cited duties.
+
+    This is a conservative presentation check, not a semantic entailment judge.
+    General background without a named current employer is left to normal review.
+    """
+    if not profile.experience:
+        return False
+    current = profile.experience[0]
+    if current.end.casefold() not in {'present', 'current', 'now', 'obecnie'}:
+        return False
+    if not re.search(r'(?<!\w)' + re.escape(current.company) + r'(?!\w)', value, re.I):
+        return False
+    if re.search(r'\b(?:previous(?:ly)?|earlier|former|prior|past roles|poprzedni\w*|wcześniej)\b', value, re.I):
+        return False
+    for entry in entries:
+        if entry.kind != 'experience' or entry.owner_index in {None, 0}:
+            continue
+        owner = profile.experience[entry.owner_index]
+        if not re.search(r'(?<!\w)' + re.escape(owner.company) + r'(?!\w)', value, re.I):
+            return True
+    return False
+
+
 def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
     """Fuse repeated verified clauses; preserve the identity and every detail.
 
@@ -41,9 +65,9 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
 
 
 def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None) -> tuple[str, list[str]]:
-    """Build up to four short sentences from attested clauses.
+    """Build concise, provenance-scoped sentences from attested clauses.
 
-    Only punctuation/capitalization and a project-scope label are composed. The one L1/L2 historical clause
+    Only punctuation/capitalization and provenance labels are composed. The one L1/L2 historical clause
     is extracted from an explicit employment support statement, never a title.
     Projects can supply integration evidence, but cannot become job experience.
     """
@@ -61,18 +85,48 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
     used = set()
     groups: list[list[str]] = [[], [], [], []]
 
+    def compose(values):
+        # Keep projects in one dedicated block: never repeat the label and never
+        # let a following employment fact inherit the project's scope.
+        def clauses(parts):
+            return '; '.join(part[0].lower() + part[1:]
+                             if i and part.startswith(('Analyzes ', 'Integrates ', 'Integrated ', 'Automates ', 'Used ', 'Provided '))
+                             else part for i, part in enumerate(parts))
+
+        sentences = []
+        for index, group in enumerate(values):
+            if not group:
+                continue
+            if index == 1:
+                scopes = {'': [], 'Previous roles: ': [], 'Background: ': []}
+                for clause in group:
+                    label = next((prefix for prefix in scopes if prefix and clause.startswith(prefix)), '')
+                    scopes[label].append(clause[len(label):])
+                sentences.extend(label + clauses(parts) + '.' for label, parts in scopes.items() if parts)
+            else:
+                sentences.append(('Project work: ' if index == 2 else '') + clauses(group) + '.')
+        return ' '.join(sentences)
+
     def add(index, entry, text=None, *, reuse=False):
         if not entry or (entry.source_id in used and not reuse):
             return
         clause = (text or entry.text).strip().rstrip(".!?")
         if entry.kind == 'project':
-            # Fact type, not the target role, establishes this scope.
-            clause = 'Project work: ' + clause
+            index = 2
+        elif index and entry.kind == 'experience':
+            index = 1
+            current = catalog.profile.experience[0] if catalog.profile.experience else None
+            if entry.owner_index != 0 or not current or current.end.casefold() not in {'present', 'current', 'now', 'obecnie'}:
+                clause = 'Previous roles: ' + clause
+        elif index in {1, 2} and entry.kind == 'summary':
+            index = 1
+            # A global profile sentence does not establish a current-employer duty.
+            clause = 'Background: ' + clause
         candidate = [list(g) for g in groups]
         candidate[index].append(clause)
-        result = " ".join("; ".join(g) + "." for g in candidate if g)
+        result = compose(candidate)
         if len(result) <= 700:
-            groups[index].append(clause[0].lower() + clause[1:] if groups[index] and clause.startswith(("Analyzes ", "Integrates ", "Automates ", "Used ", "Provided ")) else clause)
+            groups[index].append(clause)
             selected_ids.append(entry.source_id)
             used.add(entry.source_id)
 
@@ -104,9 +158,16 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
     elif support:
         add(0, next(iter(entries), None))
     if support:
-        historical = first(r"\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support", kinds={"experience"})
+        historical = next((e for e in entries if e.kind == 'experience' and e.owner_index != 0
+                           and e.source_id not in used and re.search(r'\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support', e.text, re.I)), None)
         if historical and not compact:
             add(0, historical, "previous roles included L1 and L2 support")
+        elif not compact:
+            # The same duty at the current employer stays current, rather than
+            # being dropped or relabelled as historical experience.
+            add(1, next((e for e in entries if e.kind == 'experience' and e.owner_index == 0
+                         and e.source_id not in used and re.search(
+                             r'\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support', e.text, re.I)), None))
         add(1, first(r"(?:application.*network|network.*application).*troubleshoot|troubleshoot.*(?:application.*network|network.*application)"))
         if not groups[1]:
             add(1, first(r"troubleshoot|incident", kinds={"summary", "experience"}))
@@ -152,5 +213,5 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 details += 1
                 if priority:
                     used_priorities.add(priority)
-    text = " ".join("; ".join(group) + "." for group in groups if group)
+    text = compose(groups)
     return deduplicate_summary(text, catalog), list(dict.fromkeys(selected_ids))

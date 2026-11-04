@@ -70,6 +70,7 @@ Reference CVs are style examples only. Never copy their people, employers, facts
 certifications, projects, or responsibilities unless the same fact exists in the master profile."""
 
 RESUME_TAILOR_SYSTEM_PROMPT += """
+Keep current employment, previous roles and project work explicitly separate. Do not attribute earlier employers' duties or personal/academic projects to the current employer. Group project evidence under one scope introduction, not repeated 'Project work:' labels. scikit-learn, NumPy and pandas are libraries, not model names: describe models trained using a library, not a comparison of that library as a model. Preserve actual job titles and documented facts.
 When previous_cv is supplied, use its presentation and content selection as a starting point for
 the requested changes, but it is not factual evidence. Resolve all retained claims against the
 current master profile and verified source catalog, including when tailoring a saved CV to a job."""

@@ -2,6 +2,7 @@
 import re
 
 from app.services.fact_catalog import FactCatalog
+from app.services.ml_terminology import ml_terminology_issue
 
 _INTERNAL = re.compile(
     r"\b(?:user|candidate|manually)[\s\-–—]+(?:confirmed|verified)\b"
@@ -46,7 +47,8 @@ def reviewable_bullet(bullet, profile):
 
     This is a conservative floor, not a substitute for semantic review.
     """
-    if internal_annotation(bullet.text) or networking_terminology_issue(bullet.text):
+    if (internal_annotation(bullet.text) or networking_terminology_issue(bullet.text)
+            or ml_terminology_issue(bullet.text)):
         return False
     catalog = FactCatalog(profile)
     entries = catalog.valid(bullet.source_fact_ids, kind="experience")
@@ -87,3 +89,5 @@ def check_export_content(resume):
         raise ValueError("Internal evidence annotation in CV content; export stopped.")
     if any(networking_terminology_issue(text) for text in visible):
         raise ValueError("Invalid networking terminology: static routes, NAT, DHCP and VPN are not routing protocols; export stopped.")
+    if any(ml_terminology_issue(text) for text in visible):
+        raise ValueError("Invalid ML terminology: libraries are not models; review the source wording before export.")

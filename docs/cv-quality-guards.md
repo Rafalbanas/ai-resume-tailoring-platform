@@ -53,6 +53,20 @@ locally and introduce no separate AI stage; existing batching, retry/recovery
 and summary-review policies still apply. No new provider, dependency, environment
 variable or storage migration is introduced. Latency/token savings are not claimed.
 
+Deterministic source summaries group project clauses under one `Project work:`
+label, use `Previous roles:` for older employment and `Background:` for global
+facts. Summaries naming the current employer but citing earlier duties without
+explicit previous-role wording or the former employer fall back to source-composed
+text, even if signed by the model. This is a conservative, bounded heuristic,
+not complete semantic entailment.
+
+The terminology guard catches obvious library-as-model lists and predicates for
+scikit-learn/sklearn, NumPy and pandas. Legitimate wording such as “trained
+scikit-learn models” or “using scikit-learn” remains allowed; XGBoost is not
+automatically rejected. All visible export text is checked before PDF/DOCX
+workers. Bad source wording is not automatically corrected and may block export
+pending source review.
+
 ## Existing documents and use
 
 Existing CVs, saved PDFs/DOCX, profiles and historical match reports are **not**
@@ -70,7 +84,9 @@ employment even when it demonstrates useful transferable skills.
 ```sh
 .venv/bin/pytest -q tests/test_cv_quality_guards.py \
   tests/test_source_qualification_guards.py tests/test_llm_first_analysis.py \
-  tests/test_tailoring_priorities.py tests/test_summary_confirmation.py
+  tests/test_tailoring_priorities.py tests/test_summary_confirmation.py \
+  tests/test_summary_scope_composition.py tests/test_ml_terminology.py \
+  tests/test_cv_content_policy.py tests/test_ml_terminology_integration.py
 ```
 
 The fixtures use fictional employers, profiles and offers. They cover known
