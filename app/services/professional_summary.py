@@ -12,30 +12,76 @@ _ACTIVITY_VERBS = {
     'provided': 'providing', 'provides': 'providing',
     'analyzed': 'analyzing', 'analyzes': 'analyzing',
     'built': 'building', 'maintained': 'maintaining', 'maintains': 'maintaining',
+    'tested': 'testing', 'tests': 'testing', 'deployed': 'deploying', 'deploys': 'deploying',
+}
+_FINITE_COORDINATION = {
+    'was', 'were', 'is', 'are', 'has', 'have', 'had', 'did', 'does', 'can', 'could',
+    'will', 'would', 'should', 'may', 'might', 'must', 'wrote', 'ran', 'made', 'led',
+    'read', 'set', 'kept', 'sent', 'took', 'chose', 'drove', 'gave', 'found', 'knew',
+    'went', 'got', 'met', 'put', 'let', 'cut', 'hit', 'held', 'grew', 'saw',
 }
 
 
 def activity_clause(text: str) -> str | None:
-    """Only inflect a known initial verb; never infer tense, scope or a result.
+    """Inflect a known initial verb chain with a shared object, never guess syntax.
 
     Unknown subjects, negations, plans and conditional clauses remain verbatim.
     """
     text = text.strip().rstrip('.!?')
     verb, separator, rest = text.partition(' ')
-    if (separator and verb.casefold() in _ACTIVITY_VERBS
-            and not re.match(r'(?:to|by)\b', rest, re.I)):
-        return _ACTIVITY_VERBS[verb.casefold()] + ' ' + rest
-    return None
+    if not separator or verb.casefold() not in _ACTIVITY_VERBS:
+        return None
+    activity = _ACTIVITY_VERBS[verb.casefold()]
+    # Adjacent verbs before their shared object are unambiguous. Do not convert
+    # just Built in "Built and tested ...", producing "building and tested".
+    while coordinated := re.match(r'^(and|or)\s+([A-Za-z]+)\s+(.+)$', rest, re.I):
+        connector, next_verb, remainder = coordinated.groups()
+        if next_verb.casefold() not in _ACTIVITY_VERBS:
+            return None
+        activity += ' ' + connector.lower() + ' ' + _ACTIVITY_VERBS[next_verb.casefold()]
+        rest = remainder
+    if (not rest or rest.startswith(',') or re.match(r'(?:to|by)\b', rest, re.I)
+            or re.search(r'\b(?:not|never|without|but|then|while|unless|if)\b|[.!?]\s+', rest, re.I)):
+        return None
+    # Coordination after an object is ambiguous: "and tested packages" could
+    # name an action or an adjective/object. Preserve the complete source clause
+    # instead of inflecting one verb or inventing an action on those packages.
+    for match in re.finditer(r'(?:\b(?:and|or)\b|,)\s+([A-Za-z]+)\b', rest, re.I):
+        word = match[1]
+        if (word.casefold() in _ACTIVITY_VERBS or word.casefold() in _FINITE_COORDINATION
+                or (word.islower() and word.endswith(('ed', 's')))):
+            return None
+    return activity + ' ' + rest
 
 
 def summary_contains_clause(summary: str, text: str) -> bool:
     """Compare complete literal/activity clauses, not fuzzy semantic overlap."""
     variants = [text.strip().rstrip('.!?'), activity_clause(text)]
+    return any(value and _contains_summary_clause(summary, value) for value in variants)
+
+
+def _contains_summary_clause(summary: str, value: str) -> bool:
     activities = '|'.join(sorted(set(_ACTIVITY_VERBS.values())))
     start = r'(?:^|[.!?;:]\s*|\b(?:includes|involved|and)\s+)'
     end = r'(?=[.!?;]|$| and (?:' + activities + r')\b)'
-    return any(value and re.search(start + re.escape(value) + end, summary, re.I)
-               for value in variants)
+    return bool(re.search(start + re.escape(value) + end, summary, re.I))
+
+
+def broken_activity_summary(summary: str, entries) -> bool:
+    """Reject the old first-verb-only transformation of cited source clauses.
+
+    This checks a known source-bound failure, not arbitrary English grammar.
+    Unknown syntax is rebuilt verbatim rather than approved by a model signature.
+    """
+    for entry in entries:
+        text = entry.text.strip().rstrip('.!?')
+        verb, separator, rest = text.partition(' ')
+        if not separator or verb.casefold() not in _ACTIVITY_VERBS:
+            continue
+        legacy = _ACTIVITY_VERBS[verb.casefold()] + ' ' + rest
+        if legacy != activity_clause(text) and _contains_summary_clause(summary, legacy):
+            return True
+    return False
 
 
 def employment_scope_issue(value: str, entries, profile) -> bool:

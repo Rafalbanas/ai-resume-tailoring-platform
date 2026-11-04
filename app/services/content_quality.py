@@ -102,6 +102,57 @@ def deduplicate_text(value):
     return ' '.join(result)
 
 
+_MODEL_OBJECT = r'(?:multiple|several) machine[ -]learning models'
+_THESIS_SCOPE = r'\s+(?:as part of|for|in) (?:the )?(?:MSc|Master[’\x27]?s) thesis'
+_MODEL_COMPARISON = re.compile(
+    r'\bcomparison of (?P<object>' + _MODEL_OBJECT + r')(?P<scope>' + _THESIS_SCOPE + r')?[.!?]?$', re.I)
+_MODEL_EVALUATION = re.compile(
+    r'^(?:Compared|Evaluated) (?P<object>' + _MODEL_OBJECT + r')(?P<scope>' + _THESIS_SCOPE + r')?[.!?]?$', re.I)
+_COMPARISON_QUALIFIERS = re.compile(
+    r'\b(?:no|not|never|without|only|basic|junior|intermediate|advanced|expert|academic|theoretical|planned|plans|experimental|'
+    r'production|commercial|local|locally|will|would|could|failed|failure|unsuccessful|incomplete|'
+    r'attempted|attempts|aims|intends|intended|proposed|potential)\b|\b\w+[’\x27]t\b', re.I)
+
+
+def _merge_model_comparison(nominal, action):
+    """One narrow nominal/action repetition, preserving the literal thesis scope.
+
+    No general evaluation/comparison synonym rule: metrics, named models,
+    differing objects, qualifiers and extra methods must stay separate.
+    """
+    comparison, evaluation = _MODEL_COMPARISON.search(nominal), _MODEL_EVALUATION.fullmatch(action)
+    if not comparison or not evaluation or comparison['object'].casefold() != evaluation['object'].casefold():
+        return None
+    if _COMPARISON_QUALIFIERS.search(nominal) or _COMPARISON_QUALIFIERS.search(action):
+        return None
+    if re.findall(r'\d+(?:\.\d+)?', nominal) != re.findall(r'\d+(?:\.\d+)?', action):
+        return None
+    old_scope, new_scope = comparison['scope'], evaluation['scope']
+    if old_scope and new_scope and old_scope.casefold() != new_scope.casefold():
+        return None
+    return nominal.rstrip('.!?') + (new_scope if not old_scope and new_scope else '') + '.'
+
+
+def deduplicate_project_text(value):
+    """Keep project detail, merging only a bounded repeated model-comparison clause."""
+    value = deduplicate_text(value)
+    result = []
+    for sentence in _SENTENCES.split(value) if value else []:
+        for index, prior in enumerate(result):
+            merged = _merge_model_comparison(prior, sentence) or _merge_model_comparison(sentence, prior)
+            if merged:
+                result[index] = merged
+                break
+        else:
+            result.append(sentence)
+    return ' '.join(result)
+
+
+def project_sentences(value):
+    """Use complete source sentences for selection; never trim words to a budget."""
+    return [sentence.strip() for sentence in _SENTENCES.split(value.strip()) if sentence.strip()]
+
+
 def unfinished(value):
     return bool(value.strip() and (re.search(r'\b(?:and|or|including|such as|using|with|to)[.!?]?$', value.strip(), re.I)
                                  or value.count('(') != value.count(')')))

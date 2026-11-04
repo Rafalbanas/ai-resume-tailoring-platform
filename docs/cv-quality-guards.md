@@ -57,6 +57,13 @@ automating...' are permitted. Unknown, planned, or negated clauses retain verbat
 neutral labels. No new facts/results are added; exact citations and the
 700-character bound are preserved.
 
+Activity wording inflects a known coordinated initial verb chain together:
+`Built and tested ...` becomes `building and testing ...`, not `building and
+tested ...`. Ambiguous coordination after an object, unknown verbs and qualified
+clauses retain the complete original wording under a neutral scope label.
+The old first-verb-only transformation of a cited source clause cannot be waived
+by a model summary signature. This is not a general English grammar checker.
+
 Projects are ranked by source-backed relevance to the supplied role/offer before
 secondary model-evidence priority. An unrelated citation should not put a less
 relevant academic project ahead of a more relevant backend/API project. Project
@@ -65,6 +72,19 @@ summary clause, only if an alternative exists; otherwise, the sole fact
 remains and the manual-preserve path is unchanged. Selection remains lexical
 and locally computed using exact/activity clause comparison, not fuzzy/semantic
 deduplication.
+
+Project cleanup also handles a bounded nominal/action repetition such as
+“comparison of multiple machine learning models” followed by “Evaluated multiple
+machine learning models as part of the MSc thesis”. It keeps the literal thesis
+scope in the combined description. Different methods, metrics, objects, negation,
+plans and proficiency/scope qualifiers are not treated as equivalent evidence.
+The same cleanup runs at factual validation and PDF/DOCX preparation.
+
+Generated project descriptions select at most two complete verified source
+sentences, normally within 500 characters, instead of concatenating two whole
+multi-sentence paragraphs. A sole long source sentence stays complete rather
+than being clipped. The manual-preserve path does not shorten an owner's
+paragraph, and no source facts or saved documents are rewritten.
 
 The same factual validation, competence levels, summary signatures, mandatory
 review and PDF/DOCX layout/export checks remain in effect. These guards run
@@ -124,7 +144,8 @@ employment even when it demonstrates useful transferable skills.
   tests/test_cv_content_policy.py tests/test_ml_terminology_integration.py \
   tests/test_summary_editorial_quality.py tests/test_project_summary_repetition.py \
   tests/test_generation_recovery.py tests/test_source_disposition_regressions.py \
-  tests/test_polish_source_headings.py
+  tests/test_polish_source_headings.py tests/test_coordinated_summary.py \
+  tests/test_project_editorial_cleanup.py
 ```
 
 The fixtures use fictional employers, profiles and offers. They cover known

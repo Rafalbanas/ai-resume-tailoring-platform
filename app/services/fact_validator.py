@@ -198,9 +198,10 @@ class FactValidator:
         project_scope_missing = any(e.kind == 'project' for e in summary_entries) and not re.search(
             r'\bproject\w*\b|\bportfolio\b|\bthesis\b|\bacademic\b|\bprojekt\w*\b',
             draft.professional_summary, re.I)
-        from app.services.professional_summary import employment_scope_issue
+        from app.services.professional_summary import broken_activity_summary, employment_scope_issue
         if (unfinished(draft.professional_summary) or networking_terminology_issue(draft.professional_summary)
                 or ml_terminology_issue(draft.professional_summary)
+                or broken_activity_summary(draft.professional_summary, summary_entries)
                 or len(re.findall(r'\bproject work(?:\s*:|\s+includes\b)', draft.professional_summary, re.I)) > 1
                 or project_scope_missing
                 or employment_scope_issue(draft.professional_summary, summary_entries, self.profile)
@@ -329,13 +330,18 @@ class FactValidator:
                 warnings.append(f"Project wording replaced with verified description: {project.name}")
             if project.description not in attested_descriptions:
                 project.description = canonical_description
-            elif self.fact_priorities and project.description == source.description and not preserve_skills:
+            elif project.description == source.description and not preserve_skills:
                 project.description = canonical_description
             elif not preserve_skills and project.description != canonical_description:
                 from app.services.professional_summary import summary_contains_clause
                 if summary_contains_clause(draft.professional_summary, project.description):
                     project.description = canonical_description
                     warnings.append(f"Repeated summary detail replaced with other verified project evidence: {project.name}")
+            from app.services.content_quality import project_sentences
+            sentences = project_sentences(project.description)
+            if not preserve_skills and (len(sentences) > 2 or (len(sentences) > 1 and len(project.description) > 500)):
+                project.description = canonical_description
+                warnings.append(f"Long project paragraph condensed using complete verified source sentences: {project.name}")
             project.source_fact_ids = [entry.source_id for entry in self.catalog.prompt_entries
                 if entry.kind == "project" and entry.owner_index == index and ":technology:" not in entry.source_id]
             verified_technologies = [
@@ -498,7 +504,8 @@ class FactValidator:
         draft.certifications = clean_certs
         warnings.extend(self._coverage_warnings(draft, job))
         for project in draft.projects:
-            project.description = deduplicate_text(project.description)
+            from app.services.content_quality import deduplicate_project_text
+            project.description = deduplicate_project_text(project.description)
         for experience in draft.experience:
             experience.bullets = deduplicate_bullets(experience.bullets)
         warnings.extend(quality_issues(draft, self.profile))
@@ -511,28 +518,39 @@ class FactValidator:
         return re.sub(r"^Supported (.+) troubleshooting[.]$", r"Assisted with \1 troubleshooting.", text)
 
     def _project_description(self, source, job: JobRequest, *, summary: str = '') -> str:
+        from app.services.content_quality import deduplicate_project_text, project_sentences
         from app.services.professional_summary import summary_contains_clause
         entries = [e for e in self.catalog.prompt_entries if e.kind == 'project'
                     and e.owner_name == source.name and (':fact:' in e.source_id or ':description:' in e.source_id)]
         ranked = sorted(entries, key=lambda e: self._entry_relevance(e, job), reverse=True)
-        alternatives = [e for e in ranked if any(self._entry_relevance(e, job))
-                        and not summary_contains_clause(summary, e.text)]
+        # A source description can contain several sentences. Select sentences,
+        # not two whole paragraphs that accidentally expand into six sentences.
+        candidates = [sentence for entry in ranked if any(self._entry_relevance(entry, job))
+                      for sentence in project_sentences(entry.text)]
+        alternatives = [sentence for sentence in candidates if not summary_contains_clause(summary, sentence)]
         # Avoid repeating summary evidence only when another relevant, verified
         # detail exists. A project's sole description must not become empty.
         if alternatives:
-            ranked = alternatives
+            candidates = alternatives
         selected = []
-        for entry in ranked:
-            if not any(self._entry_relevance(entry, job)):
+        for sentence in candidates:
+            if sentence in selected:
                 continue
-            if entry.text.strip() and entry.text not in selected:
-                candidate = ' '.join([*selected, entry.text])
-                if len(candidate) <= 500 or not selected:
-                    selected.append(self._complete_sentence(entry.text))
-            if len(selected) == 2:
+            candidate = deduplicate_project_text(' '.join([*selected, self._complete_sentence(sentence)]))
+            if len(candidate) <= 500 or not selected:
+                selected = project_sentences(candidate)
+            if len(selected) >= 2:
                 break
-        from app.services.content_quality import deduplicate_text
-        return deduplicate_text(' '.join(selected) or source.description or ' '.join(source.facts[:2]))
+        if not selected:
+            # No literal role overlap: remain concise, but never replace a sole
+            # complete long fact with a clipped or invented sentence.
+            fallback = source.description or ' '.join(source.facts)
+            for sentence in project_sentences(deduplicate_project_text(fallback)):
+                if len(' '.join([*selected, sentence])) <= 500 or not selected:
+                    selected.append(self._complete_sentence(sentence))
+                if len(selected) >= 2:
+                    break
+        return deduplicate_project_text(' '.join(selected))
 
     def _coverage_warnings(self, resume: TailoredResume, job: JobRequest) -> list[str]:
         """Compare confirmed employer requirements against actual exported content.
