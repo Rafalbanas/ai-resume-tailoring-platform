@@ -3,8 +3,9 @@ import pytest
 from app.models.job import JobRequest
 from app.models.resume import TailoredResume
 from app.services.cv_content_policy import check_export_content, networking_terminology_issue
+from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
-from app.services.summary_review import sign_summary
+from app.services.summary_review import sign_summary, valid_source_summary, valid_summary_attestation
 
 
 @pytest.mark.parametrize('text', [
@@ -39,4 +40,11 @@ def test_signed_model_summary_cannot_bypass_terminology_validation(profile, resu
     job = JobRequest(company='Example', role='Support', job_description='Requirements: Python operational automation and support.')
     result = FactValidator(profile, review_key='secret').validate(resume, job).resume
     assert 'routing protocols' not in result.professional_summary
-    assert result.professional_summary.endswith(profile.summary_facts[0])
+    expected = 'Support Engineer at Example Ltd. Broader experience includes automating repeatable infrastructure and support workflows with Python.'
+    assert result.professional_summary.endswith(expected)
+
+    catalog = FactCatalog(profile)
+    summary_entry = next(e for e in catalog.prompt_entries if e.kind == 'summary' and e.text == profile.summary_facts[0])
+    assert summary_entry.source_id in result.summary_source_fact_ids
+    assert valid_source_summary(result, profile, 'secret')
+    assert not valid_summary_attestation(result, profile, 'secret')
