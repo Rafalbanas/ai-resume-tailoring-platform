@@ -48,8 +48,10 @@ relevant academic project ahead of a more relevant backend/API project. Project
 selection remains lexical and locally computed, not a semantic-quality guarantee.
 
 The same factual validation, competence levels, summary signatures, mandatory
-review and PDF/DOCX layout/export checks remain in effect. No additional AI call,
-provider, dependency, environment variable or storage migration is introduced.
+review and PDF/DOCX layout/export checks remain in effect. These guards run
+locally and introduce no separate AI stage; existing batching, retry/recovery
+and summary-review policies still apply. No new provider, dependency, environment
+variable or storage migration is introduced. Latency/token savings are not claimed.
 
 ## Existing documents and use
 
