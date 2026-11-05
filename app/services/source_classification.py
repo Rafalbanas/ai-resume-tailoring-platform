@@ -51,6 +51,11 @@ def model_source_units(candidate, text):
             from app.services.ollama_analysis import assessment_priority, needs_assessment, needs_responsibility
             literal_category, literal_row, literal_name = category, row, name
             passage = {'text': literal, 'hints': list(source_hints.get(clean_source_line(literal), []))}
+            if row is not None:
+                from app.services.source_scope import source_alignment_issue
+                alignment_issue = source_alignment_issue(name, literal)
+                if alignment_issue:
+                    issues.append(alignment_issue)
             if clean_source_line(literal) in portal_levels or known_source_context(passage):
                 # Portal levels and known administrative text have canonical
                 # context dispositions. Preserve literal coverage without

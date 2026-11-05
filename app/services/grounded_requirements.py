@@ -378,10 +378,20 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result.requirements = requirements
     # Metadata indexes reflect the selected, validated requirements, not stale
     # heuristic classifications constructed for legacy/source-review coverage.
-    sources = {r.name:r.source_fact_ids for r in requirements}
     for req in requirements:
+        from app.services.named_evidence import apply_source_ceiling
+        from app.services.source_scope import apply_availability, language_query
+        lookup = {entry.source_id: entry for entry in validator.matcher.entries}
+        apply_source_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup])
+        language = validator.matcher._language(language_query(req.source_quote))
+        if req.status == RequirementStatus.STRONG and language is not None and language.status != RequirementStatus.STRONG:
+            req.status = language.status
+            if language.reason not in req.reason:
+                req.reason += ' ' + language.reason
+        apply_availability(req)
         if req.status != RequirementStatus.STRONG or req.interpretation_uncertain:
             req.clarification_needed = req.reason
+    sources = {r.name:r.source_fact_ids for r in requirements}
     scoring_seen = {}
     for req in requirements:
         key = (req.priority, req.scoring_key)

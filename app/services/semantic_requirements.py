@@ -115,9 +115,11 @@ def language_check_name(name, level):
 def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=False):
     from app.services.competency_scope import scoped_match
     from app.services.evidence_strength import CI
-    scoped = None if aggregate else scoped_match(validator.matcher, item.name)
+    source_quote = getattr(item, 'source_quote', '')
+    query = source_quote if re.search(r'\bsuch as\b|\bfor example\b|\btakich jak\b|\be\.g\.|\bnp\.', source_quote, re.I) else item.name
+    scoped = None if aggregate else scoped_match(validator.matcher, query)
     if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia|ticketing|tickets?|support cases)\b', item.name, re.I)):
-        scoped = validator.matcher.match(item.name)
+        scoped = validator.matcher.match(query)
     original_status, original_ids = item.status, list(item.source_fact_ids)
     if aggregate and item.status == Status.STRONG:
         parent_scope = scoped_match(validator.matcher, item.name)
@@ -130,6 +132,10 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
         item.status = scoped.status
         item.source_fact_ids = [e.source_id for e in scoped.entries]
         item.reason = scoped.reason
+        from app.services.named_evidence import literal_scope_entries
+        cited = [e for e in validator.matcher.entries if e.source_id in original_ids]
+        literal = literal_scope_entries(getattr(item, 'source_quote', '') or item.name, cited)
+        item.source_fact_ids = list(dict.fromkeys(item.source_fact_ids + [e.source_id for e in literal]))
     lookup = {e.source_id: e for e in validator.matcher.entries}
     entries = [lookup[i] for i in dict.fromkeys(item.source_fact_ids) if i in lookup and lookup[i].kind != "interest"]
     item.source_fact_ids = [e.source_id for e in entries]
@@ -185,11 +191,6 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
         item.reason += " " + ceiling[1]
     # Check the literal quote as well as the model label. General CI/CD, AD,
     # virtualization or unit tests cannot prove named platform/test conditions.
-    from app.services.named_evidence import named_scope_ceiling
-    named_ceiling = named_scope_ceiling(getattr(item, 'source_quote', '') or item.name, entries)
-    if named_ceiling and item.status == Status.STRONG:
-        item.status = Status(named_ceiling[0])
-        item.reason += ' ' + named_ceiling[1]
     if hasattr(item, "required_level") and not aggregate:
         language_name = language_check_name(item.name, item.required_level)
         language = validator.matcher._language(language_name)
@@ -200,6 +201,8 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
             item.evidence_sources = validator.matcher.sources(item.source_fact_ids)
             item.evidence = [e["fact"] for e in item.evidence_sources]
             item.reason += " " + language.reason
+    from app.services.named_evidence import apply_source_ceiling
+    apply_source_ceiling(item, entries)
     if original_status == Status.STRONG and item.status != Status.STRONG:
         validator._evidence_issues.append(f'Unsupported model confirmation corrected: {item.name}.')
     if set(original_ids) - set(item.source_fact_ids):
@@ -261,6 +264,11 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             continue
         req.source_quote = quotes[0]
         req.source_quotes = list(dict.fromkeys(quotes))
+        from app.services.source_scope import source_alignment_issue
+        alignment_issue = source_alignment_issue(req.name, req.source_quote)
+        if alignment_issue:
+            validator._classification_issues.append(alignment_issue)
+            req.interpretation_uncertain = True
         req.interpretation_origin = "llm"
         req.source_section = req.source_section or next(
             (u.section for u in units if clean_source_line(req.source_quote) in clean_source_line(u.quote)), "Unsectioned source"
@@ -447,6 +455,10 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
             req.evidence = [e["fact"] for e in req.evidence_sources]
             req.reason += " " + language.reason
+        from app.services.named_evidence import apply_source_ceiling
+        apply_source_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup])
+        from app.services.source_scope import apply_availability
+        apply_availability(req)
         req.required_level = req.required_level or required_level(req.name)
         req.scoring_key = scoring_key(req.name)
         req.source_quotes = list(dict.fromkeys([req.source_quote, *req.source_quotes]))

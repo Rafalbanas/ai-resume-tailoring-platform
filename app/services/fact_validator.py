@@ -661,7 +661,9 @@ class FactValidator:
         tech_role_overlap = len(role_tokens & tech_tokens)
         tech_job_overlap = len(job_tokens & tech_tokens)
         fact_overlap = len(job_tokens & fact_tokens)
-        return 8 * tech_role_overlap + 4 * tech_job_overlap + 2 * fact_overlap
+        from app.services.role_focus import role_focus_score
+        focus = role_focus_score(' '.join(facts), job.role)
+        return 100 * focus + 8 * tech_role_overlap + 4 * tech_job_overlap + 2 * fact_overlap
 
     def _rank_projects(self, projects: list[ResumeProject], job: JobRequest) -> list[ResumeProject]:
         profile_projects = {project.name.casefold(): project for project in self.profile.projects}

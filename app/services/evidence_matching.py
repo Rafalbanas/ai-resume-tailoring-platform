@@ -325,6 +325,15 @@ class EvidenceMatcher:
         return self._qualified(name, evidenced or related, complete, reason)
 
     def match(self, name: str, *, alternatives: list[str] | None = None, operator='single') -> EvidenceMatch | None:
+        result = self._match(name, alternatives=alternatives, operator=operator)
+        if result is not None and result.status == Status.STRONG:
+            from app.services.named_evidence import named_scope_ceiling
+            ceiling = named_scope_ceiling(name, result.entries)
+            if ceiling:
+                result.status, result.reason = Status(ceiling[0]), ceiling[1]
+        return result
+
+    def _match(self, name: str, *, alternatives: list[str] | None = None, operator='single') -> EvidenceMatch | None:
         from app.services.competency_scope import atomic_parts, scoped_match
         parts = atomic_parts(name) if not alternatives else []
         if parts:
