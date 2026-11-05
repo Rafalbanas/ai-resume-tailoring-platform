@@ -63,7 +63,8 @@ async def run_batch(manager, task, state):
                 if spec.export:
                     try:
                         async with state.resource_budget.mutation_slots:
-                            slug = await export_draft(state, child.result['draft_id'], template_name=spec.template_name)
+                            slug = await export_draft(state, child.result['draft_id'], template_name=spec.template_name,
+                                                      require_reliable_analysis=True)
                         item.update(status='completed', slug=slug, preview_url=f'/preview/{slug}',
                                     pdf_url=f'/download/{slug}/pdf', docx_url=f'/download/{slug}/docx')
                     except (ValueError, HTTPException) as exc:

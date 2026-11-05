@@ -116,7 +116,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     from app.services.competency_scope import scoped_match
     from app.services.evidence_strength import CI
     scoped = None if aggregate else scoped_match(validator.matcher, item.name)
-    if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia)\b', item.name, re.I)):
+    if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia|ticketing|tickets?|support cases)\b', item.name, re.I)):
         scoped = validator.matcher.match(item.name)
     original_status, original_ids = item.status, list(item.source_fact_ids)
     if aggregate and item.status == Status.STRONG:
@@ -183,6 +183,13 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     if ceiling and item.status == Status.STRONG and ceiling[0] != "strong":
         item.status = Status(ceiling[0])
         item.reason += " " + ceiling[1]
+    # Check the literal quote as well as the model label. General CI/CD, AD,
+    # virtualization or unit tests cannot prove named platform/test conditions.
+    from app.services.named_evidence import named_scope_ceiling
+    named_ceiling = named_scope_ceiling(getattr(item, 'source_quote', '') or item.name, entries)
+    if named_ceiling and item.status == Status.STRONG:
+        item.status = Status(named_ceiling[0])
+        item.reason += ' ' + named_ceiling[1]
     if hasattr(item, "required_level") and not aggregate:
         language_name = language_check_name(item.name, item.required_level)
         language = validator.matcher._language(language_name)

@@ -305,4 +305,11 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 if priority:
                     used_priorities.add(priority)
     text = compose(groups)
-    return deduplicate_summary(text, catalog), list(dict.fromkeys(selected_ids))
+    text = deduplicate_summary(text, catalog)
+    if not compact and len(text) > 500:
+        # Prefer the existing source-bound compact composition over a catalogue
+        # of every support fact. Never slice a sentence or invent shorter prose.
+        shorter, shorter_ids = build_summary(catalog, role, compact=True, priorities=priorities)
+        if shorter and len(shorter) < len(text):
+            return shorter, shorter_ids
+    return text, list(dict.fromkeys(selected_ids))

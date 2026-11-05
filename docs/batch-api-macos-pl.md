@@ -10,7 +10,7 @@ Jedno wysłanie pliku uruchamia kolejno analizę każdej wskazanej oferty i gene
 ## Przygotowanie
 Utwórz plik `oferty.txt` z listą URL (jeden na linię).
 
-Plik musi mieć kodowanie UTF-8, maksymalnie **64 KiB i 20 wejściowych adresów** (limit przed usunięciem powtórzeń). API usuwa kanoniczne duplikaty; akceptuje też adresy rozdzielone spacjami. Przykład formatu — zastąp fikcyjne adresy rzeczywistymi ofertami:
+Plik musi mieć kodowanie UTF-8, maksymalnie **64 KiB i 50 wejściowych adresów** (limit przed usunięciem powtórzeń). API usuwa kanoniczne duplikaty; akceptuje też adresy rozdzielone spacjami. Przykład formatu — zastąp fikcyjne adresy rzeczywistymi ofertami:
 
 ```text
 https://example.com/jobs/support-engineer

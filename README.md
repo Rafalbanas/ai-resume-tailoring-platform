@@ -8,7 +8,7 @@ See the [documentation index](docs/README.md) for setup, operations, feature gui
 
 > [!IMPORTANT]
 > **Essential Operating Principles & Disclaimers:**
-> - **Explicitly selected postings only**: CVTailor fetches and analyzes user-provided postings, individually or through the bounded [batch API](docs/batch-api.md) (up to 20 URLs, processed sequentially). It does **not** discover offers or crawl job portals en masse.
+> - **Explicitly selected postings only**: CVTailor fetches and analyzes user-provided postings, individually or through the bounded [batch API](docs/batch-api.md) (up to 50 URLs, processed sequentially). It does **not** discover offers or crawl job portals en masse.
 > - **Documented evidence assessment, not hiring probability**: Match scores (`HIGH` / `MEDIUM` / `LOW` / `UNRELIABLE`) and recommendations (`APPLY` / `REASONABLE STRETCH` / `SKIP` / `RETRY` / `REVIEW`) evaluate alignment between job requirements and documented facts in the candidate profile. They do **not** represent probability of employment or an official ATS ranking.
 > - **Separation of qualification match from role alignment**: Qualification scoring assesses documented competencies against required skills, while role recommendations incorporate seniority fit, domain context, and requirement completeness.
 > - **Fact validation bounds claims, not guarantees zero errors**: With Truth Lock enabled, the Python-side validator eliminates ungrounded statements and unverified skills by mapping claims back to verified profile facts. A document-specific manual editing switch is available for owner-authored CVs. However, human review of the analysis, profile facts, and rendered exports is always required before submitting an application.

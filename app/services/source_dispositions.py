@@ -27,6 +27,10 @@ _ADMIN = re.compile(
     r'^(?:skontaktuj\s+się\s+(?:z\s+nami|ze\s+mną|z\s+(?:naszym\s+)?rekruterem)\b|'
     r'skontaktujemy\s+się\s+(?:tylko\s+)?z\s+wybranymi\b|'
     r'contact\s+(?:us|our\s+recruiter)\b|only\s+(?:selected|shortlisted)\s+candidates\s+will\s+be\s+contacted\b)', re.I)
+_ORGANIZATION = re.compile(
+    r'^(?:jesteśmy\b|nasza\s+(?:firma|spółka|organizacja)\b|marka\s+obecna\b|'
+    r'we\s+(?:are\s+(?!looking\s+for|seeking)|have\b|believe\b|build\b|operate\b)|'
+    r'our\s+(?:company|team|business)\b)', re.I)
 
 
 def polish_candidate_condition(text: str) -> bool:
@@ -50,4 +54,5 @@ def known_source_context(passage) -> bool:
     if set(passage.get('hints', [])) & {'recruitment', 'benefits', 'employment', 'keywords'}:
         return True
     line = clean_source_line(passage['text'])
-    return bool(_ADMIN.match(line) or re.fullmatch(r'[\w.+-]+@[\w.-]+\.\w{2,}', line))
+    return bool(_ADMIN.match(line) or ('organization' in passage.get('hints', []) and _ORGANIZATION.match(line))
+                or re.fullmatch(r'[\w.+-]+@[\w.-]+\.\w{2,}', line))

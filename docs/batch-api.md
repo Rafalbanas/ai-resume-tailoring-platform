@@ -13,7 +13,8 @@ tokens or anonymous access. Use HTTPS outside local development. Protect cookie
 files: they grant account access. Do not commit cookies, URL lists or generated CVs.
 
 Prepare a UTF-8 TXT file (optional BOM), one URL per line or whitespace-separated.
-Maximum: 20 input URLs, 64 KiB. Canonical duplicates are processed once, in order.
+Maximum: 50 input URLs, 64 KiB. Canonical duplicates are processed once, in order.
+The URL bound applies before deduplication; there is no unbounded bulk mode.
 Invalid tokens, credentials in URLs and fragments are **rejected**, not stripped.
 
 ```sh
