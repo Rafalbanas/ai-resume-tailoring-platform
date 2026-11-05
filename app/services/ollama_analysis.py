@@ -109,6 +109,14 @@ models do not prove load or performance testing. Preserve these named scopes eve
 when using a short capability label. Salesforce support-case handling can support
 generic ticketing-system experience; "such as Zendesk" is an example, not an exclusive product.
 Company history (e.g. active since 1996) is context, never candidate tenure.
+The capability label must describe its OWN passage, never a neighboring passage.
+Evaluate the full literal condition, not a broader short label. AWS + Docker +
+CI/CD needs AWS evidence; XML + JSON needs both formats. DNS/VPN does not prove
+NSGs, Private Endpoints or ExpressRoute. Deployment health checks do not prove
+LLM observability. API/SQL use does not prove ETL platform experience. Personal
+projects do not establish customer project leadership, business results or tight
+deadlines. Work shifts/on-site availability always need the owner's confirmation,
+never infer them from analytical ability or other technical facts.
 B2/daily English does not establish fluency. Missing evidence is missing, not absent;
 absent requires explicit negative evidence. No records or no listed certification MUST be missing, NEVER absent. Titles/employers and job text are not candidate facts.
 Do not invent IDs, omit qualifications, assess the same capability twice, or add facts.
@@ -382,6 +390,46 @@ class AnalysisInventory:
                     row['properties']['yrs'] = {'type': 'null'} if years is None else {'type': 'number', 'enum': [years]}
                     definitions[years_kind] = row
                 kind = years_kind
+            from app.services.named_evidence import named_scope_ceiling
+            from app.services.source_scope import AVAILABILITY, AVAILABILITY_REASON, language_query
+            named_limit = named_scope_ceiling(passage['text'], list(self.evidence.values())) if assessable else None
+            language = self.matcher._language(language_query(passage['text'])) if assessable else None
+            if named_limit or (language is not None and language.status != RequirementStatus.STRONG):
+                ceiling_kind = f'{kind}_SourceCeiling_{pid}'
+                row = deepcopy(definitions[kind])
+                status = row['properties']['s']
+                allowed = status.get('enum', definitions.get(status.get('$ref', '').split('/')[-1], {}).get('enum', []))
+                row['properties']['s'] = {'type': 'string', 'enum': [s for s in allowed if s != 'strong']}
+                definitions[ceiling_kind] = row
+                kind = ceiling_kind
+            if assessable and AVAILABILITY.search(passage['text']):
+                availability_kind = f'Availability_{pid}'
+                row = deepcopy(definitions[kind])
+                label = passage['text'] if len(passage['text']) <= 120 else 'Work arrangement availability'
+                row['properties']['n'] = {'type': 'string', 'enum': [label]}
+                row['properties']['s'] = {'type': 'string', 'enum': ['missing']}
+                row['properties']['why'] = {'type': 'string', 'enum': [AVAILABILITY_REASON]}
+                for field in ('f', 'c'):
+                    row['properties'][field]['maxItems'] = 0
+                definitions[availability_kind] = row
+                kind = availability_kind
+            elif assessable and len(passage['text']) <= 120 and re.search(r'\b(?:IT support|ticketing systems?|support tickets?)\b', passage['text'], re.I):
+                # Use the same literal query and facts as independent validation.
+                # This avoids retrying valid rows merely because a broad label
+                # chose a different citation set (or erased an ITIL conjunct).
+                match = self.matcher.match(passage['text'])
+                if match is not None:
+                    from app.services.named_evidence import literal_scope_entries
+                    entries = match.entries + literal_scope_entries(passage['text'], self.matcher.entries)
+                    sources = {entry.source_id for entry in entries}
+                    ids_for_scope = [fid for fid, entry in self.evidence.items() if entry.source_id in sources]
+                    citation_kind = f'{kind}_Citations_{pid}'
+                    row = deepcopy(definitions[kind])
+                    row['properties']['n'] = {'type': 'string', 'enum': [passage['text']]}
+                    row['properties']['f'] = {'type': 'array', 'items': {'type': 'string', 'enum': ids_for_scope}} if ids_for_scope else {
+                        'type': 'array', 'items': {'type': 'string'}, 'maxItems': 0}
+                    definitions[citation_kind] = row
+                    kind = citation_kind
             properties[pid] = {"$ref": f"#/$defs/{kind}"}
         return {"type": "object", "$defs": definitions,
                 "properties": {"assessments": {"type": "object", "properties": properties, "required": ids, "additionalProperties": False}},
@@ -414,6 +462,14 @@ class AnalysisInventory:
                 row.priority = expected_priority
             if row.k in {"requirement", "competency"} and (not row.n.strip() or not row.why.strip()):
                 raise OllamaAnalysisError("schema", f"Assessment {row.p} omitted a non-blank capability label (n) or evidence explanation (why).")
+            if row.k in {'requirement', 'competency'}:
+                from app.services.source_scope import AVAILABILITY, AVAILABILITY_REASON, source_alignment_issue
+                issue = source_alignment_issue(row.n, self.passages[row.p]['text'])
+                if issue:
+                    raise OllamaAnalysisError('schema', f'Assessment {row.p}: {issue}')
+                if AVAILABILITY.search(self.passages[row.p]['text']):
+                    row = row.model_copy(update={'n': self.passages[row.p]['text'], 's': RequirementStatus.MISSING,
+                                                 'f': [], 'c': [], 'why': AVAILABILITY_REASON})
             if row.k == 'context' and needs_responsibility(self.passages[row.p]):
                 raise OllamaAnalysisError('schema', f'Assessment {row.p} must preserve the explicit responsibility, not context.')
             refs = row.f + [i for c in row.c for i in c.f]
@@ -600,6 +656,9 @@ def needs_assessment(passage):
         r'(?:a\s+)?consultative\s+mindset|outstanding\s+(?:written|verbal)|strong\s+proficiency)\b', text, re.I
     ):
         return True
+    if re.match(r'^(?:podstaw\w*\s+(?:działania\s+sieci|wiedz\w*\s+o\s+\S)|'
+                r'certyfikat\w*\s+z\s+obszaru\s+\S|exposure\s+to\s+\S)', text, re.I):
+        return True
     if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
         r'^(?:wiedza\b|odpowiedzialność\b|głębok\w*\s+(?:inżynieryjne\s+)?zrozumieni\w*|biegłość\b)', text, re.I
     ):
@@ -639,7 +698,7 @@ def needs_responsibility(passage):
     import re
 
     return 'responsibility' in passage.get('hints', []) and bool(re.match(
-        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział|projektowanie|budowanie|wdrażanie|rozwijanie|zapewnianie)\b',
+        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział|projektowanie|budowanie|wdrażanie|rozwijanie|zapewnianie|uczestniczenie|przyjmowanie|obsługiwanie|reagowanie|wspieranie|poszukiwanie|przygotowywanie)\b',
         condition_text(passage), re.I)) and not needs_assessment(passage)
 
 
@@ -666,4 +725,5 @@ def objective_condition(passage):
         r'experience\s+(?:in|with|of)\b', text, re.I)
     required_language = (re.search(r'\b(?:English|Polish|German|French|Spanish|language)\b', text, re.I)
                          and re.search(r'\b(?:is|are) required\b', text, re.I))
-    return bool(tenure or language or prior_practice or required_language)
+    explicit_mindset = re.match(r'^(?:a\s+)?consultative\s+mindset\b', text, re.I)
+    return bool(tenure or language or prior_practice or required_language or explicit_mindset)

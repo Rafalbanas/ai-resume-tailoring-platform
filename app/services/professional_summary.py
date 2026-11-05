@@ -13,6 +13,7 @@ _ACTIVITY_VERBS = {
     'analyzed': 'analyzing', 'analyzes': 'analyzing',
     'built': 'building', 'maintained': 'maintaining', 'maintains': 'maintaining',
     'tested': 'testing', 'tests': 'testing', 'deployed': 'deploying', 'deploys': 'deploying',
+    'completed': 'completing', 'evaluated': 'evaluating', 'compared': 'comparing',
 }
 _FINITE_COORDINATION = {
     'was', 'were', 'is', 'are', 'has', 'have', 'had', 'did', 'does', 'can', 'could',
@@ -57,6 +58,8 @@ def activity_clause(text: str) -> str | None:
 def summary_contains_clause(summary: str, text: str) -> bool:
     """Compare complete literal/activity clauses, not fuzzy semantic overlap."""
     variants = [text.strip().rstrip('.!?'), activity_clause(text)]
+    if text.startswith('Experienced in '):
+        variants.append(text[len('Experienced in '):].strip().rstrip('.!?'))
     return any(value and _contains_summary_clause(summary, value) for value in variants)
 
 
@@ -151,8 +154,10 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
     is extracted from an explicit employment support statement, never a title.
     Projects can supply integration evidence, but cannot become job experience.
     """
+    from app.services.role_focus import role_focus_score
     entries = [e for e in catalog.prompt_entries
-               if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)]
+               if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)
+               or (e.kind == 'project' and ':description:' in e.source_id and role_focus_score(e.text, role))]
     entries = [e for e in entries if not re.search(r"\byears?\b|\blat\b", e.text, re.I)]
     from app.services.job_sections import relevance_text
     tokens = normalized_tokens(relevance_text(role))
@@ -175,6 +180,8 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
 
         sentences = []
         def scoped(label, parts):
+            if label == 'Background: ' and len(parts) == 1 and parts[0].startswith('Experienced in '):
+                return 'Broader experience includes ' + parts[0][len('Experienced in '):] + '.'
             activities = [activity_clause(part) for part in parts]
             lead = {'Project work: ': 'Project work includes ',
                     'Previous roles: ': 'Previous roles involved ',
@@ -216,7 +223,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         candidate = [list(g) for g in groups]
         candidate[index].append(clause)
         result = compose(candidate)
-        if len(result) <= 700:
+        if len(result) <= (500 if compact else 700):
             groups[index].append(clause)
             selected_ids.append(entry.source_id)
             used.add(entry.source_id)
@@ -286,11 +293,17 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             if fact:
                 identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
                 add(0, fact, identity)
-        ranked = sorted(entries, key=lambda e: ((priorities or {}).get(e.source_id, 0), len(normalized_tokens(e.text) & tokens)), reverse=True)
+        ranked = sorted(entries, key=lambda e: (bool(role_focus_score(e.text, role)),
+                                                (priorities or {}).get(e.source_id, 0),
+                                                role_focus_score(e.text, role),
+                                                len(normalized_tokens(e.text) & tokens)), reverse=True)
         used_priorities = set()
         details = 0
+        focused = any(role_focus_score(e.text, role) for e in ranked)
         for entry in ranked:
             if entry.source_id in used:
+                continue
+            if focused and not role_focus_score(entry.text, role):
                 continue
             if details >= (2 if groups[0] else 3):
                 break

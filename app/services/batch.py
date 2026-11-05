@@ -8,7 +8,9 @@ from fastapi import HTTPException
 
 from app.models.batch import BatchRequest
 from app.models.job import JobRequest
+from app.services.ai_provider import AIProviderError
 from app.services.draft_export import export_draft
+from app.services.ollama_analysis import OllamaAnalysisError
 from app.services.task_manager import TaskKind, TaskRecord, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,20 @@ async def run_batch(manager, task, state):
         except asyncio.CancelledError:
             item.update(status='failed', error='Processing interrupted; saved results remain available.')
             raise
+        except AIProviderError as exc:
+            validation = isinstance(exc, OllamaAnalysisError) and exc.kind in {'coverage', 'evidence'}
+            message = ('Analysis could not be validated against the source and candidate evidence. Review diagnostics before retrying.'
+                       if validation else 'AI provider processing failed. Review diagnostics before retrying.')
+            item.update(status='failed', error=message,
+                        error_code='analysis_validation' if validation else 'provider_error')
+            if child and not item.get('draft_id'):
+                child = manager.get_task(child.task_id) or child
+                child.status = TaskStatus.FAILED
+                child.completed_at = now()
+                child.error = message
+                child.error_status_code = 502
+                child.stage = 'Analysis validation failed' if validation else 'AI provider failed'
+                manager._save_task(child)
         except Exception as exc:
             logger.warning('Batch %s item %s failed (%s)', task.task_id, index, type(exc).__name__)
             message = ('Offer execution deadline exceeded; retry this URL.' if isinstance(exc, TimeoutError)
