@@ -112,6 +112,13 @@ def language_check_name(name, level):
     return name + " " + level
 
 
+def append_reason(item, note):
+    """Revalidation must not repeat the same deterministic explanation."""
+    normalized = ' '.join(note.split())
+    if normalized and normalized not in ' '.join(item.reason.split()):
+        item.reason = (item.reason.rstrip() + ' ' + note.strip()).strip()
+
+
 def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=False):
     from app.services.competency_scope import scoped_match
     from app.services.evidence_strength import CI
@@ -127,7 +134,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
             # Preserve whole-requirement level/scope ceilings without replacing
             # the component evidence used to establish the AND/OR result.
             item.status = parent_scope.status
-            item.reason += " " + parent_scope.reason
+            append_reason(item, parent_scope.reason)
     if scoped is not None:
         item.status = scoped.status
         item.source_fact_ids = [e.source_id for e in scoped.entries]
@@ -183,12 +190,12 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     ml_limit = ml_ceiling(ml_scope, entries, validator.skills_bank, operator=getattr(item, 'operator', 'all'))
     if ml_limit and item.status == Status.STRONG and ml_limit[0] != 'strong':
         item.status = Status(ml_limit[0])
-        item.reason += ' ' + ml_limit[1]
+        append_reason(item, ml_limit[1])
 
     ceiling = ci_ceiling(item.name, entries)
     if ceiling and item.status == Status.STRONG and ceiling[0] != "strong":
         item.status = Status(ceiling[0])
-        item.reason += " " + ceiling[1]
+        append_reason(item, ceiling[1])
     # Check the literal quote as well as the model label. General CI/CD, AD,
     # virtualization or unit tests cannot prove named platform/test conditions.
     if hasattr(item, "required_level") and not aggregate:
@@ -200,7 +207,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
             item.source_fact_ids = list(dict.fromkeys(item.source_fact_ids + [e.source_id for e in language.entries]))
             item.evidence_sources = validator.matcher.sources(item.source_fact_ids)
             item.evidence = [e["fact"] for e in item.evidence_sources]
-            item.reason += " " + language.reason
+            append_reason(item, language.reason)
     from app.services.named_evidence import apply_source_ceiling
     apply_source_ceiling(item, entries)
     if original_status == Status.STRONG and item.status != Status.STRONG:
@@ -414,7 +421,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
                               [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank, operator=req.operator)
         if ml_limit and req.status == Status.STRONG and ml_limit[0] != 'strong':
             req.status = Status(ml_limit[0])
-            req.reason += ' ' + ml_limit[1]
+            append_reason(req, ml_limit[1])
         minimum = required_years(req.source_quote) or required_years('\n'.join(quotes))
         if req.required_years is not None and req.required_years != minimum:
             validator._classification_issues.append(f'Minimum tenure not supported by the original qualification source: {req.name}.')
@@ -433,12 +440,12 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             tenure = validator.matcher.cited_tenure(tenure_ids, minimum, scope=scope)
             req.required_years, req.observed_years = minimum, tenure.observed_years
             req.status = tenure.status
-            req.reason += " " + tenure.reason
+            append_reason(req, tenure.reason)
             duration_free = re.sub(r"\b\d+(?:\.\d+)?\s*\+?\s*(?:years?|lat(?:a)?|rok(?:u)?)\b", "", scope + " " + req.required_level, flags=re.I)
             scope_limit = ml_ceiling(duration_free, [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank, operator=req.operator)
             if scope_limit and req.status == Status.STRONG and scope_limit[0] != 'strong':
                 req.status = Status(scope_limit[0])
-                req.reason += ' ' + scope_limit[1]
+                append_reason(req, scope_limit[1])
         req.required_level = req.required_level or required_level(req.name) or required_level(req.source_quote)
         language_name = language_check_name(req.name, req.required_level)
         if not validator.matcher._language(req.name):
@@ -454,7 +461,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.source_fact_ids = list(dict.fromkeys(req.source_fact_ids + [e.source_id for e in language.entries]))
             req.evidence_sources = validator.matcher.sources(req.source_fact_ids)
             req.evidence = [e["fact"] for e in req.evidence_sources]
-            req.reason += " " + language.reason
+            append_reason(req, language.reason)
         from app.services.named_evidence import apply_source_ceiling
         apply_source_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup])
         from app.services.source_scope import apply_availability

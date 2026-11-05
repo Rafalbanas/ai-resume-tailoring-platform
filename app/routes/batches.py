@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.models.batch import MAX_BATCH_URLS, BatchRequest, parse_url_file
 from app.models.batch_api import BatchOptionsResponse, BatchResponse
 from app.routes.web import guard, ollama_model_options, queue_control_guard
+from app.services.ai_provider import DailyAIBudgetExceeded
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
 
 session_auth = APIKeyCookie(name='session', scheme_name='SessionCookie', auto_error=False)
@@ -54,7 +55,16 @@ def submit(request, spec, csrf_token, client_key):
     manager = request.app.state.task_manager
     payload = {'batch': spec.model_dump(mode='json')}
     key = compute_idempotency_key('batch', client_key=client_key)
-    task = manager.get_or_create_idempotent(TaskKind.BATCH, payload, key)
+    def check_budget():
+        try:
+            request.app.state.resource_budget.check_ai_available()
+        except DailyAIBudgetExceeded as exc:
+            raise HTTPException(429, 'Daily AI call limit reached. Resets at 00:00 UTC. No new batch was queued.',
+                                headers={'Retry-After': str(exc.retry_after_seconds)}) from exc
+    # Existing idempotent results remain readable after the budget is exhausted.
+    # This is a non-consuming preflight, not a reservation: charge() is still
+    # authoritative if another task consumes the last call after admission.
+    task = manager.get_or_create_idempotent(TaskKind.BATCH, payload, key, before_create=check_budget)
     return response_for(request, task, 202 if task.status in {TaskStatus.QUEUED, TaskStatus.RUNNING} else 200)
 
 

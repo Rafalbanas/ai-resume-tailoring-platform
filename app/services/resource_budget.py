@@ -30,9 +30,22 @@ class ResourceBudget:
             db.execute('DELETE FROM usage WHERE day < ?', (day - 1,))
             row = db.execute('SELECT calls FROM usage WHERE day=?', (day,)).fetchone()
             if row and row[0] >= self.daily_calls:
-                from app.services.ai_provider import AIProviderError
-                raise AIProviderError('The daily AI call budget has been reached. Try again tomorrow.')
+                from app.services.ai_provider import DailyAIBudgetExceeded
+                raise DailyAIBudgetExceeded()
             db.execute('INSERT INTO usage VALUES (?,1) ON CONFLICT(day) DO UPDATE SET calls=calls+1', (day,))
+
+    def remaining_ai_calls(self) -> int:
+        day = int(time.time() // 86400)
+        with sqlite3.connect(self.path) as db:
+            row = db.execute('SELECT calls FROM usage WHERE day=?', (day,)).fetchone()
+            calls_today = row[0] if row else 0
+        return max(0, self.daily_calls - calls_today)
+
+    def check_ai_available(self):
+        from app.services.ai_provider import DailyAIBudgetExceeded
+        if self.remaining_ai_calls() > 0:
+            return None
+        raise DailyAIBudgetExceeded()
 
     def check_disk(self):
         size = 0

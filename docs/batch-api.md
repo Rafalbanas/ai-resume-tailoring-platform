@@ -105,6 +105,13 @@ Other errors: `401` unauthenticated, `403` CSRF/origin/demo denied, `413` oversi
 HTTP body, `422` invalid input, `429` rate/queue admission limit, `507` account
 storage or file-count quota reached.
 
+`429` also reports an exhausted **application daily AI call budget**, including
+for local Ollama, with `Retry-After` until the 00:00 UTC reset. New batches are
+rejected before queueing; existing idempotent results remain readable. If the
+budget runs out mid-batch, completed results are retained and later URLs are not
+fetched. Affected items use `error_code=daily_ai_budget` and
+`retry_after_seconds`; see [daily budget behavior](batch-budget-behavior.md).
+
 ## Security and operational limits
 
 - Demo submissions are disabled. Reads and tasks use the account-local runtime;
