@@ -556,3 +556,8 @@ ins {
 .custom-editor-preview .muted{font-size:.85rem}.custom-editor-preview{min-width:0}
 @media(max-width:1000px){.custom-editor-layout{grid-template-columns:minmax(0,1fr)}.cv-pdf-preview{height:70vh;min-height:400px}}
 @media(max-width:480px){.cv-section-options{grid-template-columns:1fr}.cv-template-form{flex-wrap:wrap}}
+/* Offer deadlines are record metadata, never part of the CV document. */
+.offer-deadline { margin-block: .5rem; font-size: .9rem; }
+.offer-deadline p { margin-block: .25rem; }
+.offer-deadline form { display: grid; gap: .5rem; margin-block: .5rem; }
+.offer-deadline input[type="date"] { max-width: 16rem; }

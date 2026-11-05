@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from bs4 import BeautifulSoup
 
 from app.services.job_extractors.base import BaseExtractor, ExtractionCandidate, normalized_text
+from app.services.offer_dates import parse_offer_date
 
 
 def _objects(value: object) -> Iterator[dict]:
@@ -40,8 +41,13 @@ class JsonLdExtractor(BaseExtractor):
                     company=normalized_text(str(company or "")),
                     role=normalized_text(str(item.get("title") or "")),
                     job_description=normalized_text(str(item.get("description") or "")),
+                    offer_valid_until=parse_offer_date(item.get('validThrough')),
                 ))
         unique = {(c.company, c.role, c.job_description): c for c in candidates}
         if len(unique) > 1:
             return ExtractionCandidate(ambiguous=True)
-        return next(iter(unique.values()), ExtractionCandidate())
+        result = next(iter(unique.values()), ExtractionCandidate())
+        dates = {c.offer_valid_until for c in candidates if c.offer_valid_until is not None}
+        result.offer_valid_until = next(iter(dates)) if len(dates) == 1 else None
+        result.deadline_conflict = len(dates) > 1
+        return result

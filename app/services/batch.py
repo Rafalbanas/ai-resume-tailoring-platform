@@ -37,11 +37,13 @@ async def run_batch(manager, task, state):
             async with asyncio.timeout(manager.budget_seconds):
                 state.resource_budget.check_disk()
                 extracted = await state.job_extractor.extract(item['url'])
+                item['offer_valid_until'] = extracted.offer_valid_until.isoformat() if extracted.offer_valid_until else None
                 if extracted.extraction_method == 'manual_required':
                     item.update(status='manual_required', error=extracted.failure_reason or 'description_unavailable')
                     continue
                 job = JobRequest(company=extracted.company or 'Unknown company', role=extracted.role or 'Job offer',
                                  job_url=item['url'], job_description=extracted.job_description,
+                                 offer_valid_until=extracted.offer_valid_until,
                                  tailoring_level=spec.tailoring_level)
                 child = TaskRecord(task_id=uuid4().hex, kind=TaskKind.TAILOR,
                     idempotency_key=f'batch:{task.task_id}:{index}', status=TaskStatus.RUNNING,

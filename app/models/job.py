@@ -1,3 +1,5 @@
+import re
+from datetime import date
 from enum import StrEnum
 from typing import Literal
 
@@ -79,6 +81,7 @@ class JobRequest(BaseModel):
     company: str = Field(min_length=1, max_length=150)
     role: str = Field(min_length=1, max_length=150)
     job_url: HttpUrl | None = None
+    offer_valid_until: date | None = None
     job_description: str = Field(default="", max_length=30_000)
     tailoring_level: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
     workflow: Literal["job", "custom"] = "job"
@@ -89,6 +92,17 @@ class JobRequest(BaseModel):
     @property
     def relevance_text(self) -> str:
         return self.custom_instructions if self.workflow == "custom" else self.job_description
+
+    @field_validator('offer_valid_until', mode='before')
+    @classmethod
+    def validate_offer_date(cls, value):
+        if value is None or value == '':
+            return None
+        if type(value) is date:
+            return value
+        if isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+            return date.fromisoformat(value)
+        raise ValueError('Use a calendar date in YYYY-MM-DD format, or leave it blank.')
 
     @model_validator(mode="after")
     def validate_workflow(self):
@@ -113,6 +127,7 @@ class JobExtraction(BaseModel):
     company: str = ""
     role: str = ""
     job_description: str = ""
+    offer_valid_until: date | None = None
     source: str
     extraction_method: Literal["jsonld", "html", "playwright", "manual_required"]
     failure_reason: Literal["blocked", "timeout", "fetch_failed", "description_unavailable", "unsafe_url", "unsupported_browser"] | None = None

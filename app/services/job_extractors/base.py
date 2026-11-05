@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import date
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
@@ -11,6 +12,8 @@ class ExtractionCandidate:
     company: str = ""
     role: str = ""
     job_description: str = ""
+    offer_valid_until: date | None = None
+    deadline_conflict: bool = False
 
     @property
     def usable(self) -> bool:

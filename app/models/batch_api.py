@@ -20,6 +20,7 @@ class BatchItem(BaseModel):
     fallback_used: bool | None = None
     fallback_reason: str | None = None
     error: str | None = None
+    offer_valid_until: str | None = None
 
 
 class BatchResult(BaseModel):

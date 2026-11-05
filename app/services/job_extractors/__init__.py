@@ -6,6 +6,7 @@ import httpx
 from app.core.config import Settings
 from app.models.job import JobExtraction
 from app.services.job_extractors.base import BaseExtractor, ExtractionCandidate
+from app.services.job_extractors.deadline import html_deadlines, same_posting
 from app.services.job_extractors.eldorado import EldoradoExtractor
 from app.services.job_extractors.fetcher import JobFetchError, SafeHttpFetcher
 from app.services.job_extractors.generic import GenericHtmlExtractor
@@ -71,20 +72,33 @@ class JobExtractorService:
             if extracted.usable:
                 extracted.company = extracted.company or structured.company
                 extracted.role = extracted.role or structured.role
+                self._attach_deadline(extracted, structured, html, adapter)
                 return extracted, "html"
         if structured.usable:
             if isinstance(adapter, PracujExtractor):
                 cleaned = adapter.extract_text(structured.job_description)
                 if cleaned.usable:
                     cleaned.company, cleaned.role = structured.company, structured.role
+                    self._attach_deadline(cleaned, structured, html, adapter)
                     return cleaned, "jsonld"
                 # A plain JobPosting description without section labels is still
                 # useful; it is supplied by the publisher, not the full page UI.
+            self._attach_deadline(structured, structured, html, adapter)
             return structured, "jsonld"
         extracted = adapter.extract(html) if adapter else self.generic.extract(html)
         if not extracted.usable and adapter and adapter.allow_generic_fallback:
             extracted = self.generic.extract(html)
+        self._attach_deadline(extracted, structured, html, adapter)
         return extracted, "html"
+
+    @staticmethod
+    def _attach_deadline(candidate, structured, html, adapter):
+        dates = html_deadlines(html, justjoin=isinstance(adapter, JustJoinExtractor))
+        matching = same_posting(candidate, structured)
+        if matching and structured.offer_valid_until:
+            dates.add(structured.offer_valid_until)
+        candidate.deadline_conflict = len(dates) > 1 or (matching and structured.deadline_conflict)
+        candidate.offer_valid_until = next(iter(dates)) if len(dates) == 1 and not candidate.deadline_conflict else None
 
     def _result(self, candidate: ExtractionCandidate, source: str, method: str) -> JobExtraction:
         if candidate.ambiguous or len(candidate.role) > 150 or len(candidate.company) > 150 or len(candidate.job_description) > self.max_description_chars:
@@ -93,6 +107,7 @@ class JobExtractorService:
             company=candidate.company[:150],
             role=candidate.role[:150],
             job_description=candidate.job_description[: self.max_description_chars],
+            offer_valid_until=candidate.offer_valid_until,
             source=source,
             extraction_method=method,
         )
