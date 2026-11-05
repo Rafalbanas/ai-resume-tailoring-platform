@@ -808,6 +808,8 @@ def _regenerate_artifacts(
         result.resume, request.app.state.profile, layout_guide, template_name=template_name,
         job_text=f"{job.role}\n{job.job_description}",
     )
+    from app.services.resume_export import prepare_resume
+    fitted_resume = prepare_resume(fitted_resume, request.app.state.profile)
     if validated_edit is not None and fitted_resume != result.resume:
         raise ValueError("Resume layout: the selected layout would change saved content. Choose ATS Classic to preserve every edited section.")
     warnings = result.warnings + layout_warnings

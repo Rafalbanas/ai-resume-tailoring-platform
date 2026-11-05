@@ -174,7 +174,7 @@ class FactValidator:
             # A rejected advertised title can still communicate direction through
             # exact, already eligible skill labels selected by the model.
             suffix = ' · '.join(draft.core_skills[:2])
-            if suffix and len(verified_headline + ' | ' + suffix) <= 140:
+            if suffix and len(verified_headline + ' | ' + suffix) <= 100:
                 verified_headline += ' | ' + suffix
         if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")

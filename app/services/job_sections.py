@@ -33,7 +33,7 @@ QUALIFICATION_HEADING = re.compile(
     r'sprawdzisz się w tej roli, jeżeli)\s*:?$', re.I,
 )
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|what you(?:[’\x27]ll| will) achieve|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??|jakie działania będą należeć do ciebie\??|zadania, które na ciebie czekają)\s*:?$', re.I)
-ORG = re.compile(r'^(?:o nas|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*:?$', re.I)
+ORG = re.compile(r'^(?:o nas|kim jesteśmy|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*[:?]?$', re.I)
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
     "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),

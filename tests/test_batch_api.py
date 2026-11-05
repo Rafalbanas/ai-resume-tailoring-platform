@@ -90,7 +90,7 @@ def test_batch_worker_saves_normal_drafts_continues_errors_and_exports(monkeypat
             assert child.status == TaskStatus.COMPLETED
             job, _ = app.state.storage.load_draft(item['draft_id'])
             assert str(job.job_url) == item['url']
-        assert exported == [{'template_name': 'modern_sidebar'}] * 2
+        assert exported == [{'template_name': 'modern_sidebar', 'require_reliable_analysis': True}] * 2
         history = client.get('/history')
         assert history.status_code == 200
         assert items[-1]['draft_id'] in history.text
@@ -103,7 +103,7 @@ def test_batch_end_to_end_exports_downloads_and_idempotent_completion(monkeypatc
         app.state.job_extractor.extract = AsyncMock(return_value=JobExtraction(
             source='https://example.com/job', extraction_method='html', company='Synthetic', role='Support Engineer',
             offer_valid_until='2026-11-30',
-            job_description='Requirements\nPython automation and Linux support knowledge required.'))
+            job_description='Requirements\nKnowledge of Python\nKnowledge of Linux'))
         body = {'urls': ['https://example.com/job'], 'llm_provider': 'mock'}
         created = client.post('/api/v1/batches', json=body, headers=headers(client))
         assert created.status_code == 202

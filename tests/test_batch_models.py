@@ -26,7 +26,7 @@ def test_batch_request_min_urls():
         BatchRequest(urls=[])
 
 def test_batch_request_max_urls():
-    urls = [f"https://example.com/{i}" for i in range(21)]
+    urls = [f"https://example.com/{i}" for i in range(51)]
     with pytest.raises(ValidationError):
         BatchRequest(urls=urls)
 
@@ -117,7 +117,7 @@ def test_parse_url_file_invalid_utf8():
 
 
 @pytest.mark.parametrize('urls', [[' '], ['https://example.com', ' '], ['https://example.com#'],
-                                 ['file:///etc/passwd'], ['https://example.com'] * 21])
+                                  ['file:///etc/passwd'], ['https://example.com'] * 51])
 def test_batch_request_rejects_empty_tokens_unsupported_schemes_and_oversized_input(urls):
     with pytest.raises(ValidationError):
         BatchRequest(urls=urls)
@@ -125,3 +125,19 @@ def test_batch_request_rejects_empty_tokens_unsupported_schemes_and_oversized_in
 
 def test_batch_request_canonicalizes_and_deduplicates():
     assert BatchRequest(urls=[' HTTPS://EXAMPLE.COM ', 'https://example.com/']).urls == ['https://example.com/']
+
+
+def test_batch_request_max_urls_valid():
+    urls = [f"https://example.com/{i}" for i in range(50)]
+    request = BatchRequest(urls=urls)
+    assert len(request.urls) == 50
+
+def test_batch_request_max_urls_rejected():
+    urls = [f"https://example.com/{i}" for i in range(51)]
+    with pytest.raises(ValidationError):
+        BatchRequest(urls=urls)
+
+def test_batch_request_duplicates_pre_dedup():
+    urls = ["https://example.com"] * 51
+    with pytest.raises(ValidationError):
+        BatchRequest(urls=urls)

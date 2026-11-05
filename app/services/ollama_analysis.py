@@ -103,6 +103,12 @@ Never cite broad Microsoft 365 or Active Directory use as evidence of Exchange O
 A technology/file name or a workflow existing in a repository does not prove successful
 execution, advanced competence or commercial experience. Cite evidence at its actual scope:
 declaration, documented use, implemented artifact, or confirmed operational result.
+GitHub Actions CI/CD does not prove Azure DevOps. AD user administration does not
+prove SSO, and VMware/VPS use does not prove Azure. Unit/API tests and ML regression
+models do not prove load or performance testing. Preserve these named scopes even
+when using a short capability label. Salesforce support-case handling can support
+generic ticketing-system experience; "such as Zendesk" is an example, not an exclusive product.
+Company history (e.g. active since 1996) is context, never candidate tenure.
 B2/daily English does not establish fluency. Missing evidence is missing, not absent;
 absent requires explicit negative evidence. No records or no listed certification MUST be missing, NEVER absent. Titles/employers and job text are not candidate facts.
 Do not invent IDs, omit qualifications, assess the same capability twice, or add facts.
@@ -587,6 +593,13 @@ def needs_assessment(passage):
         return False
     if polish_candidate_condition(text):
         return True
+    if re.match(
+        r'^(?:(?:strong|solid|practical|previous|prior|proven|relevant|hands.on|extensive|demonstrated)\s+){1,3}experience\b|'
+        r'^(?:(?:bardzo\s+)?(?:dobr\w*|podstawow\w*|praktyczn\w*|biegł\w*|zaawansowan\w*)\s+){1,3}znajomoś\w*\b|'
+        r'^(?:working\s+knowledge|zdolności\s+komunikacyjne|samodzielność\b|gotowość\s+do\s+pracy\b|'
+        r'(?:a\s+)?consultative\s+mindset|outstanding\s+(?:written|verbal)|strong\s+proficiency)\b', text, re.I
+    ):
+        return True
     if set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'} and re.match(
         r'^(?:wiedza\b|odpowiedzialność\b|głębok\w*\s+(?:inżynieryjne\s+)?zrozumieni\w*|biegłość\b)', text, re.I
     ):
@@ -648,4 +661,9 @@ def objective_condition(passage):
     language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?|this role requires)\b", text, re.I) and re.search(
         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
     )
-    return bool(tenure or language)
+    prior_practice = re.match(
+        r'^(?:(?:strong|solid|practical|previous|prior|proven|relevant|hands.on|extensive|demonstrated)\s+){1,3}'
+        r'experience\s+(?:in|with|of)\b', text, re.I)
+    required_language = (re.search(r'\b(?:English|Polish|German|French|Spanish|language)\b', text, re.I)
+                         and re.search(r'\b(?:is|are) required\b', text, re.I))
+    return bool(tenure or language or prior_practice or required_language)

@@ -3,7 +3,7 @@
 import re
 
 CI = re.compile(
-    r"\b(?:ci/cd|continuous (?:integration|delivery|deployment)|github actions|gitlab ci|jenkins|build pipeline|ci pipeline)\b",
+    r"\b(?:ci/cd|continuous (?:integration|delivery|deployment)|github actions|gitlab ci|azure devops|azure pipelines|jenkins|build pipeline|ci pipeline)\b",
     re.I,
 )
 ARTIFACT = re.compile(

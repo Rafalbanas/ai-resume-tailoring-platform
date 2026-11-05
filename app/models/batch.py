@@ -19,10 +19,13 @@ def parse_url_file(content: bytes) -> list[str]:
     return urls
 
 
+MAX_BATCH_URLS = 50
+
+
 class BatchRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    urls: list[str] = Field(min_length=1, max_length=20)
+    urls: list[str] = Field(min_length=1, max_length=MAX_BATCH_URLS)
     llm_provider: Literal['auto', 'ollama', 'gemini', 'mock', 'n8n'] = 'auto'
     ollama_model: str = Field(default='', max_length=200)
     ollama_context: Literal[32768, 65536, 98304, 131072] = 65536

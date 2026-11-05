@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyCookie
 from pydantic import ValidationError
 
-from app.models.batch import BatchRequest, parse_url_file
+from app.models.batch import MAX_BATCH_URLS, BatchRequest, parse_url_file
 from app.models.batch_api import BatchOptionsResponse, BatchResponse
 from app.routes.web import guard, ollama_model_options, queue_control_guard
 from app.services.task_manager import TaskKind, TaskStatus, compute_idempotency_key
@@ -64,7 +64,7 @@ async def batch_options(request: Request):
     options = await ollama_model_options(request)
     return JSONResponse({'providers': ['auto', *request.app.state.providers], **options,
                          'gemini_model': request.app.state.settings.gemini_model,
-                         'templates': ['ats_classic', 'modern_sidebar'], 'max_urls': 20,
+                         'templates': ['ats_classic', 'modern_sidebar'], 'max_urls': MAX_BATCH_URLS,
                          'max_file_bytes': 65536, 'default_allow_fallback': False,
                          'automatic_fallback_enabled': request.app.state.provider.fallback_enabled},
                         headers={'Cache-Control': 'no-store'})
@@ -90,7 +90,7 @@ async def upload_batch(request: Request, file: Annotated[UploadFile, File()],
             raise ValueError('Options must be an object without urls')
         spec = BatchRequest(urls=parse_url_file(content), **values)
     except (ValueError, ValidationError) as exc:
-        raise HTTPException(422, 'Invalid UTF-8 URL list or batch options (maximum 20 URLs / 64 KiB)') from exc
+        raise HTTPException(422, f'Invalid UTF-8 URL list or batch options (maximum {MAX_BATCH_URLS} URLs / 64 KiB)') from exc
     finally:
         await file.close()
     return submit(request, spec, csrf_token, idempotency_key)

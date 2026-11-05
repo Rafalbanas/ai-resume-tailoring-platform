@@ -40,7 +40,9 @@ def required_level(text: str) -> str:
 
 def required_years(text: str) -> float | None:
     match = YEARS.search(text)
-    return float(match[1]) if match else None
+    # Calendar years (e.g. a company active "od 1996 roku") are not career
+    # durations. Human qualification tenure is bounded independently of labels.
+    return float(match[1]) if match and float(match[1]) <= 100 else None
 
 
 def family(text: str) -> str:
@@ -373,6 +375,10 @@ class EvidenceMatcher:
         if CI.search(name):
             entries = [e for e in self.entries if (CI.search(e.text) or ARTIFACT.search(e.text)) and not NEGATIVE.search(e.text)]
             status, reason = ci_ceiling(name, entries)
+            from app.services.named_evidence import named_scope_ceiling
+            ceiling = named_scope_ceiling(name, entries)
+            if status == 'strong' and ceiling:
+                status, reason = ceiling
             return EvidenceMatch(Status(status), entries, reason)
         key = family(name)
         entries = self._find(FAMILIES[key]) if key else []
