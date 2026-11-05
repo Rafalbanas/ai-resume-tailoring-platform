@@ -80,6 +80,11 @@ where available. Open `view_url` for the normal progress page, then History.
 API links include the configured application root path; resolve them against the
 server origin. Responses use `Cache-Control: no-store`.
 
+Each item may include `offer_valid_until`, an optional publisher calendar date
+(`YYYY-MM-DD`, otherwise null). It propagates to the child analysis and saved
+application. A past date is informational and does not stop processing; no
+deadline is inferred from publication age. See [offer deadlines](offer-deadlines.md).
+
 The batch's `completed` means iteration finished, **not that every offer succeeded**:
 
 | Item status | Meaning |

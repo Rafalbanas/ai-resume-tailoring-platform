@@ -470,6 +470,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const companyInput = document.getElementById("company");
   const roleInput = document.getElementById("role");
   const descriptionInput = document.getElementById("job-description");
+  const deadlineInput = document.getElementById("offer-valid-until");
+  let deadlineEdited = Boolean(deadlineInput?.value);
+  deadlineInput?.addEventListener("input", () => { deadlineEdited = true; });
+  function fillDeadline(result) {
+    if (deadlineInput && !deadlineEdited) deadlineInput.value = result.offer_valid_until || "";
+  }
   const fetchButton = document.getElementById("fetch-job");
   const submitButton = document.getElementById("submit");
   const submitLabel = document.getElementById("submit-label");
@@ -482,7 +488,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const isPaste = () => isCustom() && customSource?.value === "paste";
   const refreshWorkflow = () => {
     const custom = isCustom(), paste = isPaste();
-    for (const id of ["job-identity-fields", "job-url-field", "clean-job-text", "job-prompt-hint"]) {
+    for (const id of ["job-identity-fields", "job-url-field", "offer-deadline-field", "clean-job-text", "job-prompt-hint"]) {
       const node = document.getElementById(id);
       if (node) node.hidden = custom;
     }
@@ -566,6 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({url}),
       }, 60000);
       if (result.extraction_method === "manual_required" || !result.job_description) {
+        fillDeadline(result);
         if (result.company || result.role) {
           if (companyInput.value === beforeFetch[0] && !beforeFetch[0].trim()) companyInput.value = result.company || "";
           if (roleInput.value === beforeFetch[1] && !beforeFetch[1].trim()) roleInput.value = result.role || "";
@@ -582,6 +589,7 @@ document.addEventListener("DOMContentLoaded", () => {
       companyInput.value = result.company || "";
       roleInput.value = result.role || "";
       descriptionInput.value = result.job_description;
+      fillDeadline(result);
       setStatus("Job details fetched. Review and edit them before analysis.", "success");
       return fieldsAreComplete();
     } catch (error) {
@@ -624,6 +632,7 @@ document.addEventListener("DOMContentLoaded", () => {
       companyInput.value = original[0] || result.company || "";
       roleInput.value = original[1] || result.role || "";
       descriptionInput.value = result.job_description;
+      fillDeadline(result);
       setStatus("Offer cleaned. Review requirements, preferences and employment conditions before analysis.", "success");
     } catch (_) {
       setStatus("Could not clean this offer. Your pasted text was kept.", "error");

@@ -11,7 +11,19 @@
 </section>
 <h2>Generated CVs ({{ rows|length }})</h2>
 <div class="history-list">
-{% for row in rows %}<article class="history-row" data-history-item data-entry-type="generated" data-search="{{ (row.company ~ ' ' ~ row.role ~ ' ' ~ row.cv_name|default(''))|lower }}" data-match="{{ row.match_level }}"><div><strong>{{ row.cv_name|default(row.company) }}</strong><span>{{ row.role }}</span>{% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div><div class="history-meta"><span>{{ row.date }}</span>{% if row.workflow|default('job') == 'custom' %}<span class="pill">Custom CV</span>{% else %}<span class="pill">{{ row.match_level }}</span><span>{{ row.recommendation.replace('_',' ') }}</span>{% endif %}</div><div class="row-actions"><a href="{{ app_root_path|default('') }}/preview/{{ row.slug }}">Preview</a><a href="{{ app_root_path|default('') }}/edit/{{ row.slug }}">Edit</a>{% if row.has_pdf %}<a href="{{ app_root_path|default('') }}/download/{{ row.slug }}/pdf">PDF</a>{% endif %}{% if row.has_docx %}<a href="{{ app_root_path|default('') }}/download/{{ row.slug }}/docx">DOCX</a>{% endif %}<form action="{{ app_root_path|default('') }}/history/{{ row.slug }}/delete" method="post" data-confirm="Delete this generated CV?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-danger" type="submit">Delete</button></form></div></article>
+{% for row in rows %}
+<article class="history-row" data-history-item data-entry-type="generated" data-search="{{ (row.company ~ ' ' ~ row.role ~ ' ' ~ row.cv_name|default(''))|lower }}" data-match="{{ row.match_level }}">
+  <div><strong>{{ row.cv_name|default(row.company) }}</strong><span>{{ row.role }}</span>
+    {% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}
+    {% if row.workflow|default('job') != 'custom' %}
+      {% set deadline_value = row.offer_valid_until|default(none) %}
+      {% set deadline_action = (app_root_path|default('')) ~ '/offers/application/' ~ row.slug ~ '/deadline' %}
+      {% include "_offer_deadline.html" %}
+    {% endif %}
+  </div>
+  <div class="history-meta"><span>{{ row.date }}</span>{% if row.workflow|default('job') == 'custom' %}<span class="pill">Custom CV</span>{% else %}<span class="pill">{{ row.match_level }}</span><span>{{ row.recommendation.replace('_',' ') }}</span>{% endif %}</div>
+  <div class="row-actions"><a href="{{ app_root_path|default('') }}/preview/{{ row.slug }}">Preview</a><a href="{{ app_root_path|default('') }}/edit/{{ row.slug }}">Edit</a>{% if row.has_pdf %}<a href="{{ app_root_path|default('') }}/download/{{ row.slug }}/pdf">PDF</a>{% endif %}{% if row.has_docx %}<a href="{{ app_root_path|default('') }}/download/{{ row.slug }}/docx">DOCX</a>{% endif %}<form action="{{ app_root_path|default('') }}/history/{{ row.slug }}/delete" method="post" data-confirm="Delete this generated CV?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-danger" type="submit">Delete</button></form></div>
+</article>
 {% else %}<div class="empty"><h2>No generated CVs yet</h2><p>Your completed applications will appear here.</p><a class="primary button" href="{{ app_root_path|default('') }}/">Analyze a role</a></div>{% endfor %}
 </div>
 <section aria-labelledby="analyses-heading">
@@ -20,7 +32,13 @@
 <div class="history-list">
 {% for row in analyses %}
 <article class="history-row" data-history-item data-entry-type="analysis" data-search="{{ (row.company ~ ' ' ~ row.role)|lower }}" data-match="">
-  <div><strong>{{ row.company }}</strong><span>{{ row.role }}</span>{% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
+  <div><strong>{{ row.company }}</strong><span>{{ row.role }}</span>{% if row.job_url %}<a class="source-link" href="{{ row.job_url }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}
+  {% if row.workflow|default('job') != 'custom' %}
+  {% set deadline_value = row.offer_valid_until|default(none) %}
+  {% set deadline_action = (app_root_path|default('')) ~ '/offers/draft/' ~ row.draft_id ~ '/deadline' if row.draft_id|default(none) else '' %}
+  {% include "_offer_deadline.html" %}
+  {% endif %}
+  </div>
   <div class="history-meta"><span>{{ row.date }}</span><span class="pill">{% if row.interrupted %}Interrupted{% else %}{{ {'queued': 'Queued', 'running': 'In progress', 'failed': 'Failed', 'rejected': 'Rejected — history kept', 'completed': 'Report unavailable', 'report_ready': 'Report ready — CV not generated'}.get(row.status, 'Review required') }}{% endif %}</span></div>
   <div class="row-actions">{% if row.status != 'completed' %}<a href="{{ app_root_path|default('') }}{{ row.view_url }}">{{ 'Open report' if row.status == 'report_ready' else 'View status' }}</a>{% endif %}<a href="{{ app_root_path|default('') }}{{ row.edit_url }}">Return to form</a></div>
 </article>

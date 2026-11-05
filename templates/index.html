@@ -36,6 +36,7 @@
     </label>
     <label id="job-url-field">Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>
+  <label id="offer-deadline-field">Offer valid until <small>optional — fetched when explicitly provided; you can correct or clear it</small><input id="offer-valid-until" name="offer_valid_until" type="date" value="{{ offer_valid_until or '' }}"></label>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <div class="form-grid">
     <label>Ollama model

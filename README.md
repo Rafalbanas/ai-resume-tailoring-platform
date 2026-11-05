@@ -129,6 +129,11 @@ flowchart TD
 
 For an extended breakdown of pipeline stages and architectural decisions, see [Architecture Documentation](docs/architecture.md).
 
+Job offers also support an optional [offer deadline](docs/offer-deadlines.md):
+automatic extraction of explicit closing dates, manual correction/clearing, and
+past-deadline indicators in analysis/history. Unknown dates stay unknown. Deadline
+edits affect record metadata only, not CV documents or match scores.
+
 ---
 
 ## Key Features

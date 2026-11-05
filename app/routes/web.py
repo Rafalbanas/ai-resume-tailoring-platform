@@ -21,6 +21,7 @@ from app.services.evidence_gaps import evidence_questions
 from app.services.fact_catalog import FactCatalog
 from app.services.fact_validator import FactValidator
 from app.services.manual_resume import check_edit, truth_lock_level
+from app.services.offer_dates import offer_deadline_view
 from app.services.processing import cpu_work
 from app.services.profile_loader import save_master_profile
 from app.services.profile_photo import ProfilePhotoError
@@ -49,6 +50,7 @@ def context(request: Request, **values):
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "asset_version": getattr(getattr(request.app.state, "settings", None), "app_build_sha", ""),
         "queue_activity": activity,
+        "offer_deadline_view": offer_deadline_view,
         "task_activity": activity,
         **values,
     }
@@ -191,6 +193,8 @@ async def clean_job_text(request: Request, payload: JobTextRequest):
     from app.services.job_extractors.pasted import clean_pasted_offer
 
     candidate = clean_pasted_offer(payload.text, payload.url)
+    from app.services.job_extractors.deadline import labelled_deadline
+    candidate.offer_valid_until = labelled_deadline(payload.text)
     return request.app.state.job_extractor._result(candidate, payload.url, "html" if candidate.usable else "manual_required")
 
 
@@ -204,6 +208,7 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
         "role": "",
         "job_description": "",
         "job_url": "",
+        "offer_valid_until": "",
         "llm_provider": default_provider,
         "tailoring_level": 0.0,
         "selected_ollama_model": "",
@@ -220,6 +225,14 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             form_data["role"] = job_payload.get("role", "")
             form_data["job_description"] = job_payload.get("job_description", "")
             form_data["job_url"] = job_payload.get("job_url", "")
+            form_data['offer_valid_until'] = job_payload.get('offer_valid_until') or ''
+            draft_id = (task.result or {}).get('draft_id')
+            if draft_id:
+                try:
+                    saved_job, _ = request.app.state.storage.load_draft(draft_id)
+                    form_data['offer_valid_until'] = saved_job.offer_valid_until or ''
+                except (OSError, ValueError):
+                    pass
             form_data["tailoring_level"] = job_payload.get("tailoring_level", 0.0)
             form_data["llm_provider"] = task.payload.get("llm_provider", default_provider)
             form_data["selected_ollama_model"] = task.payload.get("ollama_model", "")
@@ -258,6 +271,7 @@ async def analyze(
     role: Annotated[str, Form()] = "",
     job_description: Annotated[str, Form()] = "",
     job_url: Annotated[str, Form()] = "",
+    offer_valid_until: Annotated[str, Form(max_length=10)] = "",
     llm_provider: Annotated[str, Form()] = "auto",
     ollama_model: Annotated[str, Form(max_length=200)] = "",
     ollama_context: Annotated[int, Form(ge=32768, le=131072)] = 65536,
@@ -277,6 +291,7 @@ async def analyze(
         job = JobRequest(company=company if workflow == "job" else "Custom CV",
                          role=role.strip() if workflow == "job" else cv_name.strip() or "Custom CV",
                          job_url=(job_url or None) if workflow == "job" else None,
+                         offer_valid_until=offer_valid_until if workflow == 'job' else None,
                          job_description=job_description if workflow == "job" else "",
                          custom_instructions=job_description if workflow == "custom" else "",
                          workflow=workflow, cv_name=cv_name, source_cv=source_cv,
@@ -299,6 +314,7 @@ async def analyze(
                 role=role,
                 job_description=job_description,
                 job_url=job_url,
+                offer_valid_until=offer_valid_until,
                 llm_provider=llm_provider,
                 tailoring_level=tailoring_level,
                 selected_ollama_model=ollama_model,
@@ -315,6 +331,7 @@ async def analyze(
         role=role.strip(),
         job_description=job_description.strip(),
         job_url=job_url.strip(),
+        offer_valid_until=job.offer_valid_until.isoformat() if job.offer_valid_until else '',
         llm_provider=llm_provider.strip(),
         ollama_model=ollama_model if llm_provider in {"auto", "ollama"} else "",
         ollama_context=ollama_context if llm_provider in {"auto", "ollama"} else 32768,
@@ -926,6 +943,24 @@ async def manage_cv_version(request: Request, slug: str, action: Literal['rename
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return RedirectResponse(f"{request.scope.get('root_path', '')}/preview/{slug}", status_code=303)
+
+
+@router.post('/offers/{kind}/{identifier}/deadline')
+async def update_offer_deadline(request: Request, kind: Literal['draft', 'application'], identifier: str,
+                                csrf_token: Annotated[str, Form()],
+                                offer_valid_until: Annotated[str, Form(max_length=10)] = ''):
+    queue_control_guard(request, csrf_token)
+    if request.app.state.settings.demo_mode:
+        raise HTTPException(403, 'Offer metadata editing is disabled in the demo account')
+    try:
+        # The mutation middleware already owns the account lock and checks quota.
+        await run_in_threadpool(request.app.state.storage.update_offer_deadline, kind, identifier, offer_valid_until)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, 'Offer record not found') from exc
+    except ValueError as exc:
+        raise HTTPException(422, 'Use a valid YYYY-MM-DD date or leave the field blank for a job offer.') from exc
+    target = f'/analysis/{identifier}' if kind == 'draft' else '/history'
+    return RedirectResponse(request.scope.get('root_path', '') + target, status_code=303)
 
 
 @router.post("/history/{slug}/delete")

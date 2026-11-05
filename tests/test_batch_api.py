@@ -102,6 +102,7 @@ def test_batch_end_to_end_exports_downloads_and_idempotent_completion(monkeypatc
         login(client)
         app.state.job_extractor.extract = AsyncMock(return_value=JobExtraction(
             source='https://example.com/job', extraction_method='html', company='Synthetic', role='Support Engineer',
+            offer_valid_until='2026-11-30',
             job_description='Requirements\nPython automation and Linux support knowledge required.'))
         body = {'urls': ['https://example.com/job'], 'llm_provider': 'mock'}
         created = client.post('/api/v1/batches', json=body, headers=headers(client))
@@ -115,6 +116,9 @@ def test_batch_end_to_end_exports_downloads_and_idempotent_completion(monkeypatc
         result = client.get(created.json()['status_url']).json()
         item = result['result']['items'][0]
         assert item['status'] == 'completed', item
+        assert item['offer_valid_until'] == '2026-11-30'
+        assert app.state.storage.load_draft(item['draft_id'])[0].offer_valid_until.isoformat() == '2026-11-30'
+        assert app.state.storage.load_application(item['slug'])[0].offer_valid_until.isoformat() == '2026-11-30'
         pdf = client.get(item['pdf_url'])
         assert pdf.status_code == 200 and pdf.content.startswith(b'%PDF')
         docx = client.get(item['docx_url'])

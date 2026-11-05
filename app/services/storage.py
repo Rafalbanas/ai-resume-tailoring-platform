@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from app.models.job import JobAnalysis, JobRequest
 from app.models.resume import TailoredResume, WorkflowResponse
+from app.services.offer_dates import parse_offer_date
 
 
 class DraftDataError(ValueError):
@@ -119,7 +120,10 @@ class Storage:
             raise FileNotFoundError(draft_id)
         try:
             payload = json.loads((self.drafts_dir / f"{draft_id}.json").read_text(encoding="utf-8"))
-            return self._validate_draft(payload)
+            job, response = self._validate_draft(payload)
+            job.offer_valid_until = self._deadline_override(
+                self.drafts_dir / f'{draft_id}.deadline.json', job.offer_valid_until)
+            return job, response
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise DraftDataError("Draft data could not be validated") from exc
 
@@ -143,6 +147,47 @@ class Storage:
         maximum = next(item.max_length for item in limit if hasattr(item, "max_length"))
         if isinstance(summary, str):
             analysis["reasoning_summary"] = summary[:maximum]
+
+    @staticmethod
+    def _deadline_override(path, original=None):
+        if not path.is_file():
+            return original
+        try:
+            return parse_offer_date(json.loads(path.read_text(encoding='utf-8')).get('offer_valid_until'))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+
+    def update_offer_deadline(self, kind, identifier, value):
+        """Write isolated record metadata; never rewrite a CV or model report.
+
+        A sidecar avoids overwriting concurrent presentation/export metadata.
+        Missing sidecars preserve backward-compatible original job dates.
+        """
+        if kind == 'draft':
+            job, _ = self.load_draft(identifier)
+            path = self.drafts_dir / f'{identifier}.deadline.json'
+        elif kind == 'application':
+            job, _, _, _ = self.load_application(identifier)
+            path = self.application_folder(identifier) / 'offer-deadline.json'
+        else:
+            raise ValueError('Invalid deadline record kind')
+        if job.workflow != 'job':
+            raise ValueError('Custom CVs do not have an offer deadline')
+        # Use the strict model validator for manual input, not permissive portal parsing.
+        checked = JobRequest(company=job.company, role=job.role, job_description=job.job_description,
+                             offer_valid_until=value)
+        payload = {'offer_valid_until': checked.offer_valid_until.isoformat() if checked.offer_valid_until else None}
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(payload, stream, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
 
 
     def save_application(
@@ -188,6 +233,7 @@ class Storage:
             "company": job.company,
             "role": job.role,
             "job_url": str(job.job_url) if job.job_url else None,
+            "offer_valid_until": job.offer_valid_until.isoformat() if job.offer_valid_until else None,
             "date": date,
             "match_level": analysis.match_level,
             "analysis_reliable": analysis.is_reliable,
@@ -340,8 +386,10 @@ class Storage:
                 company=metadata["company"],
                 role=metadata["role"],
                 job_url=metadata.get("job_url"),
+                offer_valid_until=parse_offer_date(metadata.get('offer_valid_until')),
                 job_description=(folder / "job.txt").read_text(encoding="utf-8"),
             )
+        job.offer_valid_until = self._deadline_override(folder / 'offer-deadline.json', job.offer_valid_until)
         resume.summary_attestation = metadata.get('summary_attestation', '')
         generated.summary_attestation = metadata.get('generated_summary_attestation', '')
         resume._bullet_attestations = metadata.get('bullet_attestations', [])
@@ -412,6 +460,7 @@ class Storage:
         shutil.rmtree(folder)
         if isinstance(draft_id, str) and re.fullmatch(r"[a-f0-9]{32}", draft_id):
             (self.drafts_dir / f"{draft_id}.json").unlink(missing_ok=True)
+            (self.drafts_dir / f"{draft_id}.deadline.json").unlink(missing_ok=True)
 
     def clear_history(self) -> int:
         slugs = [path.parent.name for path in self.generated_dir.glob("*/metadata.json")]
@@ -434,6 +483,9 @@ class Storage:
                 item["slug"] = metadata_path.parent.name
                 item["has_pdf"] = (metadata_path.parent / "resume.pdf").exists()
                 item["has_docx"] = (metadata_path.parent / "resume.docx").exists()
+                deadline = self._deadline_override(metadata_path.parent / 'offer-deadline.json',
+                                                   parse_offer_date(item.get('offer_valid_until')))
+                item['offer_valid_until'] = deadline.isoformat() if deadline else None
                 rows.append(item)
             except (OSError, json.JSONDecodeError):
                 continue
@@ -454,7 +506,7 @@ class Storage:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding='utf-8'))
-                job, _ = self._validate_draft(payload)
+                job, _ = self.load_draft(path.stem)
                 created = payload.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
                 drafts[path.stem] = (job, created)
             except (OSError, ValueError, KeyError, TypeError):
@@ -479,8 +531,12 @@ class Storage:
                     if draft_id in represented:
                         continue
                     represented.add(draft_id)
+                    job = drafts[draft_id][0]
                 rows.append({
                     'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
+                    'offer_valid_until': job.offer_valid_until.isoformat() if job.offer_valid_until else None,
+                    'draft_id': draft_id if has_report else None,
+                    'workflow': job.workflow,
                     'date': task.created_at, 'status': 'report_ready' if has_report else task.status.value,
                     'interrupted': task.stage == 'Interrupted',
                     'view_url': f'/analysis/{draft_id}' if has_report else f'/tasks/{task.task_id}/view',
@@ -493,6 +549,9 @@ class Storage:
                 continue
             rows.append({
                 'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
+                'offer_valid_until': job.offer_valid_until.isoformat() if job.offer_valid_until else None,
+                'draft_id': draft_id,
+                'workflow': job.workflow,
                 'date': created, 'status': 'report_ready', 'interrupted': False,
                 'view_url': f'/analysis/{draft_id}', 'edit_url': f'/?from_draft={draft_id}',
             })

@@ -1,0 +1,17 @@
+{% set deadline = offer_deadline_view(deadline_value) if offer_deadline_view is defined else {'date': none, 'expired': false} %}
+<div class="offer-deadline">
+  <p>Offer valid until: {% if deadline.date %}<time datetime="{{ deadline.date }}">{{ deadline.date }}</time>{% else %}<span class="muted">Not provided</span>{% endif %}
+    {% if deadline.expired %}<strong class="pill">Past stated deadline</strong>{% endif %}
+  </p>
+  {% if deadline_action|default('') %}
+  <details>
+    <summary>Edit offer deadline</summary>
+    <form action="{{ deadline_action }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Offer valid until<input type="date" name="offer_valid_until" value="{{ deadline.date or '' }}"></label>
+      <small>Optional publisher calendar date. Clear to mark it unknown. Changes only this record's metadata, not the CV or match score.</small>
+      <button class="secondary" type="submit">Save deadline</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
