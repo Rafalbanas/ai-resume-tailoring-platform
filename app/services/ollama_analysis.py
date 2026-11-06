@@ -649,6 +649,11 @@ def needs_assessment(passage):
         return False
     if polish_candidate_condition(text):
         return True
+    if (set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'}
+            and re.match(r'^you\s+(?:read|understand|know|use|build|have|can)\b', text, re.I)):
+        # Second-person qualifications under Must have are not business context.
+        # Outside a qualification section, the same wording may describe duties.
+        return True
     if re.match(
         r'^(?:(?:strong|solid|practical|previous|prior|proven|relevant|hands.on|extensive|demonstrated)\s+){1,3}experience\b|'
         r'^(?:(?:bardzo\s+)?(?:dobr\w*|podstawow\w*|praktyczn\w*|biegł\w*|zaawansowan\w*)\s+){1,3}znajomoś\w*\b|'
@@ -719,6 +724,11 @@ def objective_condition(passage):
         r"^(?:(?:at least|minimum(?: of)?|min\.?|at minimum|co najmniej)\s+)?"
         r"\d+(?:\.\d+)?\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*"
         r"(?:years?|lat|lata|rok|roku)\b.*\b(?:experience|doświadczen\w*)\b", text, re.I)
+    tenure = tenure or (
+        required_years(text) is not None
+        and re.match(r'^(?:minimum|min\.?|co najmniej|masz|posiadasz)\b', text, re.I)
+        and re.search(r'\b(?:experience|doświadczen\w*)\b', text, re.I)
+    )
     language = re.match(r"^(?:experience|fluency|fluent|candidates? must|must|requires?|this role requires)\b", text, re.I) and re.search(
         r"\bfluent\b|\bfluency\b|\b[ABC][12]\b", text, re.I
     )

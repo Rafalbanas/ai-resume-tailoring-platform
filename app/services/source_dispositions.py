@@ -20,8 +20,11 @@ from app.services.job_sections import (
 
 _POLISH_CANDIDATE = re.compile(
     r'^(?:(?:masz|posiadasz)\s+(?:praktyczn\w*\s+)?'
+    r'(?:(?:co\s+najmniej|minimum|min\.?)\s+\d+(?:[–-]\d+)?\s+(?:lat|lata|rok|roku)\s+)?'
     r'(?:doświadczeni\w*|wiedz\w*|umiejętnoś\w*|znajomoś\w*)\b|'
     r'(?:znasz|potrafisz|umiesz)\s+\S|pracujesz\s+z\s+\S|'
+    r'(?:bardzo\s+)?dobrze\s+(?:znasz|rozumiesz)\b|'
+    r'(?:pracowałeś|pracowałaś|współpracowałeś|współpracowałaś)(?:\(-aś\))?\s+z\b|'
     r'posługujesz\s+się\s+(?:językiem|językami)\b)', re.I)
 _ADMIN = re.compile(
     r'^(?:skontaktuj\s+się\s+(?:z\s+nami|ze\s+mną|z\s+(?:naszym\s+)?rekruterem)\b|'
@@ -54,6 +57,8 @@ def explicit_skill_condition(text: str) -> bool:
     """An explicit skill predicate is not an action duty or a bare technology tag."""
     line = clean_source_line(text)
     return bool(_SKILL_CONDITION.match(line) or _POLISH_QUALIFICATION.match(line)
+                or re.match(r'^(?:deep\s+(?:understanding|knowledge)|demonstrated\s+ability|'
+                            r'codzienn\w*,?\s+(?:praktyczn\w*\s+)?prac\w*\s+z\s+agentami)\b', line, re.I)
                 or _POLISH_LANGUAGE.fullmatch(line))
 
 

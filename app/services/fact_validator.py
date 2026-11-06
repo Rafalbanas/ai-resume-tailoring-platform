@@ -130,8 +130,10 @@ class FactValidator:
                 requested_only=preserve_skills,
             )
             if self.fact_priorities and not preserve_skills:
+                from app.services.role_focus import role_focus_score
                 requested_order = {i: rank for rank, i in enumerate(dict.fromkeys(requested_ids))}
                 selected.sort(key=lambda s: (
+                    -role_focus_score(' '.join(self.skills_bank.aliases_for(s)), job.role),
                     s.id not in requested_order, requested_order.get(s.id, len(requested_order)),
                     -max((self.fact_priorities.get(i, 0) for i in [f'skill:{s.id}', *(e.source_id for e in s.evidence)]), default=0)))
             draft.selected_skill_ids = [skill.id for skill in selected]

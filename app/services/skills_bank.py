@@ -294,7 +294,11 @@ class SkillsBank:
             return 2 if direct or operational or ("crm" in normalized_job and "salesforce" in aliases) or (semantic and _normal(skill.name) in {"ms sql", "sql server", "microsoft sql server", "t sql", "httpx", "json"}) else 1 if semantic else 0
 
         requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
-        ranked = sorted(eligible, key=lambda skill: (role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
+        from app.services.role_focus import role_family, role_focus_score
+        focused_role = role_family(job_text) in {'ai', 'software', 'automation', 'data_engineering', 'data_science'}
+        ranked = sorted(eligible, key=lambda skill: (
+            role_focus_score(' '.join(self.aliases_for(skill)), job_text) if focused_role and not requested_only else 0,
+            role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
         chosen_labels: set[str] = set()

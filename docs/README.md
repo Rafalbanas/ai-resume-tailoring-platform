@@ -23,6 +23,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Safe manual CV edits and Truth Lock](safe-manual-cv-edits.md)
 - [CV export quality](resume-export-quality.md)
 - [Source-grounded analysis and CV quality guards](cv-quality-guards.md)
+- [Project-focused CV content and qualification coverage](project-first-cv-quality.md)
 - [Batch CV API: URL files, options, results and security](batch-api.md)
 - [Provider-reported token usage](token-usage.md)
 

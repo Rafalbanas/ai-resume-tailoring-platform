@@ -154,7 +154,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
     is extracted from an explicit employment support statement, never a title.
     Projects can supply integration evidence, but cannot become job experience.
     """
-    from app.services.role_focus import role_focus_score
+    from app.services.role_focus import role_family, role_focus_score
     entries = [e for e in catalog.prompt_entries
                if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)
                or (e.kind == 'project' and ':description:' in e.source_id and role_focus_score(e.text, role))]
@@ -305,10 +305,12 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
                 add(0, fact, identity)
         ranked = sorted(entries, key=lambda e: (bool(role_focus_score(e.text, role)),
-                                                (priorities or {}).get(e.source_id, 0),
-                                                bool(e.kind == 'project' and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
+                                                bool(e.kind == 'project' and role_focus_score(e.text, role)),
                                                 role_focus_score(e.text, role),
-                                                len(normalized_tokens(e.text) & tokens)), reverse=True)
+                                                (priorities or {}).get(e.source_id, 0),
+                                                bool(role_family(role) == 'data_science' and e.kind == 'project' and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
+                                                len(normalized_tokens(e.text) & tokens),
+                                                -len(e.text)), reverse=True)
         used_priorities = set()
         details = 0
         focused = any(role_focus_score(e.text, role) for e in ranked)
