@@ -29,12 +29,15 @@ class ResourceBudget:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DELETE FROM usage WHERE day < ?', (day - 1,))
             row = db.execute('SELECT calls FROM usage WHERE day=?', (day,)).fetchone()
-            if row and row[0] >= self.daily_calls:
+            if self.daily_calls != 0 and row and row[0] >= self.daily_calls:
                 from app.services.ai_provider import DailyAIBudgetExceeded
                 raise DailyAIBudgetExceeded()
             db.execute('INSERT INTO usage VALUES (?,1) ON CONFLICT(day) DO UPDATE SET calls=calls+1', (day,))
 
-    def remaining_ai_calls(self) -> int:
+    def remaining_ai_calls(self) -> int | None:
+        """None denotes an explicitly disabled daily cap, not zero capacity."""
+        if self.daily_calls == 0:
+            return None
         day = int(time.time() // 86400)
         with sqlite3.connect(self.path) as db:
             row = db.execute('SELECT calls FROM usage WHERE day=?', (day,)).fetchone()
@@ -43,7 +46,8 @@ class ResourceBudget:
 
     def check_ai_available(self):
         from app.services.ai_provider import DailyAIBudgetExceeded
-        if self.remaining_ai_calls() > 0:
+        remaining = self.remaining_ai_calls()
+        if remaining is None or remaining > 0:
             return None
         raise DailyAIBudgetExceeded()
 
