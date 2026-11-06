@@ -13,6 +13,10 @@ SCOPES = {
     'GCP': r'\bGCP\b|\bGoogle Cloud(?: Platform)?\b',
     'ITIL': r'\bITIL\b',
     'XML': r'\bXML\b',
+    'unstructured data': r'\bunstructured data\b|\bdany\w* nieustrukturyzowan\w*|\bnieustrukturyzowan\w*',
+    'Microsoft Office': r'\b(?:Microsoft|MS) Office\b',
+    'Microsoft Teams': r'\b(?:Microsoft|MS) Teams\b',
+    'knowledge bases': r'\bknowledge bases?\b|\bbaz\w*\s+wiedz\w*',
     'Azure NSGs': r'\bNSGs?\b|\bnetwork security groups?\b',
     'Private Endpoints': r'\bprivate endpoints?\b',
     'ExpressRoute': r'\bExpressRoute\b',
@@ -39,12 +43,20 @@ SCOPES = {
     'load testing': r'\bload test\w*|test\w* obciążeni\w*',
 }
 _EXAMPLES = re.compile(r'\b(?:such as|for example|e\.g\.|takich jak|np\.)\s*', re.I)
+EVIDENCE_PATTERNS = {
+    # Named suite members can document Office use; generic Microsoft 365
+    # administration and the ordinary word "teams" cannot prove app use.
+    'Microsoft Office': (r'\b(?:Microsoft|MS) Office\b|\b(?:Microsoft|MS) (?:Word|Excel|PowerPoint)\b|'
+                         r'(?-i:\bPowerPoint\b|\bExcel\b(?!\s+(?:at|in)\b)|'
+                         r'\bWord\b(?!\s+(?:embeddings?|vectors?|tokens?)\b))'),
+}
 
 
 def literal_scope_entries(text, entries):
     """Keep cited named-source evidence when a broad matcher selects other facts."""
     required = _EXAMPLES.split(text, maxsplit=1)[0]
-    patterns = [pattern for pattern in SCOPES.values() if re.search(pattern, required, re.I)]
+    patterns = [EVIDENCE_PATTERNS.get(label, pattern) for label, pattern in SCOPES.items()
+                if re.search(pattern, required, re.I)]
     return [entry for entry in entries if not NEGATIVE.search(entry.text)
             and any(re.search(pattern, entry.text, re.I) for pattern in patterns)]
 
@@ -58,9 +70,10 @@ def named_scope_ceiling(text, entries):
     requested = [(label, pattern) for label, pattern in SCOPES.items() if re.search(pattern, required, re.I)]
     if not requested:
         return None
-    practical = bool(re.search(r'experience|hands.on|practical|working|proficien|doświadczen|praktyczn|test', required, re.I))
+    practical = bool(re.search(r'experience|hands.on|practical|working|proficien|doświadczen|praktyczn|samodzieln\w*|test', required, re.I))
     missing = []
     for label, pattern in requested:
+        pattern = EVIDENCE_PATTERNS.get(label, pattern)
         relevant = [entry for entry in entries if re.search(pattern, entry.text, re.I) and not NEGATIVE.search(entry.text)]
         if practical:
             relevant = [entry for entry in relevant if evidence_strength(entry) not in

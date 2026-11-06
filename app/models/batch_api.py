@@ -1,7 +1,7 @@
 """Public response contracts for the versioned batch API."""
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BatchItem(BaseModel):
@@ -20,6 +20,8 @@ class BatchItem(BaseModel):
     fallback_used: bool | None = None
     fallback_reason: str | None = None
     error: str | None = None
+    error_code: str | None = None
+    retry_after_seconds: int | None = Field(default=None, ge=1)
     offer_valid_until: str | None = None
 
 

@@ -19,7 +19,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.job import JobAnalysis, JobRequest
-from app.services.ai_provider import AIProviderError, GeminiAuthError
+from app.services.ai_provider import AIProviderError, DailyAIBudgetExceeded, GeminiAuthError
 from app.services.analysis_validator import AnalysisValidator
 from app.services.comparison_capture import capture_comparison
 from app.services.fact_validator import FactValidator
@@ -300,7 +300,7 @@ class TaskManager:
         with self._admission():
             return self._create_task(kind, payload, idempotency_key)
 
-    def get_or_create_idempotent(self, kind: TaskKind, payload: dict[str, Any], key: str) -> TaskRecord:
+    def get_or_create_idempotent(self, kind: TaskKind, payload: dict[str, Any], key: str, *, before_create=None) -> TaskRecord:
         """Serialize lookup + admission across processes, including retained results."""
         descriptor = os.open(self.tasks_dir / '.idempotency.lock', os.O_CREAT | os.O_RDWR, 0o600)
         try:
@@ -320,6 +320,8 @@ class TaskManager:
                 if existing.kind != kind or existing_payload != incoming_payload:
                     raise HTTPException(409, 'Idempotency-Key already belongs to a different request')
                 return existing
+            if before_create is not None:
+                before_create()
             task = self.create_task(kind, payload, key)
             self.retain_history(task)
             return task
@@ -430,6 +432,15 @@ class TaskManager:
                 task.error_status_code = 401
                 self._save_task(task)
                 logger.warning("Task %s auth error: %s", task_id, exc)
+            except DailyAIBudgetExceeded as exc:
+                task = self.get_task(task_id) or task
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.now(timezone.utc).isoformat()
+                task.execution_duration_seconds = round(time.perf_counter() - wall_start, 2)
+                task.stage = 'Daily AI call limit reached'
+                task.error = str(exc)
+                task.error_status_code = 429
+                self._save_task(task)
             except AIProviderError as exc:
                 exec_duration = time.perf_counter() - wall_start
                 task = self.get_task(task_id) or task

@@ -12,6 +12,7 @@ from app.models.resume import TailoredResume, WorkflowResponse
 from app.services.ai_provider import (
     AIProvider,
     AIProviderError,
+    DailyAIBudgetExceeded,
     GeminiAuthError,
     GeminiQuotaError,
     ProviderResponseError,
@@ -175,6 +176,10 @@ class ResilientAIProvider(AIProvider):
             response.model_used = getattr(primary, "model", primary.name)
             response.fallback_used = False
             return response
+        except DailyAIBudgetExceeded:
+            # This account-wide local safeguard cannot be solved by switching
+            # providers, and must retain its typed 429 meaning for the caller.
+            raise
         except GeminiAuthError as auth_err:
             # If user explicitly chose gemini, fail immediately
             if not fallback_name or fallback_name not in self.providers:
@@ -201,6 +206,8 @@ class ResilientAIProvider(AIProvider):
                 response.fallback_used = True
                 response.fallback_reason = f"Primary provider '{primary_name}' authentication failed: {auth_err}"
                 return response
+            except DailyAIBudgetExceeded:
+                raise
             except Exception as fb_err:
                 raise AIProviderError(
                     f"Primary ({primary_name}) failed: {auth_err}; Fallback ({fallback_name}) also failed: {fb_err}"
@@ -242,6 +249,8 @@ class ResilientAIProvider(AIProvider):
                 response.fallback_used = True
                 response.fallback_reason = f"Primary '{primary_name}' timed out. Switched to '{fallback_name}'; analysis completeness is checked separately."
                 return response
+            except DailyAIBudgetExceeded:
+                raise
             except Exception as fallback_err:
                 logger.error(
                     "Both providers failed! Primary '%s': %s. Fallback '%s': %s",
@@ -290,6 +299,8 @@ class ResilientAIProvider(AIProvider):
                 response.fallback_reason = f"Primary '{primary_name}' failed ({primary_err}). Switched to '{fallback_name}'; analysis completeness is checked separately."
                 response.call_metrics = getattr(primary_err, "call_metrics", []) + response.call_metrics
                 return response
+            except DailyAIBudgetExceeded:
+                raise
             except Exception as fallback_err:
                 logger.error(
                     "Both providers failed! Primary '%s': %s. Fallback '%s': %s",

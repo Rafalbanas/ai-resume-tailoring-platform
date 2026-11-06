@@ -1,4 +1,5 @@
 import hashlib
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
@@ -10,6 +11,21 @@ from app.services.fact_catalog import FactCatalog
 
 class AIProviderError(RuntimeError):
     """An AI provider failure that is safe to show to the user."""
+
+
+class DailyAIBudgetExceeded(AIProviderError):
+    """The daily AI call budget has been reached."""
+
+    def __init__(self) -> None:
+        super().__init__('The daily AI call budget has been reached. Try again after the UTC daily reset.')
+
+    @property
+    def retry_after_seconds(self) -> int:
+        now = time.time()
+        next_day = (int(now // 86400) + 1) * 86400
+        seconds_left = int(next_day - now)
+        res = max(1, seconds_left + 1)
+        return min(res, 86401)
 
 
 class GeminiAuthError(AIProviderError):

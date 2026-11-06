@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.models.batch import BatchRequest
 from app.models.job import JobRequest
-from app.services.ai_provider import AIProviderError
+from app.services.ai_provider import AIProviderError, DailyAIBudgetExceeded
 from app.services.draft_export import export_draft
 from app.services.ollama_analysis import OllamaAnalysisError
 from app.services.task_manager import TaskKind, TaskRecord, TaskStatus
@@ -75,6 +75,25 @@ async def run_batch(manager, task, state):
         except asyncio.CancelledError:
             item.update(status='failed', error='Processing interrupted; saved results remain available.')
             raise
+        except DailyAIBudgetExceeded as exc:
+            retry_after = exc.retry_after_seconds
+            message = 'Daily AI call limit reached. Processing stopped; retry after the 00:00 UTC reset.'
+            item.update(status='failed', error=message, error_code='daily_ai_budget', retry_after_seconds=retry_after)
+            if child and not item.get('draft_id'):
+                child = manager.get_task(child.task_id) or child
+                child.status = TaskStatus.FAILED
+                child.completed_at = now()
+                child.error = message
+                child.error_status_code = 429
+                child.stage = 'Daily AI call limit reached'
+                manager._save_task(child)
+            # Do not fetch more offers or create doomed child tasks after the
+            # shared daily budget is exhausted. Preserve every input URL and
+            # completed result so only unprocessed offers need resubmission.
+            for pending in items[index + 1:]:
+                pending.update(status='failed', error='Not started: daily AI call limit reached. Retry after the 00:00 UTC reset.',
+                               error_code='daily_ai_budget', retry_after_seconds=retry_after)
+            break
         except AIProviderError as exc:
             validation = isinstance(exc, OllamaAnalysisError) and exc.kind in {'coverage', 'evidence'}
             message = ('Analysis could not be validated against the source and candidate evidence. Review diagnostics before retrying.'

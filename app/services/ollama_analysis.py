@@ -707,7 +707,9 @@ def objective_condition(passage):
 
     text = condition_text(passage)
     from app.services.evidence_matching import required_years
-    from app.services.source_dispositions import polish_candidate_condition
+    from app.services.source_dispositions import explicit_skill_condition, polish_candidate_condition
+    if explicit_skill_condition(text) or explicit_skill_condition(passage['text']):
+        return True
     if polish_candidate_condition(text):
         if required_years(text) is not None and re.search(r'\bdoświadczeni\w*\b', text, re.I):
             return True
