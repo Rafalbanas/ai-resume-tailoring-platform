@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const historySearch = document.getElementById("history-search");
   const historyType = document.getElementById("history-type");
   const historyMatch = document.getElementById("history-match");
-  if (historySearch && historyType && historyMatch) {
+  if (historySearch && historyType && historyMatch && !document.getElementById("history-sort")) {
     const items = [...document.querySelectorAll("[data-history-item]")];
     const count = document.getElementById("history-filter-count");
     const empty = document.getElementById("history-filter-empty");

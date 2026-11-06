@@ -921,9 +921,12 @@ async def reset_resume(request: Request, slug: str, csrf_token: Annotated[str, F
 @router.get("/history", response_class=HTMLResponse)
 async def history(request: Request):
     guard(request)
+    from app.services.history_view import prepare_history
+    rows, analyses, batches = prepare_history(request.app.state.storage,
+        request.app.state.storage.history(), request.app.state.storage.analysis_history())
     return request.app.state.templates.TemplateResponse(
-        request=request, name="history.html", context=context(request, rows=request.app.state.storage.history(),
-                     analyses=request.app.state.storage.analysis_history())
+        request=request, name="history.html", context=context(request, rows=rows, analyses=analyses,
+                                                             history_batches=batches)
     )
 
 

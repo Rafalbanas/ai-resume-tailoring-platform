@@ -1,0 +1,37 @@
+<section class="history-filters" aria-label="Filter and sort history">
+  <label>Search all names<input id="history-search" type="search" placeholder="Company, role or CV name" autocomplete="off"></label>
+  <label>Company<input id="history-company" type="search" autocomplete="off"></label>
+  <label>Role<input id="history-role" type="search" autocomplete="off"></label>
+  <label>Sort by<select id="history-sort" aria-label="Sort by">
+    <option value="date_desc">Newest first</option><option value="date_asc">Oldest first</option>
+    <option value="name_asc">CV name A–Z</option><option value="name_desc">CV name Z–A</option>
+    <option value="company_asc">Company A–Z</option><option value="company_desc">Company Z–A</option>
+    <option value="role_asc">Role A–Z</option><option value="role_desc">Role Z–A</option>
+  </select></label>
+  <label>From date and time<input id="history-from" type="datetime-local" step="1"></label>
+  <label>Until date and time<input id="history-until" type="datetime-local" step="1"></label>
+  <label>Entry type<select id="history-type" aria-label="Entry type"><option value="all">All entries</option><option value="generated">Generated CVs</option><option value="analysis">Analyses without a CV</option></select></label>
+  <label>Files to download<select id="history-files" aria-label="Files to download"><option value="all">Any availability</option><option value="any">At least one file</option><option value="both">PDF and DOCX</option><option value="pdf">PDF available</option><option value="docx">DOCX available</option><option value="none">No export files</option></select></label>
+  <label>Generation status<select id="history-status" aria-label="Generation status"><option value="all">All statuses</option>
+    <option value="completed">Files available</option><option value="partial_files">One format available</option>
+    <option value="no_files">Missing export files</option><option value="review_required">Review required before export</option>
+    <option value="report_ready">Report ready</option><option value="draft_ready">Draft ready</option>
+    <option value="failed">Failed</option><option value="queued">Queued</option><option value="running">In progress</option>
+    <option value="rejected">Rejected</option><option value="manual_required">Manual input required</option>
+  </select></label>
+  <label>Match level<select id="history-match" aria-label="Match level"><option value="all">All match levels</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="LIMITED">Limited</option><option value="UNRELIABLE">Unreliable</option></select></label>
+  <label>Application recommendation<select id="history-recommendation" aria-label="Application recommendation"><option value="all">All recommendations</option>
+    <option value="APPLY">Apply</option><option value="REASONABLE_STRETCH">Reasonable stretch</option>
+    <option value="REVIEW">Review</option><option value="SKIP">Skip</option><option value="RETRY">Retry analysis</option>
+  </select></label>
+  <label>Batch<select id="history-batch" aria-label="Batch"><option value="all">All batches and individual CVs</option><option value="individual">Not linked to a batch</option>
+    {% for batch in history_batches|default([]) %}<option value="{{ batch.id }}">{{ batch.label }}</option>{% endfor %}
+  </select></label>
+  <div class="history-filter-actions"><button id="history-downloadable" type="button" class="primary">Show downloadable CVs</button><button id="history-reset" type="button" class="secondary">Clear filters</button></div>
+  <p class="muted">Date/time filters use your browser's local timezone. Recorded times below are UTC. Exact generation finish times are shown when recorded; legacy draft/file times are labelled estimates. Sorting applies within each section.</p>
+  <p class="muted">Files available does not mean approved to send. Check the recommendation, evidence gaps and document before applying.</p>
+  <p id="history-filter-error" role="alert" hidden>Start date/time must not be after end date/time.</p>
+  <p id="history-filter-count" class="muted" aria-live="polite"></p>
+  <noscript><p>Filters and sorting controls require JavaScript. Entries remain listed newest first within each section.</p></noscript>
+</section>
+<script src="{{ app_root_path|default('') }}/static/history.js?v={{ asset_version }}" defer></script>

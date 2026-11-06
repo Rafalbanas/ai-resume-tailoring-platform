@@ -210,7 +210,8 @@ class Storage:
         retrieval_context: dict | None = None,
         truth_lock_enabled: bool = True,
     ) -> tuple[str, Path]:
-        date = datetime.now(timezone.utc).date().isoformat()
+        created_at = datetime.now(timezone.utc)
+        date = created_at.date().isoformat()
         base = f"{date}_{safe_filename(job.company)}_{safe_filename(job.role)}"
         slug = base
         counter = 2
@@ -235,6 +236,7 @@ class Storage:
             "job_url": str(job.job_url) if job.job_url else None,
             "offer_valid_until": job.offer_valid_until.isoformat() if job.offer_valid_until else None,
             "date": date,
+            "created_at": created_at.isoformat(),
             "match_level": analysis.match_level,
             "analysis_reliable": analysis.is_reliable,
             "analysis_uncertain": any(r.interpretation_uncertain for r in analysis.requirements),
@@ -272,6 +274,10 @@ class Storage:
             raise ValueError('Both CV exports must exist before marking the document checked.')
         path = folder/'metadata.json'
         metadata = json.loads(path.read_text())
+        completed_at = datetime.now(timezone.utc).isoformat()
+        if metadata.get('document_status') == 'pending_export':
+            metadata['generation_completed_at'] = completed_at
+        metadata['last_export_completed_at'] = completed_at
         metadata['document_status'] = 'layout_and_exports_checked'
         path.write_text(json.dumps(metadata, indent=2))
 
