@@ -138,6 +138,10 @@ class EvidenceMatcher:
         return self._result(entries, complete, reason)
 
     def _language(self, name):
+        for polish, english in {'angielski': 'English', 'niemiecki': 'German', 'polski': 'Polish',
+                                'francuski': 'French', 'hiszpański': 'Spanish'}.items():
+            name = re.sub(r'\b' + polish + r'\b', english, name, flags=re.I)
+        name = re.sub(r'\bzaawansowan\w*\b', 'advanced', name, flags=re.I)
         languages = [lang for lang in ('English', 'Polish', 'German', 'French', 'Spanish') if re.search(r'\b' + lang + r'\b', name, re.I)]
         if not languages:
             return None
@@ -165,8 +169,8 @@ class EvidenceMatcher:
             # Strip '+' only for ranking and then compare it explicitly.
             met = bool(sources) and (not required or any(rank.get(v.rstrip('+'), 0) >= rank.get(required.rstrip('+'), 9)
                 and (not required.endswith('+') or v.endswith('+') or rank.get(v.rstrip('+'), 0) > rank.get(required.rstrip('+'), 9)) for v in declared))
-            if not required and re.search(r'\badvanced|fluen\w*|fluency\b', name, re.I):
-                met = any(rank.get(v.rstrip('+'), 0) >= 5 for v in declared)
+            if re.search(r'\badvanced|fluen\w*|fluency\b', name, re.I):
+                met = met and any(rank.get(v.rstrip('+'), 0) >= 5 for v in declared)
             if re.search(r'written.*(?:spoken|verbal|oral)|(?:spoken|verbal|oral).*written', name, re.I):
                 met = met and any(re.search(r'written|writing', e.text, re.I) for e in sources) and any(re.search(r'spoken|speaking|verbal|oral', e.text, re.I) for e in sources)
             confirmations.append(met)
@@ -428,9 +432,11 @@ class EvidenceMatcher:
             return self._qualified(name, code, bool(code), 'Documented implementation/debugging in a programming language supports reading basic code; no TypeScript or advanced software experience is inferred.')
         if re.search(r'tickets?|support cases', name, re.I):
             tickets = self._find(r'tickets?|support cases|technical cases', practical=True)
+            declarations = self._find(r'\bticketing\b|\bticket\s+(?:systems?|tools?)\b')
             ownership = bool(re.search(r'own\w*|end.to.end|intake.*resolution', name, re.I))
             end_to_end = [e for e in tickets if re.search(r'end.to.end|intake.*(?:resolution|clos)|(?:own|manag)\w*.*(?:through|from).*clos', e.text, re.I)]
-            return self._qualified(name, end_to_end or tickets, bool(end_to_end) if ownership else bool(tickets), 'Ticket work is evidenced; independent ownership from intake through closure needs an explicit source.' if ownership else 'Documented investigation or handling of tickets supports ticket work.')
+            relevant = list({e.source_id: e for e in (end_to_end or tickets) + declarations}.values())
+            return self._qualified(name, relevant, bool(end_to_end) if ownership else bool(tickets), 'Ticket work is evidenced; independent ownership from intake through closure needs an explicit source.' if ownership else 'Documented investigation or handling of tickets supports ticket work; declarations alone do not establish practical use.')
         if re.search(r'collaborat\w*.*(?:engineering|product)|(?:engineering|product).*teams?', name, re.I):
             team_names = [v for v in ('Engineering', 'Product') if re.search(r'\b' + v + r'\b', name, re.I)]
             teams = self._find(r'collaborat\w*|escalat\w*', practical=True)

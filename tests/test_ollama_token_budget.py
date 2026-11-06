@@ -625,6 +625,38 @@ async def test_final_semantic_coverage_requests_targeted_ollama_repair(profile, 
     assert [p['text'] for p in json.loads(requests[1]['messages'][1]['content'])['passages']] == ['Experience with Tool1.']
 
 
+@pytest.mark.asyncio
+async def test_evidence_repair_resolves_canonical_label_to_original_passage(profile, monkeypatch):
+    import app.services.ollama_provider as module
+    requests = []
+    original = module.AnalysisValidator.validate
+    validations = []
+
+    def validate(self, analysis, text, **kwargs):
+        result = original(self, analysis, text, **kwargs)
+        validations.append(result)
+        if len(validations) == 1:
+            item = next(r for r in result.requirements if r.source_quote == 'Experience with Tool1.')
+            item.name = 'Canonical scope label'
+            result.evidence_issues = ['Invalid or irrelevant evidence removed: Canonical scope label.']
+            result.is_reliable = False
+        return result
+
+    monkeypatch.setattr(module.AnalysisValidator, 'validate', validate)
+
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': body_rows(body)})}, 'done_reason': 'stop'})
+
+    result = await make_provider(handler).analyze_job(offer(3), profile)
+    assert result.is_reliable and len(requests) == 2
+    assert [p['text'] for p in json.loads(requests[1]['messages'][1]['content'])['passages']] == ['Experience with Tool1.']
+    feedback = requests[1]['messages'][0]['content']
+    assert 'validated_status' in feedback and 'retained_evidence_ids' in feedback
+    assert 'not permission to strengthen' in feedback
+
+
 def test_validated_role_assessment_counts_as_source_coverage(profile):
     from app.models.job import JobAnalysis
     from app.services.ollama_analysis import CompactAssessment
@@ -642,6 +674,75 @@ def test_validated_role_assessment_counts_as_source_coverage(profile):
     reopened = AnalysisValidator(profile).validate(JobAnalysis.model_validate_json(result.model_dump_json()),
                                                    source.job_description, semantic=True)
     assert not reopened.is_reliable and reopened.unassessed_source_passages
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('repairs_claim', [True, False])
+async def test_git_proficiency_repair_preserves_partial_ceiling_and_call_bound(profile, repairs_claim):
+    from app.models.candidate import Project
+    profile.projects = [Project(name='Synthetic Git lab', facts=['Used Git for version control.'])]
+    job = JobRequest(company='Synthetic', role='Engineer', job_description='Requirements\nGit proficiency is required.')
+    requests = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        payload = json.loads(body['messages'][1]['content'])
+        git_ids = [fid for fid, value in payload['evidence'].items() if 'Used Git' in value[2]]
+        rows = [dict(p=p['id'], k='requirement', n='Git proficiency',
+                     s='partial' if repairs_claim and len(requests) > 1 else 'strong',
+                     f=git_ids, why='Documented use does not establish proficiency.')
+                if p['text'].startswith('Git proficiency') else dict(p=p['id'], k='context')
+                for p in payload['passages']]
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done_reason': 'stop'})
+
+    provider = make_provider(handler, ollama_analysis_recovery_calls=1)
+    if repairs_claim:
+        result = await provider.analyze_job(job, profile)
+        assert result.is_reliable
+        assert result.requirements[0].status == 'partial'
+        assert result.requirements[0].source_fact_ids
+    else:
+        with pytest.raises(OllamaAnalysisError):
+            await provider.analyze_job(job, profile)
+    assert len(requests) == 2
+    repair_prompt = requests[1]['messages'][0]['content']
+    assert 'retained_evidence_ids' in repair_prompt
+    feedback = json.loads(repair_prompt.split('VALIDATION FEEDBACK (correct these source/evidence errors): ', 1)[1])
+    retained = next(row['retained_evidence_ids'] for row in feedback if isinstance(row, dict))
+    payload = json.loads(requests[1]['messages'][1]['content'])
+    assert retained and all(fid in payload['evidence'] for fid in retained)
+
+
+@pytest.mark.asyncio
+async def test_ticketing_repair_replaces_irrelevant_citations_with_scoped_evidence(profile):
+    profile.experience[0].facts = ['Investigated and resolved technical tickets in a support system.']
+    job = JobRequest(company='Synthetic', role='Support',
+                     job_description='Requirements\nExperience using ticketing systems.')
+    requests = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        payload = json.loads(body['messages'][1]['content'])
+        if len(requests) == 1:
+            ids = [fid for fid, value in payload['evidence'].items() if 'Python' in value[2]]
+        else:
+            feedback = json.loads(body['messages'][0]['content'].split(
+                'VALIDATION FEEDBACK (correct these source/evidence errors): ', 1)[1])
+            ids = next(row['retained_evidence_ids'] for row in feedback if isinstance(row, dict))
+        assert ids
+        rows = [dict(p=p['id'], k='requirement', n='Ticketing systems', s='strong', f=ids,
+                     why='Technical ticket handling is documented.')
+                if p['text'].startswith('Experience using') else dict(p=p['id'], k='context')
+                for p in payload['passages']]
+        return httpx.Response(200, json={'message': {'content': json.dumps({'rows': rows})}, 'done_reason': 'stop'})
+
+    result = await make_provider(handler, ollama_analysis_recovery_calls=1).analyze_job(job, profile)
+    assert result.is_reliable and len(requests) == 2
+    assert result.requirements[0].status == 'strong'
+    assert not result.evidence_issues
+    assert all('technical tickets' in source['fact'] for source in result.requirements[0].evidence_sources)
 
 
 def test_truncated_keyed_rows_preserve_only_complete_valid_objects():

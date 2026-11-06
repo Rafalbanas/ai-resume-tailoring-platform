@@ -168,6 +168,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         tokens |= {"support", "troubleshooting", "incident", "sql", "api", "automation", "english", "logs"}
     selected_ids: list[str] = []
     used = set()
+    selected_project_entries = []
     groups: list[list[str]] = [[], [], [], []]
 
     def compose(values):
@@ -210,6 +211,14 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             return
         clause = (text or entry.text).strip().rstrip(".!?")
         if entry.kind == 'project':
+            # Prefer one attested clause per repeated topic within a project.
+            # This is selection, not fusion/paraphrasing: provenance and levels
+            # remain in the complete chosen source sentence.
+            topics = (r'\b(?:pipeline|pipelines)\b', r'\b(?:machine learning|ML) models?\b')
+            if any(old.owner_index == entry.owner_index and any(
+                re.search(topic, old.text, re.I) and re.search(topic, entry.text, re.I)
+                for topic in topics) for old in selected_project_entries):
+                return
             index = 2
         elif index and entry.kind == 'experience':
             index = 1
@@ -227,6 +236,8 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             groups[index].append(clause)
             selected_ids.append(entry.source_id)
             used.add(entry.source_id)
+            if entry.kind == 'project':
+                selected_project_entries.append(entry)
 
     def first(pattern, *, kinds=None):
         return next((e for e in entries if e.source_id not in used
@@ -295,6 +306,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 add(0, fact, identity)
         ranked = sorted(entries, key=lambda e: (bool(role_focus_score(e.text, role)),
                                                 (priorities or {}).get(e.source_id, 0),
+                                                bool(e.kind == 'project' and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
                                                 role_focus_score(e.text, role),
                                                 len(normalized_tokens(e.text) & tokens)), reverse=True)
         used_priorities = set()
