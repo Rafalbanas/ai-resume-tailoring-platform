@@ -152,3 +152,19 @@ The fixtures use fictional employers, profiles and offers. They cover known
 headings, hidden/downgraded minimums, specialist employment versus general support,
 valid specialist evidence, summary provenance/signatures/confirmation and project
 ordering. No private CVs or live/paid AI calls are needed for these tests.
+## Conservative application recommendations
+
+New analyses score distinct mandatory requirement groups, not repeated source
+rows or preferred matches. `APPLY` requires every mandatory group to be fully
+supported. `REASONABLE_STRETCH` requires at least one fully supported group,
+a weighted evidence score of at least 0.4 (strong = 1, partial = 0.5), and fewer
+than half the mandatory groups without supporting evidence. Otherwise the advice
+is `REVIEW`, not a positive stretch recommendation. A confirmed mandatory gap
+produces `SKIP`, even when other qualifications are strong. Missing evidence alone
+does not establish inability. Existing uncertainty, specialist-tenure and source
+reliability guards still apply.
+
+These are conservative advice thresholds, not hiring probabilities. They do not
+block an owner from exporting an otherwise valid CV, certify readiness to send,
+or rewrite saved analyses and documents. `completed` in a batch still describes
+successful document generation, not a recommendation to apply.
