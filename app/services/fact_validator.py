@@ -18,6 +18,17 @@ from app.services.professional_summary import build_summary, deduplicate_summary
 from app.services.skills_bank import GENERATED_CV_SKILL_TARGET, SkillsBank
 
 
+def _headline_with_suffix(occupation: str, suffixes: list[str]) -> str:
+    """Fit whole eligible labels; never truncate the actual occupation."""
+    parts = suffixes[:2]
+    if len(parts) == 2:
+        combined = occupation + ' | ' + ' · '.join(parts)
+        if len(combined) <= 64:
+            return combined
+    return next((occupation + ' | ' + part for part in parts
+                 if len(occupation + ' | ' + part) <= 64), occupation)
+
+
 @dataclass
 class ValidationResult:
     resume: TailoredResume
@@ -160,22 +171,19 @@ class FactValidator:
             draft.core_skills = clean_skills[:18]
 
         verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)
-        # Accept a model-selected direction only as exact eligible skill wording
-        # after the real occupation. A target job never confers a new title.
+        occupation = verified_headline
+        # A direction is accepted only as exact eligible skill wording after
+        # the real occupation. Keep the existing advertised-title fallback.
         pieces = [s.strip() for s in draft.headline.split('|')]
         pieces[0] = re.sub(r'\bTier\s*([123])\b', r'L\1', pieces[0], flags=re.I)
-        if len(pieces) == 2 and pieces[0] == verified_headline and pieces[1] in draft.core_skills:
-            verified_headline = pieces[0] + ' | ' + pieces[1]
-        elif len(pieces) == 2 and pieces[0] == verified_headline:
-            suffixes = pieces[1].split(' · ')
-            if 1 <= len(suffixes) <= 2 and all(s in draft.core_skills for s in suffixes):
-                verified_headline = pieces[0] + ' | ' + pieces[1]
-        if self.analysis is not None and draft.headline.strip() == job.role.strip() and draft.headline.strip() != verified_headline:
-            # A rejected advertised title can still communicate direction through
-            # exact, already eligible skill labels selected by the model.
-            suffix = ' · '.join(draft.core_skills[:2])
-            if suffix and len(verified_headline + ' | ' + suffix) <= 100:
-                verified_headline += ' | ' + suffix
+        suffixes = []
+        if len(pieces) == 2 and pieces[0] == occupation:
+            parts = [pieces[1]] if pieces[1] in draft.core_skills else pieces[1].split(' · ')
+            if 1 <= len(parts) <= 2 and all(part in draft.core_skills for part in parts):
+                suffixes = parts
+        if self.analysis is not None and draft.headline.strip() == job.role.strip() and draft.headline.strip() != occupation:
+            suffixes = draft.core_skills[:2]
+        verified_headline = _headline_with_suffix(occupation, suffixes)
         if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline

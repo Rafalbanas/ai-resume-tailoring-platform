@@ -37,6 +37,13 @@ _SKILL_CONDITION = re.compile(
     r'(?:skills?|knowledge|proficiency)\b|'
     r'(?:podstawow\w*|dobr\w*|praktyczn\w*|zaawansowan\w*)\s+umiejętnoś\w*\b|'
     r'drive\s+and\s+a\s+proactive\s+approach\b)', re.I)
+_POLISH_QUALIFICATION = re.compile(
+    r'^(?:(?:(?:praktyczn|dobr|bardzo\s+dobr|wysok|podstawow|zaawansowan)\w*\s+)*'
+    r'(?:doświadczeni\w*|rozumieni\w*|zrozumieni\w*|umiejętnoś\w*)\s+\S)', re.I)
+_POLISH_LANGUAGE = re.compile(
+    r'język\s+(?:angielski|niemiecki|polski|francuski|hiszpański)'
+    r'(?:\s*\(?[ABC][12]\+?\)?|\s+na\s+poziomie\s+(?:[ABC][12]\+?|zaawansowan\w*|komunikatywn\w*|biegł\w*))?'
+    r'(?:\s*[-–—:]?\s*mile\s+widzian\w*)?[.,]?', re.I)
 
 
 def polish_candidate_condition(text: str) -> bool:
@@ -45,7 +52,9 @@ def polish_candidate_condition(text: str) -> bool:
 
 def explicit_skill_condition(text: str) -> bool:
     """An explicit skill predicate is not an action duty or a bare technology tag."""
-    return bool(_SKILL_CONDITION.match(clean_source_line(text)))
+    line = clean_source_line(text)
+    return bool(_SKILL_CONDITION.match(line) or _POLISH_QUALIFICATION.match(line)
+                or _POLISH_LANGUAGE.fullmatch(line))
 
 
 def source_heading(text: str) -> bool:

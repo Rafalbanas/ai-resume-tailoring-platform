@@ -480,8 +480,24 @@ class OllamaProvider(AIProvider):
             missing_quotes = set(validated.unassessed_source_passages)
             rejected = validated.classification_issues + validated.evidence_issues + validated.completeness_issues
             repair_feedback[:] = list(dict.fromkeys(rejected))
+            # Final validation can canonicalize a model label. Resolve rejected
+            # rows through their literal source too, not only the old model name.
+            rejected_quotes = {
+                item.source_quote for item in [*validated.requirements, *validated.role_competencies]
+                if item.source_quote and any(issue.endswith(': ' + item.name + '.') for issue in rejected)
+            }
+            for item in [*validated.requirements, *validated.role_competencies]:
+                if item.source_quote in rejected_quotes:
+                    evidence_ids = {entry.source_id: fid for fid, entry in inventory.evidence.items()}
+                    repair_feedback.append({
+                        'source_quote': item.source_quote,
+                        'validated_status': str(item.status.value),
+                        'retained_evidence_ids': [evidence_ids[sid] for sid in item.source_fact_ids if sid in evidence_ids],
+                        'scope_feedback': item.reason,
+                        'instruction': 'Reassess this literal condition. These are retained evidence pointers, not permission to strengthen the status or invent proficiency. Remove unrelated citations.',
+                    })
             pending = [pid for pid, passage in inventory.passages.items()
-                       if passage["text"] in missing_quotes or any(
+                       if passage["text"] in missing_quotes | rejected_quotes or any(
                            issue.endswith(': ' + passage["text"]) for issue in rejected)
                        or any(r.p == pid and r.n and r.n in issue for r in rows for issue in rejected)]
             if not pending or recovery_calls >= self.analysis_recovery_calls:

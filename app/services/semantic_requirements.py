@@ -125,6 +125,11 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     source_quote = getattr(item, 'source_quote', '')
     query = source_quote if re.search(r'\bsuch as\b|\bfor example\b|\btakich jak\b|\be\.g\.|\bnp\.', source_quote, re.I) else item.name
     scoped = None if aggregate else scoped_match(validator.matcher, query)
+    degree = None
+    if not aggregate:
+        from app.services.education_evidence import degree_match
+        degree = degree_match(validator.matcher, source_quote or item.name)
+        scoped = degree or scoped
     if not aggregate and scoped is None and (CI.search(item.name) or re.search(r'\b(?:IT support|M365|Microsoft 365|Exchange Online|Entra ID|Intune|Defender for Endpoint|macOS|Comarch Optima|Płatnik|Symfonia|ticketing|tickets?|support cases)\b', item.name, re.I)):
         scoped = validator.matcher.match(query)
     original_status, original_ids = item.status, list(item.source_fact_ids)
@@ -175,6 +180,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
         item.status == Status.STRONG
         and entries
         and practical
+        and not degree
         and not language_aggregate
         and all(evidence_strength(e) in {"declaration", "theoretical_knowledge", "academic_knowledge"} for e in entries)
     ):
@@ -199,9 +205,9 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     # Check the literal quote as well as the model label. General CI/CD, AD,
     # virtualization or unit tests cannot prove named platform/test conditions.
     if hasattr(item, "required_level") and not aggregate:
-        language_name = language_check_name(item.name, item.required_level)
+        language_name = source_quote + ' ' + language_check_name(item.name, item.required_level)
         language = validator.matcher._language(language_name)
-        if language and re.search(r"\b[ABC][12]\+?|\bnative\b|\bfluent\b|\bfluency\b", language_name, re.I):
+        if language and re.search(r"\b[ABC][12]\+?|\bnative\b|\bfluent\b|\bfluency\b|\badvanced\b|\bzaawansowan\w*", language_name, re.I):
             if language.status != Status.STRONG or language_only(item.name):
                 item.status = language.status
             item.source_fact_ids = list(dict.fromkeys(item.source_fact_ids + [e.source_id for e in language.entries]))
