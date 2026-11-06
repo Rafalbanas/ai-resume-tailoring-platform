@@ -15,11 +15,11 @@ def model_source_units(candidate, text):
     claims = []
     parsed, _ = extract_sections(text)
     source_hints = {}
-    portal_levels = set()
+    portal_metadata = set()
     for unit in parsed:
         source_hints.setdefault(clean_source_line(unit.quote), set()).add(unit.category)
         if unit.category == 'competency':
-            portal_levels.update(clean_source_line(quote) for quote in unit.supporting_quotes)
+            portal_metadata.update(clean_source_line(quote) for quote in [unit.quote, *unit.supporting_quotes])
     for row in candidate.requirements:
         for quote in dict.fromkeys([row.source_quote, *row.source_quotes]):
             if quote:
@@ -51,13 +51,13 @@ def model_source_units(candidate, text):
             from app.services.ollama_analysis import assessment_priority, needs_assessment, needs_responsibility
             literal_category, literal_row, literal_name = category, row, name
             passage = {'text': literal, 'hints': list(source_hints.get(clean_source_line(literal), []))}
-            if row is not None:
+            if row is not None and clean_source_line(literal) not in portal_metadata:
                 from app.services.source_scope import source_alignment_issue
                 alignment_issue = source_alignment_issue(name, literal)
                 if alignment_issue:
                     issues.append(alignment_issue)
-            if clean_source_line(literal) in portal_levels or known_source_context(passage):
-                # Portal levels and known administrative text have canonical
+            if clean_source_line(literal) in portal_metadata or known_source_context(passage):
+                # Portal tags/levels and known administrative text have canonical
                 # context dispositions. Preserve literal coverage without
                 # allowing model labels to create scored qualifications.
                 literal_category, literal_row, literal_name = 'context', None, literal
@@ -89,8 +89,13 @@ def model_source_units(candidate, text):
             issues.append(f'Unclassified source passage needs review: {line.strip()}')
     for i, unit in enumerate(units):
         for other in units[:i]:
+            from app.services.source_scope import AVAILABILITY
+            arrangement_note = (AVAILABILITY.search(unit.quote)
+                                and 'context' in {unit.category, other.category}
+                                and bool({unit.category, other.category} & {'mandatory', 'preferred', 'nice_to_have'}))
             if (unit.quote == other.quote and unit.category != other.category
-                    and {unit.category, other.category} != {'competency', 'responsibility'}):
+                    and {unit.category, other.category} != {'competency', 'responsibility'}
+                    and not arrangement_note):
                 issues.append(f'Conflicting model source classifications: {unit.quote}')
     unique = []
     for unit in units:

@@ -38,3 +38,16 @@ safeguards, not a guarantee for arbitrary technologies or model paraphrases.
 Repeated validation no longer appends identical deterministic tenure/language
 explanations to the same requirement. This changes report presentation only,
 not candidate facts, tenure arithmetic or exact-text summary confirmation.
+
+Revalidation also keeps parser-owned portal tags out of mandatory qualification
+scoring, while retaining their independent role/proficiency assessment. An
+explicit qualification sentence naming the same technology remains assessed.
+A working-arrangement context note may coexist with a derived personal
+clarification without creating a false source-classification conflict; the
+arrangement still remains unconfirmed, never inferred from technical facts.
+
+Explicit skill predicates such as "Strong Python skills" and "Good SQL skills"
+must be assessed as qualifications even under an unfamiliar heading. They cannot
+be hidden as duties while claiming reliable source coverage. Bare technology
+tags still require semantic interpretation; headings alone do not force them
+into mandatory scoring.

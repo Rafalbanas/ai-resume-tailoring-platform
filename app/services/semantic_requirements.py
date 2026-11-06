@@ -224,6 +224,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         return clean_source_line(value).strip(" #:\t\r\n").casefold()
 
     literal_units, literal_headings = extract_sections(job_text)
+    portal_quotes = {clean_source_line(u.quote) for u in literal_units if u.category == 'competency'}
     headings = {heading_key(s) for s in literal_headings}
     requirements, issues = [], []
     excluded = {"benefits", "employment", "recruitment", "keywords", "organization", "responsibility", "competency", "context"}
@@ -233,6 +234,13 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         quotes = resolve_source_quotes(req.source_quote, job_text) if req.source_quote.strip() else []
         if not quotes:
             issues.append("A model requirement had no verifiable original source quote.")
+            continue
+        if not role and all(clean_source_line(quote) in portal_quotes for quote in quotes):
+            # Portal tags/levels are already evaluated as unweighted role
+            # competencies by the parser-owned metadata path. A model must not
+            # duplicate them as mandatory qualifications on revalidation.
+            validator._classification_corrections.append(
+                f'Excluded model qualification from scoring: context passage {quotes[0]}')
             continue
         if all(heading_key(quote) in headings for quote in quotes):
             # A recognized section title has no qualification content itself.
