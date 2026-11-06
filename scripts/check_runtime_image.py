@@ -119,6 +119,20 @@ def api_startup():
     print('API startup, worker sandbox handshake, health and login passed')
 
 
+def browser_rpc_check():
+    from app.services.processing import BROWSER_OPERATION_MAX_SECONDS, ProcessingError, process
+    try:
+        # Includes cold child-process/import startup, not just URL handling.
+        # Use the existing service budget; keep the per-URL timeout short.
+        process('browser', {'url': 'http://127.0.0.1/private', 'timeout': 2,
+                           'max_bytes': 10000, 'max_redirects': 1}, timeout=BROWSER_OPERATION_MAX_SECONDS)
+    except ProcessingError as exc:
+        assert 'Document is invalid' in str(exc), str(exc)
+    else:
+        raise AssertionError('Private URL was accepted by the browser worker')
+    print('Dedicated browser RPC rejected a private URL; no local fallback')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('role', choices=['api', 'documents', 'browser'])
@@ -143,15 +157,7 @@ def main():
             api_startup()
             document_roundtrip()
             # Dedicated browser authentication/role check without relying on external URLs.
-            from app.services.processing import ProcessingError, process
-            try:
-                process('browser', {'url': 'http://127.0.0.1/private', 'timeout': 2,
-                                   'max_bytes': 10000, 'max_redirects': 1}, timeout=5)
-            except ProcessingError as exc:
-                assert 'Document is invalid' in str(exc), str(exc)
-            else:
-                raise AssertionError('Private URL was accepted by the browser worker')
-            print('Dedicated browser RPC rejected a private URL; no local fallback')
+            browser_rpc_check()
     elif args.role == 'documents':
         from app.services.processing import process
         assert process('check', {}, timeout=10) == {'protocol': 1, 'network_blocked': True}

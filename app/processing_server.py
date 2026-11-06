@@ -1,6 +1,7 @@
 """Private processing service: no account volumes, external model keys or public ingress."""
 import asyncio
 import json
+import logging
 import math
 import os
 import secrets
@@ -24,6 +25,7 @@ async def lifespan(app):
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 slots = asyncio.Semaphore(1)
+logger = logging.getLogger(__name__)
 
 
 @app.get('/health')
@@ -66,4 +68,9 @@ async def process(request: Request):
             timeout = max(0.1, min(limit, requested_timeout))
             return await run_in_threadpool(local_process, value, timeout=timeout)
         except (ValueError, TypeError, OSError) as exc:
+            # Status metadata only: exception messages can contain document data.
+            code = getattr(exc, 'code', None)
+            code = code if code in {'busy', 'timeout', 'invalid_result', 'pid_guard'} else None
+            logger.warning('Processing request rejected (error_type=%s, errno=%s, code=%s)',
+                           type(exc).__name__, getattr(exc, 'errno', None), code)
             raise HTTPException(422, 'Document is invalid or exceeds processing limits') from exc

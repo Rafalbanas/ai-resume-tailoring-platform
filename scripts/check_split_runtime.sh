@@ -41,6 +41,19 @@ for check_role in documents browser; do
     done
 done
 
+# An infrastructure exec has PPid 0 inside the container, like a healthcheck.
+# It is deliberately root-owned: indiscriminate namespace cleanup would raise
+# EPERM in the unprivileged processor and incorrectly turn a valid RPC into 422.
+for check_name in "$check_documents" "$check_browser"; do
+    docker exec --detach --user 0 "$check_name" sh -c \
+        'echo $$ > /tmp/cvtailor-check-infrastructure.pid; exec sleep 300'
+    # Conversely, a detached native child adopted by PID 1 must still be reaped.
+    docker exec --user 10001:10001 "$check_name" python -c \
+        'import pathlib, subprocess; p = subprocess.Popen(["sleep", "300"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); pathlib.Path("/tmp/cvtailor-check-orphan.pid").write_text(str(p.pid))'
+    docker exec "$check_name" python -c \
+        'import pathlib; p = pathlib.Path("/tmp/cvtailor-check-orphan.pid").read_text(); assert pathlib.Path("/proc", p, "stat").read_text().rsplit(") ", 1)[1].split()[1] == "1"'
+done
+
 docker run --rm --network "$check_network" --user 10001:10001 --read-only \
     --tmpfs /tmp:size=256m,mode=1777 --cap-drop ALL --security-opt no-new-privileges \
     --env PROCESSING_URL=http://documents:8080 \
@@ -48,3 +61,11 @@ docker run --rm --network "$check_network" --user 10001:10001 --read-only \
     --env BROWSER_PROCESSING_URL=http://browser:8080 \
     --env BROWSER_PROCESSING_TOKEN=synthetic-browser-token-for-isolated-image-check \
     --entrypoint python cvtailor:split-api -m scripts.check_runtime_image api --rpc
+
+for check_name in "$check_documents" "$check_browser"; do
+    docker exec --user 0 "$check_name" sh -c \
+        'kill -0 "$(cat /tmp/cvtailor-check-infrastructure.pid)"'
+    docker exec "$check_name" python -c \
+        'import pathlib; p = pathlib.Path("/tmp/cvtailor-check-orphan.pid").read_text(); assert not pathlib.Path("/proc", p).exists(), "Detached native child was not reaped"'
+done
+echo 'Processor cleanup preserved infrastructure exec and reaped the detached native child'
