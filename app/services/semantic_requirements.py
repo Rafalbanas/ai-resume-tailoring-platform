@@ -455,6 +455,13 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             req.required_years, req.observed_years = minimum, tenure.observed_years
             req.status = tenure.status
             append_reason(req, tenure.reason)
+            if (req.status == Status.STRONG and re.search(
+                    r'\b(?:similar|equivalent)\s+(?:role|position)\b|\b(?:tej|podobnej)\s+roli\b',
+                    req.source_quote, re.I)):
+                # Arithmetic proves duration, not equivalence to an unspecified
+                # specialist role. Preserve the dated result but require review.
+                req.status = Status.PARTIAL
+                append_reason(req, 'Dated employment alone does not establish equivalence to the unspecified similar role; review the relevant duties and role scope.')
             duration_free = re.sub(r"\b\d+(?:\.\d+)?\s*\+?\s*(?:years?|lat(?:a)?|rok(?:u)?)\b", "", scope + " " + req.required_level, flags=re.I)
             scope_limit = ml_ceiling(duration_free, [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank, operator=req.operator)
             if scope_limit and req.status == Status.STRONG and scope_limit[0] != 'strong':

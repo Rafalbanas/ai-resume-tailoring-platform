@@ -9,6 +9,8 @@ from app.services.evidence_matching import NEGATIVE
 from app.services.evidence_strength import evidence_strength
 
 SCOPES = {
+    'platform architecture ownership': r'\bfoundational platform decisions\b|\bgovern platform.level standards\b|\barchitectural oversight\b',
+    'large-organization experience': r'\blarge (?:organization|company|enterprise)\b|\bduż\w* organizacj\w*\b',
     'AWS': r'\bAWS\b|\bAmazon Web Services\b',
     'GCP': r'\bGCP\b|\bGoogle Cloud(?: Platform)?\b',
     'ITIL': r'\bITIL\b',

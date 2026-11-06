@@ -27,7 +27,7 @@ NEGATIVE = re.compile(r'\b(?:no (?:prior )?(?:practical |professional |hands.on 
 SQL_ADVANCED = re.compile(r'\b(?:dba|database administration|cluster\w*|replication|performance tuning|query optimi[sz]ation)\b', re.I)
 API_DEBUG = re.compile(r'\b(?:debug\w*|troublesho(?:ot\w*|t)|oauth|authentication flows?|auth)\b', re.I)
 LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|solid|advanced|expert|fluency|fluent|awareness|familiarity|basic knowledge|understanding|practical knowledge|hands.on experience|professional experience|proficiency|basic|working knowledge|hands.on)\b\+?', re.I)
-YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat|lata|rok|roku)\b', re.I)
+YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:[–−-]\s*\d+(?:\.\d+)?)?\s*\+?\s*(?:years?|lat|lata|rok|roku|[-–]?\s*letni\w*)\b', re.I)
 
 
 def required_level(text: str) -> str:

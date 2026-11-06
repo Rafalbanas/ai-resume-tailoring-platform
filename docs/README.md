@@ -24,6 +24,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [CV export quality](resume-export-quality.md)
 - [History sorting, date/time filters and downloadable files](history-filters.md)
 - [Source-grounded analysis and CV quality guards](cv-quality-guards.md)
+- [Project-focused CV content and qualification coverage](project-first-cv-quality.md)
 - [Batch CV API: URL files, options, results and security](batch-api.md)
 - [Provider-reported token usage](token-usage.md)
 
