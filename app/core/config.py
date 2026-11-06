@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     demo_browser_processing_token: str = ""
     auto_delete_history: bool = False
     max_pending_tasks: int = Field(default=4, ge=1, le=20)
-    ai_daily_call_limit: int = Field(default=300, ge=1, le=10000)
+    ai_daily_call_limit: int = Field(default=300, ge=0, le=10000)
     demo_ai_daily_call_limit: int = Field(default=60, ge=1, le=10000)
     storage_quota_bytes: int = Field(default=536870912, ge=33554432)
     demo_storage_quota_bytes: int = Field(default=134217728, ge=33554432)
