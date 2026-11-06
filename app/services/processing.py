@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessingError(ValueError):
-    pass
+    def __init__(self, message, *, code='processing_error'):
+        super().__init__(message)
+        self.code = code
 
 
 def encoded(value):
@@ -88,7 +90,7 @@ def process(operation, payload, *, timeout=60):
 
 def local_process(request, *, timeout=60):
     if not SLOTS.acquire(blocking=False):
-        raise ProcessingError('Document processing is busy. Try again shortly.')
+        raise ProcessingError('Document processing is busy. Try again shortly.', code='busy')
     try:
         with tempfile.TemporaryDirectory(prefix='cvtailor-processing-') as work:
             folder = Path(work)
@@ -104,7 +106,7 @@ def local_process(request, *, timeout=60):
             except subprocess.TimeoutExpired as exc:
                 os.killpg(child.pid, signal.SIGKILL)
                 child.wait()
-                raise ProcessingError('Document processing exceeded the time limit.') from exc
+                raise ProcessingError('Document processing exceeded the time limit.', code='timeout') from exc
             finally:
                 # Kill descendants, including a browser left behind after a crash.
                 try:
@@ -116,7 +118,7 @@ def local_process(request, *, timeout=60):
             if child.returncode or not output.is_file() or output.stat().st_size > MAX_RESULT:
                 # Only status metadata: native stderr may include private input.
                 logger.warning('Processing child exited without a valid result (exit=%s)', child.returncode)
-                raise ProcessingError('Document processing exceeded its resource limits.')
+                raise ProcessingError('Document processing exceeded its resource limits.', code='invalid_result')
             return json.loads(output.read_text(encoding='utf-8'))
     finally:
         SLOTS.release()
@@ -151,20 +153,45 @@ async def cpu_work_for_state(state, function, *args, **kwargs):
             budget.cpu_slots.release()
 
 
+def _container_descendants(proc_root: Path) -> set[int]:
+    """Snapshot descendants of container PID 1, not injected exec processes.
+
+    Docker healthchecks/exec enter the namespace with a parent outside it
+    (PPid 0). They and their children do not belong to the processor's tree.
+    Detached native children orphaned by a parser are adopted by PID 1 and
+    remain in scope even when they have left the original process group.
+    """
+    parents = {}
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit() or int(entry.name) == 1:
+            continue
+        try:
+            # comm is parenthesized and can itself contain spaces or ')'.
+            fields = (entry / 'stat').read_text().rsplit(') ', 1)[1].split()
+            parents[int(entry.name)] = int(fields[1])
+        except (OSError, ValueError, IndexError):
+            # A process may exit between the directory listing and stat read.
+            continue
+    descendants = {1}
+    while children := {pid for pid, parent in parents.items() if parent in descendants} - descendants:
+        descendants.update(children)
+    return descendants - {1}
+
+
 def reap_container_children():
     # Playwright launches Chromium in its own session. In an isolated processor
-    # PID namespace, PID 1 owns every remaining child, even detached browsers.
+    # PID namespace, PID 1 adopts detached children, including orphan browsers.
+    # Infrastructure healthchecks/exec processes are not processor descendants.
     # Never enumerate/kill unrelated processes in local Python/CLI mode.
     if os.environ.get('PROCESSING_CONTAINER_ISOLATED') != '1':
         return
     if os.getpid() != 1:
-        raise ProcessingError('Isolated processing must run as container PID 1.')
-    for entry in Path('/proc').iterdir():
-        if entry.name.isdigit() and int(entry.name) != 1:
-            try:
-                os.kill(int(entry.name), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        raise ProcessingError('Isolated processing must run as container PID 1.', code='pid_guard')
+    for pid in _container_descendants(Path('/proc')):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     deadline = time.monotonic() + 0.5
     while time.monotonic() < deadline:
         try:

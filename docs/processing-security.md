@@ -31,9 +31,16 @@ The storage quota is an admission limit with bounded output headroom, not a file
 
 ## Native-process boundary
 
-A child has a clean environment and uses a process group. Timeout or exit kills descendants and releases admission. The isolated processor runs as container PID 1 and also kills/reaps any leftover processes in its own PID namespace, including Chromium sessions detached by Playwright; local CLI mode never enumerates unrelated processes. Failed output cannot overwrite a reviewed CV. The worker protocol is a fixed set of JSON operations, never pickle or arbitrary Python functions. Parser error details are not returned to users. The worker service authenticates before reading its request body, uses a distinct random token for each account and refuses to start without one.
+A child has a clean environment and uses a process group. Timeout or exit kills descendants and releases admission. The isolated processor runs as container PID 1 and also kills/reaps its remaining descendants, including orphaned Chromium sessions detached by Playwright. Infrastructure exec/healthcheck processes with a parent outside the PID namespace (PPid 0), and their children, are excluded from this cleanup. They are not parser descendants; attempting to kill a transient root-owned infrastructure process from the non-root processor can otherwise cause a false HTTP 422. Local CLI mode never enumerates unrelated processes. Failed output cannot overwrite a reviewed CV. The worker protocol is a fixed set of JSON operations, never pickle or arbitrary Python functions. Parser error details are not returned to users. The worker service authenticates before reading its request body, uses a distinct random token for each account and refuses to start without one.
 
-Child environments fix glibc's `MALLOC_ARENA_MAX=2`. This limits virtual memory reserved by the font-rendering threads so long documents can render under the existing 768 MiB address-space cap. Native process failures log only the exit status; parser stderr can contain private document content and is discarded.
+Child environments fix glibc's `MALLOC_ARENA_MAX=2`. This limits virtual memory reserved by the font-rendering threads so long documents can render under the existing 768 MiB address-space cap. Native process failures log only the exit status; parser stderr can contain private document content and is discarded. RPC rejections log only the exception class, system error number and a fixed allowlisted failure code, never exception messages or request payloads.
+
+The isolated-image check keeps a root-owned infrastructure exec alive in each
+worker while confirming that detached native children are still reaped. Its
+private-URL browser probe uses the existing 20-second operation budget (including
+cold child/import startup), rather than an arbitrary 5-second outer deadline;
+the per-URL timeout remains 2 seconds. Timeouts, unavailable workers and accepted
+private URLs still fail this check. Production processing limits are unchanged.
 
 Linux libseccomp blocks IPv4/IPv6/netlink sockets, ptrace, cross-process memory access and selected escape-related syscalls in native document children. Chromium inherits the same socket restriction from its launcher: it cannot connect directly even if a Playwright interception were missed. Validated HTTP(S) is fetched by the trusted Python transport and fulfilled into Chromium. Browser env excludes application secrets, service workers and WebSockets remain blocked, and redirect/IP checks remain in force. Chromium's own `--no-sandbox` compatibility setting is therefore supplemented by this external kernel policy and, in production, a separate container/pod without account files. Failure to load the policy fails processing closed.
 
