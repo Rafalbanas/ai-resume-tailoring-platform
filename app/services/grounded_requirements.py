@@ -8,6 +8,7 @@ import re
 from app.models.job import JobRequirement, MatchLevel, Recommendation, RequirementPriority, RequirementStatus
 from app.services.evidence_matching import required_level, required_years, scoring_key
 from app.services.fact_catalog import normalized_tokens
+from app.services.recommendation_policy import qualification_recommendation
 
 MANDATORY_HEAD = re.compile(r'^(?:.*?requirements\s*:|.*?wymagania.*|.*?what you bring.*|(?:we are looking for|what we are looking for)(?: you,? if you have)?\s*:?|.*?your profile.*|.*?qualifications.*|.*?must have.*|.*?nasze oczekiwania.*|.*?you bring.*)$', re.I)
 PREFERRED_HEAD = re.compile(r'^(?:.*?nice.to.have.*|.*?mile widziane.*|.*?preferred qualifications.*|.*?optional.*)$', re.I)
@@ -495,21 +496,18 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         conjunctive_group = r.operator == 'all' and sum(other.group_id == r.group_id for other in mandatory) > 1
         key = r.group_id if conjunctive_group else r.scoring_key
         groups.setdefault(key, []).append({RequirementStatus.STRONG: 1, RequirementStatus.PARTIAL: .5, RequirementStatus.MISSING: 0, RequirementStatus.ABSENT: 0}[r.status])
-    score = sum(min(values) for values in groups.values()) / len(groups)
     result.scoring_counts = {'mandatory_groups': len(groups) if mandatory else 0,
                              'confirmed': sum(min(v) == 1 for v in groups.values()),
                              'partial': sum(min(v) == .5 for v in groups.values()),
                              'not_confirmed_or_gap': sum(min(v) == 0 for v in groups.values()),
                              'duplicate_rows': sum(bool(r.duplicate_of) for r in mandatory)}
     blockers = [r for r in mandatory if r.status != RequirementStatus.STRONG or r.interpretation_uncertain]
-    if score >= .7 and not blockers:
-        result.match_level, result.recommendation = MatchLevel.HIGH, Recommendation.APPLY
-    elif score >= .4:
-        result.match_level, result.recommendation = MatchLevel.MEDIUM, Recommendation.REASONABLE_STRETCH
-    else:
-        # Silence in the profile is not a confirmed inability or an automatic rejection.
-        result.match_level = MatchLevel.LOW
-        result.recommendation = Recommendation.SKIP if any(r.status == RequirementStatus.ABSENT for r in mandatory) else Recommendation.REASONABLE_STRETCH
+    result.match_level, result.recommendation = qualification_recommendation(
+        confirmed=result.scoring_counts['confirmed'],
+        partial=result.scoring_counts['partial'],
+        missing=result.scoring_counts['not_confirmed_or_gap'],
+        confirmed_absence=any(r.status == RequirementStatus.ABSENT for r in mandatory),
+    )
     if semantic and any(r.interpretation_uncertain for r in requirements):
         result.recommendation = Recommendation.REVIEW
         result.qualification_assessment += ' Some source priorities or combined conditions require review; see individual clarifications.'
@@ -518,4 +516,8 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         result.recommendation = Recommendation.REVIEW
         result.qualification_assessment += ' Mandatory specialist tenure is not fully established; review dated, relevant employment evidence before applying.'
     result.reasoning_summary = f"Source review: {len(result.strong_matches)} confirmed, {len(result.partial_matches)} partial matches, {len(result.missing_requirements)} not confirmed in the profile. Mandatory conditions requiring review: {len(blockers)}. Preferred requirements are shown separately and do not create mandatory blockers. This evaluates documented evidence, not hiring probability or an ATS score."
+    if result.recommendation == Recommendation.REVIEW:
+        result.reasoning_summary += ' Review mandatory evidence gaps before applying; missing evidence does not establish inability.'
+    elif result.recommendation == Recommendation.SKIP:
+        result.reasoning_summary += ' A confirmed mandatory qualification gap prevents a positive application recommendation.'
     return result
