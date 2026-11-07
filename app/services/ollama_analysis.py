@@ -637,6 +637,11 @@ def condition_text(passage):
     import re
 
     text = clean_source_line(passage["text"])
+    from app.services.source_dispositions import english_candidate_condition, polish_candidate_condition
+    if english_candidate_condition(text) or polish_candidate_condition(text):
+        # A predicate followed by ':' is not a presentation label. Stripping
+        # it would erase proficiency/tenure before a programming-language list.
+        return text
     label = re.match(r"^[\w &/()'’–-]{1,80}:\s+(\S.*)$", text)
     return label[1] if label else text
 
@@ -645,7 +650,7 @@ def needs_assessment(passage):
     """Detect candidate capability passages left as context, not infer their status."""
     import re
 
-    from app.services.source_dispositions import polish_candidate_condition, source_heading
+    from app.services.source_dispositions import english_candidate_condition, polish_candidate_condition, source_heading
     if source_heading(passage['text']):
         return False
     if passage.get("assessment_required") or objective_condition(passage):
@@ -653,7 +658,7 @@ def needs_assessment(passage):
     text = condition_text(passage)
     if text.endswith(":") or len(text.split()) < 2:
         return False
-    if polish_candidate_condition(text):
+    if polish_candidate_condition(text) or english_candidate_condition(text):
         return True
     if (set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'}
             and re.match(r'^you\s+(?:read|understand|know|use|build|have|can)\b', text, re.I)):
@@ -709,7 +714,8 @@ def needs_responsibility(passage):
     import re
 
     return 'responsibility' in passage.get('hints', []) and bool(re.match(
-        r'^(?:administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział|projektowanie|budowanie|wdrażanie|rozwijanie|zapewnianie|uczestniczenie|przyjmowanie|obsługiwanie|reagowanie|wspieranie|poszukiwanie|przygotowywanie)\b',
+        r'^(?:analy[sz]ing|designing|building|creating|developing|ensuring|monitoring|documenting|configuring|'
+        r'administer|support|perform|troubleshoot|create|maintain|work|monitor|manage|ensure|develop|implement|participate|provide|monitorowanie|replikowanie|identyfikowanie|współpraca|weryfikacja|tworzenie|udział|projektowanie|budowanie|wdrażanie|rozwijanie|zapewnianie|uczestniczenie|przyjmowanie|obsługiwanie|reagowanie|wspieranie|poszukiwanie|przygotowywanie)\b',
         condition_text(passage), re.I)) and not needs_assessment(passage)
 
 
@@ -718,8 +724,14 @@ def objective_condition(passage):
 
     text = condition_text(passage)
     from app.services.evidence_matching import required_years
-    from app.services.source_dispositions import explicit_skill_condition, polish_candidate_condition
+    from app.services.source_dispositions import (
+        english_qualification_condition,
+        explicit_skill_condition,
+        polish_candidate_condition,
+    )
     if explicit_skill_condition(text) or explicit_skill_condition(passage['text']):
+        return True
+    if english_qualification_condition(text):
         return True
     if polish_candidate_condition(text):
         if required_years(text) is not None and re.search(r'\bdoświadczeni\w*\b', text, re.I):

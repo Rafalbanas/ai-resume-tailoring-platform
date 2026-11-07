@@ -28,6 +28,8 @@ def boundary_contains(needle, text):
 
 
 def verify_requirement(validator, name, unit=None):
+    from app.services.named_evidence import named_scope_ceiling
+    from app.services.source_proficiency import proficiency_ceiling
     contextual = validator.matcher.match(name, alternatives=unit.alternatives if unit else None,
                                          operator=unit.operator if unit else 'single')
     if contextual is not None:
@@ -44,6 +46,11 @@ def verify_requirement(validator, name, unit=None):
         if unit and unit.uncertain and contextual.status == RequirementStatus.STRONG:
             contextual.status = RequirementStatus.PARTIAL
             contextual.reason += ' The combined source condition needs interpretation; verify every scope in the original quote.'
+        for ceiling in (named_scope_ceiling(name, contextual.entries),
+                        proficiency_ceiling(name, contextual.entries, validator.skills_bank)):
+            if contextual.status == RequirementStatus.STRONG and ceiling:
+                contextual.status = RequirementStatus(ceiling[0])
+                contextual.reason += ' ' + ceiling[1]
         return contextual.legacy_tuple()
     catalog, bank = validator.catalog, validator.skills_bank
     # Optional modifiers remain in the source quote, but cannot strengthen a blocker.
@@ -179,6 +186,12 @@ def verify_requirement(validator, name, unit=None):
             evidence.append(entry.text)
             ids.append(entry.source_id)
             reason = "The profile explicitly records a lack of experience with this requirement."
+    lookup = {entry.source_id: entry for entry in validator.matcher.entries}
+    entries = [lookup[i] for i in dict.fromkeys(ids) if i in lookup]
+    for ceiling in (named_scope_ceiling(name, entries), proficiency_ceiling(name, entries, bank)):
+        if status == RequirementStatus.STRONG and ceiling:
+            status = RequirementStatus(ceiling[0])
+            reason += ' ' + ceiling[1]
     return status, list(dict.fromkeys(evidence)), list(dict.fromkeys(ids)), reason
 
 
@@ -197,6 +210,9 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         semantic_key,
     )
     units, sections = extract_sections(job_text)
+    from app.services.source_dispositions import known_source_context
+    literal_context_quotes = {clean_source_line(unit.quote) for unit in units
+                              if known_source_context({'text': unit.quote, 'hints': [unit.category]})}
     # Portal tags are source metadata, not model-assigned qualifications. Keep
     # their independently parsed levels even when the model returns context rows.
     portal_units = [u for u in units if u.category == 'competency']
@@ -283,6 +299,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
+        if clean_source_line(raw) in literal_context_quotes:
+            # Employer descriptions and offered flexible work are not personal
+            # availability prerequisites just because they mention an office.
+            continue
         if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "keywords", "unknown"}
                and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
             continue
@@ -414,7 +434,8 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     result.unsupported_keywords = [k for k in candidate.unsupported_keywords if boundary_contains(k, job_text) and not validator.catalog.direct_sources(k)]
     visibly_truncated = bool(re.search(r"\b(?:and|or|i|oraz)\s*$", job_text.strip(), re.I))
     expected = {u.name for u in units if u.category in {"mandatory", "preferred", "nice_to_have"}}
-    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(clean_source_line(r.source_quote) in clean_source_line(u.quote) or clean_source_line(u.quote) in clean_source_line(r.source_quote) for r in requirements)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
+    assessed_source_quotes = [quote for r in requirements for quote in dict.fromkeys([r.source_quote, *r.source_quotes]) if quote]
+    omitted = {u.name for u in units if u.category in {'mandatory','preferred','nice_to_have'} and not any(clean_source_line(quote) in clean_source_line(u.quote) or clean_source_line(u.quote) in clean_source_line(quote) for quote in assessed_source_quotes)} if semantic else {semantic_key(n) for n in expected} - {semantic_key(r.name) for r in requirements}
     if omitted:
         result.unassessed_source_passages.extend(u.quote for u in units if u.name in omitted)
         result.completeness_issues.append("Some source requirements were not assessed.")
