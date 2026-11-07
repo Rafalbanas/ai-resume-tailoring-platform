@@ -214,6 +214,21 @@ production process or service was interrupted.
 
 ## Safe local acceptance before deployment
 
+### PR integration on the updated main branch
+
+Before publishing the PR, the implementation was rebased onto `origin/main`
+`37c0807`, which includes subsequent project-evidence, education, source-scope,
+history and budget changes. The semantic-validator conflict was resolved by
+preserving main's literal-example queries, degree recovery and ticketing guards
+alongside the new named-product/commercial-scope checks. No main features were
+reverted. Post-rebase verification passed **202 tests, 1 skipped, 13 warnings in
+10.76 s**, covering all four new suites plus existing retrieval, evidence,
+LLM-first analysis, source-scope contracts, education recovery, project-first CV
+quality, source metadata and reason idempotency suites. The 1640-test full result
+above belongs to the implementation before this rebase, not a full rerun on the
+new main. The PR is opened as a draft pending broad CI/current-base verification
+and real local-embedding evaluation. Nothing is merged or deployed.
+
 1. Use synthetic data and a separate development runtime; disable cloud fallback.
 2. Run the tests/evaluator documented in the technical guide.
 3. Install optional requirements only when testing the optional path.

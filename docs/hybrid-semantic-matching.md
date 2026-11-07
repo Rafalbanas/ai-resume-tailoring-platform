@@ -211,6 +211,9 @@ passed. Earlier broad runs experienced browser/document timeouts; their actual
 failures and successful focused rechecks are preserved in the
 [implementation report](hybrid-semantic-implementation-report.md).
 
+That full result predates the PR rebase onto updated main; see the report's PR
+integration section for the newer-base targeted results and remaining verification.
+
 Extraction precision/recall, priority classification accuracy, qualification false
 positives/negatives and real-model Recall@K are **not measured**: there is no new
 annotated representative PL/EN benchmark or available local embedding model.
