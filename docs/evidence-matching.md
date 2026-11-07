@@ -1,5 +1,10 @@
 # Evidence-based matching
 
+See [audited requirement corrections](requirement-audit-corrections.md) for
+decorated priority headings, source-coverage checks, named AND conditions,
+proficiency/tenure ceilings and bounded PL/EN duplicate handling. Existing saved
+reports are not migrated or silently rescored.
+
 The deterministic validator assesses the supplied advertisement against saved
 facts. A model can suggest phrasing but cannot establish competence, invent an
 employment period, or change a source requirement's priority.

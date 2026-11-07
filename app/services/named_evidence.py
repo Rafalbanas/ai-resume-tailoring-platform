@@ -9,6 +9,9 @@ from app.services.evidence_matching import NEGATIVE
 from app.services.evidence_strength import evidence_strength
 
 SCOPES = {
+    'Postman': r'\bPostman\b',
+    'prompt regression testing': r'\bprompt regression test\w*|test\w* regresj\w* prompt\w*',
+    'LLM evaluation tools': r'\b(?:automated )?LLM evaluation tools\b|narzędz\w* do automatyczn\w* ewaluacj\w* LLM',
     'platform architecture ownership': r'\bfoundational platform decisions\b|\bgovern platform.level standards\b|\barchitectural oversight\b',
     'large-organization experience': r'\blarge (?:organization|company|enterprise)\b|\bduż\w* organizacj\w*\b',
     'AWS': r'\bAWS\b|\bAmazon Web Services\b',
@@ -46,6 +49,7 @@ SCOPES = {
 }
 _EXAMPLES = re.compile(r'\b(?:such as|for example|e\.g\.|takich jak|np\.)\s*', re.I)
 EVIDENCE_PATTERNS = {
+    'LLM evaluation tools': r'\b(?:automated )?LLM evaluation tools\b|\b(?:promptfoo|DeepEval|RAGAS)\b|narzędz\w* do automatyczn\w* ewaluacj\w* LLM',
     # Named suite members can document Office use; generic Microsoft 365
     # administration and the ordinary word "teams" cannot prove app use.
     'Microsoft Office': (r'\b(?:Microsoft|MS) Office\b|\b(?:Microsoft|MS) (?:Word|Excel|PowerPoint)\b|'

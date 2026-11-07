@@ -35,14 +35,15 @@ _ORGANIZATION = re.compile(
     r'we\s+(?:are\s+(?!looking\s+for|seeking)|have\b|believe\b|build\b|operate\b)|'
     r'our\s+(?:company|team|business)\b)', re.I)
 _SKILL_CONDITION = re.compile(
-    r'^(?:(?:very\s+)?(?:good|strong|solid|advanced|excellent|basic)\s+'
+    r'^(?:(?:English|Polish|German|French|Spanish)\s+(?:proficiency|fluency|language skills)\b|'
+    r'(?:very\s+)?(?:good|strong|solid|advanced|excellent|basic)\s+'
     r'(?:(?!(?:requires?|provides?|enables?|allows?|is|are|has|have)\b)[\w+#./-]+\s+){1,5}'
     r'(?:skills?|knowledge|proficiency)\b|'
     r'(?:podstawow\w*|dobr\w*|praktyczn\w*|zaawansowan\w*)\s+umiejętnoś\w*\b|'
     r'drive\s+and\s+a\s+proactive\s+approach\b)', re.I)
 _POLISH_QUALIFICATION = re.compile(
     r'^(?:(?:(?:praktyczn|dobr|bardzo\s+dobr|wysok|podstawow|zaawansowan)\w*\s+)*'
-    r'(?:doświadczeni\w*|rozumieni\w*|zrozumieni\w*|umiejętnoś\w*)\s+\S)', re.I)
+    r'(?:doświadczeni\w*|rozumieni\w*|zrozumieni\w*|umiejętnoś\w*|wiedz\w*|zdolnoś\w*)\s+\S)', re.I)
 _POLISH_LANGUAGE = re.compile(
     r'język\s+(?:angielski|niemiecki|polski|francuski|hiszpański)'
     r'(?:\s*\(?[ABC][12]\+?\)?|\s+na\s+poziomie\s+(?:[ABC][12]\+?|zaawansowan\w*|komunikatywn\w*|biegł\w*))?'

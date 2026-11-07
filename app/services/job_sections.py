@@ -30,7 +30,7 @@ QUALIFICATION_HEADING = re.compile(
     r'(?:required|mandatory|essential|minimum)\s+(?:technical\s+and\s+professional\s+|technical\s+|professional\s+)?expertise|'
     r'professional\s+requirements|what sets you apart|idealnie abyś posiadał/a|'
     r'jakie kompetencje są dla nas ważne\??|to qualify for the role,? you must have|'
-    r'sprawdzisz się w tej roli, jeżeli)\s*:?$', re.I,
+    r'sprawdzisz się w tej roli, jeżeli|Experience required|Wymagane doświadczenie)\s*:?$', re.I,
 )
 DUTY = re.compile(r'^(?:responsibilities|key responsibilities|duties|what you.ll do|what you will do|what you(?:[’\x27]ll| will) achieve|your responsibilities|job responsibilities|(?:at [^:]+,\s*)?you will|twoje zadania|(?:twój |twoj )?zakres obowiązków|do twoich obowiązków będzie należało|co będziesz robić\??|czym się zajmiesz\??|jakie działania będą należeć do ciebie\??|zadania, które na ciebie czekają)\s*:?$', re.I)
 ORG = re.compile(r'^(?:o nas|kim jesteśmy|opis firmy|company overview|department overview|about (?:us|the company|the team|this opportunity)|who we are|job description|offer description|company description|the role)\s*[:?]?$', re.I)
@@ -42,7 +42,7 @@ CONTEXT_HEADINGS = {
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji|Nasz proces rekrutacji|Potrzebujesz więcej informacji\??|Kontakt|Contact information)\s*:?$', re.I),
 }
 END = re.compile(r'^(?:benefits|we offer|what we offer|tech stack|travel requirements|relocation provided|position type|referral payment plan|company|eeo statement|equal opportunity.*)\s*:?$', re.I)
-REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wymagan\w*|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity)\b', re.I)
+REQUIREMENT_SIGNAL = re.compile(r'\b(?:must|required|requires|doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wymagan\w*|experience|knowledge|proficiency|fluen\w*|degree|certification|ability|familiarity|zdolność|zdolności|wiedza|wiedzy)\b', re.I)
 ORGANIZATION_SIGNAL = re.compile(r'\b(?:global leader|our (?:company|team|division)|we (?:believe|build|offer)|join (?:our|a) team)\b', re.I)
 INSTRUCTION = re.compile(r'ignore.*instructions|system prompt|you are chatgpt|return.*json|mark.*(?:strong|apply)|reveal.*(?:secret|key)', re.I)
 LEVEL = re.compile(r'\b(?:[ABC][12]\+?|native|advanced|expert|fluent|fluency|basic|working knowledge|hands.on)\b\+?', re.I)
@@ -58,7 +58,7 @@ def clean_source_line(raw: str) -> str:
     line = re.sub(r"\s+", " ", line).strip()
     # Copied lists may nest quote, heading and bullet markers.
     while True:
-        cleaned = re.sub(r"^(?:#{1,6}\s+|->\s*|[•●▪◦]\s*|>(?!\s*\d)\s*|[-*−–]\s+|\d+[.)]\s+)", "", line).strip()
+        cleaned = re.sub(r"^(?:#{1,6}\s+|->\s*|[•●▪◦]\s*|[\u2728\u2b50]\ufe0f?\s*|>(?!\s*\d)\s*|[-*−–]\s+|\d+[.)]\s+)", "", line).strip()
         if cleaned == line:
             break
         line = cleaned

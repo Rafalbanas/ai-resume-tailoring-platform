@@ -191,6 +191,11 @@ class EvidenceMatcher:
         domains = [
             (r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*)\b',
              r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*|offensive security|red[ -]team(?:ing)?)\b'),
+            (r'\b(?:software test\w*|quality assurance|QA)\b|testowan\w*\s+oprogramowan\w*',
+             r'\b(?:software test\w*|quality assurance|QA|test cases?|test scenarios?|regression test\w*)\b|'
+             r'\btest(?:ed|ing)?\b[^.;\n]*\b(?:analytical systems?|data.driven solutions?)\b|'
+             r'testowan\w*[^.;\n]*(?:oprogramowan\w*|system\w* analityczn\w*|rozwiąza\w* opart\w* na danych)|'
+             r'przypadk\w* testow\w*|test\w* regresyjn\w*'),
             (r'\b(?:data engineer\w*|inżynieri\w* danych)\b',
              r'\b(?:data engineer\w*|inżynieri\w* danych|ETL|ELT|data pipelines?|data warehouse\w*|data lakes?|PySpark|Airflow)\b'),
             (r'\b(?:cyber.?security|information security|AI security)\b',
@@ -238,7 +243,7 @@ class EvidenceMatcher:
         support_role = bool(re.search(r'\bit support\b|technical support|product support|customer.facing technical|software development', name, re.I))
         systems_role = bool(re.search(r'system(?:s)? engineer(?:ing)?|system(?:s)? administrat|infrastructure', name, re.I))
         similar_role = bool(re.search(r'similar|related|equivalent', name, re.I))
-        specialist_scope = bool(re.search(r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*|data engineer\w*|inżynieri\w* danych|cyber.?security|information security|AI security)\b', name, re.I))
+        specialist_scope = bool(re.search(r'\b(?:software test\w*|quality assurance|QA|testowan\w* oprogramowan\w*|pentest\w*|penetration test\w*|test\w* penetracyjn\w*|data engineer\w*|inżynieri\w* danych|cyber.?security|information security|AI security)\b', name, re.I))
         intervals, entries, periods = [], [], []
         for index, exp in enumerate(self.catalog.profile.experience):
             facts = [e for e in self.entries if e.kind == 'experience' and e.owner_index == index and not NEGATIVE.search(e.text)]

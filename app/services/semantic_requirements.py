@@ -222,6 +222,8 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
             append_reason(item, language.reason)
     from app.services.named_evidence import apply_source_ceiling
     apply_source_ceiling(item, entries)
+    from app.services.source_proficiency import apply_proficiency_ceiling
+    apply_proficiency_ceiling(item, entries, validator.skills_bank)
     if original_status == Status.STRONG and item.status != Status.STRONG:
         validator._evidence_issues.append(f'Unsupported model confirmation corrected: {item.name}.')
     if set(original_ids) - set(item.source_fact_ids):
@@ -243,7 +245,12 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
     context_text = " ".join(" ".join(u.quote.split()) for u in units if u.category in excluded)
     for original in candidate.requirements:
         req = original.model_copy(deep=True)
-        quotes = resolve_source_quotes(req.source_quote, job_text) if req.source_quote.strip() else []
+        quotes = []
+        for quote in dict.fromkeys([req.source_quote, *req.source_quotes]):
+            resolved = resolve_source_quotes(quote, job_text) if quote.strip() else []
+            if not resolved:
+                issues.append('A model requirement had no verifiable original source quote.')
+            quotes.extend(value for value in resolved if value not in quotes)
         if not quotes:
             issues.append("A model requirement had no verifiable original source quote.")
             continue
@@ -315,6 +322,16 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
                 key = re.sub(r'^(?:(?:knowledge|experience|familiarity|proficiency) (?:of|in|with)|znajomość)\s+', '', part, flags=re.I).casefold()
                 component = old[key].model_copy(update={'name': part}) if key in old else RequirementComponent(name=part)
                 req.components.append(component)
+        # A shortened model label/list must not discard an explicit named tool.
+        # Examples and OR branches keep their existing alternative semantics.
+        if (req.components and re.search(r'\bPostman\b', req.source_quote, re.I)
+                and re.search(r'\b(?:and|oraz|i)\b', req.source_quote, re.I)
+                and not re.search(r'\b(?:or|lub)\b|such as|for example|takich jak|\bnp\.', req.source_quote, re.I)):
+            if not any(re.search(r'\bPostman\b', component.name, re.I) for component in req.components):
+                req.components.append(RequirementComponent(name='Postman'))
+            if req.operator != 'all':
+                req.interpretation_uncertain = True
+            req.operator = 'all'
         if req.operator == 'ambiguous':
             req.interpretation_uncertain = True
         for component in req.components:
@@ -491,6 +508,8 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
             append_reason(req, language.reason)
         from app.services.named_evidence import apply_source_ceiling
         apply_source_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup])
+        from app.services.source_proficiency import apply_proficiency_ceiling
+        apply_proficiency_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank)
         from app.services.source_scope import apply_availability
         apply_availability(req)
         req.required_level = req.required_level or required_level(req.name)
@@ -556,10 +575,12 @@ def merge_equivalent_source_rows(requirements):
             req.required_level = ''
         match = None
         for previous in result:
+            from app.services.requirement_equivalence import equivalent_translation
+            translated_scope = equivalent_translation(previous.source_quote, req.source_quote)
             same_scope = (
-                previous.source_quote == req.source_quote
+                (previous.source_quote == req.source_quote or translated_scope)
                 and previous.priority == req.priority
-                and previous.required_level == req.required_level
+                and (previous.required_level == req.required_level or translated_scope)
                 and previous.required_years == req.required_years
             )
             left, right = terms(previous), terms(req)
@@ -577,7 +598,7 @@ def merge_equivalent_source_rows(requirements):
                     )
                 )
             )
-            if same_scope and equivalent:
+            if same_scope and (equivalent or translated_scope):
                 match = previous
                 break
         if match is None:
@@ -588,7 +609,8 @@ def merge_equivalent_source_rows(requirements):
             {e["source_id"]: e for e in match.evidence_sources + req.evidence_sources}.values()
         )
         match.evidence = list(dict.fromkeys(match.evidence + req.evidence))
-        match.source_quotes = list(dict.fromkeys(match.source_quotes + req.source_quotes))
+        match.source_quotes = list(dict.fromkeys([match.source_quote, *match.source_quotes,
+                                                 req.source_quote, *req.source_quotes]))
         if len(req.components) > len(match.components):
             match.components = req.components
             match.operator = req.operator
