@@ -122,6 +122,7 @@ class GeminiProvider(AIProvider):
         skills_bank: SkillsBank | None = None,
     ):
         self.api_key = (settings.gemini_api_key or "").strip()
+        self.semantic_settings = settings
         self.model = (settings.gemini_model or "gemini-3.1-flash-lite").strip()
         self.summary_review_key = settings.csrf_secret
         self.base_url = (settings.gemini_base_url or "https://generativelanguage.googleapis.com").rstrip("/")
@@ -317,9 +318,15 @@ class GeminiProvider(AIProvider):
                 raise ProviderResponseError("Gemini returned invalid structured JSON. Try again.") from exc
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile) -> JobAnalysis:
+        if self.semantic_settings.analysis_graph_enabled:
+            from app.services.analysis_graph import analyze_with_graph, graph_available
+            if graph_available():
+                return await analyze_with_graph(self, job, profile)
         from app.services.indexed_analysis import indexed_interpretation
         from app.services.ollama_analysis import AnalysisInventory
         inventory = AnalysisInventory.build(job, profile, self.skills_bank)
+        from app.services.hybrid_retrieval import prepare_inventory_retrieval
+        await prepare_inventory_retrieval(inventory, self.semantic_settings)
         feedback = []
         for attempt in range(2):
             interpretation = await indexed_interpretation(self, inventory, validation_feedback=feedback)
@@ -369,7 +376,13 @@ class GeminiProvider(AIProvider):
         else:
             allowed_skills = [skill for values in profile.skills.values() for skill in values]
             allowed_skill_ids = []
-        payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
+        if self.semantic_settings.hybrid_retrieval_enabled:
+            from app.services.hybrid_retrieval import retrieval_in_thread
+            payload = await retrieval_in_thread(
+                build_compact_tailor_payload, job, profile, analysis, self.skills_bank, layout_guide,
+                references, retrieval_settings=self.semantic_settings)
+        else:
+            payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         resume = await self._chat(
             TailoredResume,
             resume_system_prompt(job),

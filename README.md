@@ -55,6 +55,10 @@ Custom documents never overwrite the master profile. See the
 
 ## Candidate fact RAG
 
+Optional, default-off BM25 + local Ollama embedding retrieval and bounded LangGraph
+analysis are now available. The lexical behavior described below remains the default.
+See [setup, safety boundaries, evaluation and limitations](docs/hybrid-semantic-matching.md).
+
 CV generation through **Ollama and Gemini** now retrieves relevant candidate facts before calling the LLM. Earlier versions supplied the entire profile to generation; evidence matching for analysis and reference-CV style selection already existed. [The audit and implementation guide](docs/rag.md) identifies the files and functions behind this distinction.
 
 - **Sources and chunks:** `FactCatalog` turns the current master profile into individual facts with stable source IDs, type and owner. Employment, projects and education remain separate; skills are filtered by the existing verified skills bank. Profile facts remain candidate attestations.

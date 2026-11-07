@@ -72,7 +72,7 @@ class FactIndex:
 
 
 def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
-                   *, top_k=TOP_K, max_chars=MAX_CONTEXT_CHARS) -> RetrievalResult:
+                   *, top_k=TOP_K, max_chars=MAX_CONTEXT_CHARS, settings=None) -> RetrievalResult:
     from app.services.cv_content_policy import cv_catalog
     catalog = cv_catalog(profile, job)
     documents = _documents(catalog, bank)
@@ -87,8 +87,15 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         queries = [(job.relevance_text, 1.0)]
     queries.append((job.role, 0.5))
     mode = "ranked"
+    hybrid_trace = {}
     try:
-        ranked = FactIndex(documents).search(queries)
+        from app.core.config import get_settings
+        settings = settings or get_settings()
+        if settings.hybrid_retrieval_enabled:
+            from app.services.hybrid_retrieval import hybrid_search
+            ranked, hybrid_trace = hybrid_search(documents, queries, settings)
+        else:
+            ranked = FactIndex(documents).search(queries)
         # Blend lexical relevance with the canonical profile order. Only ranked
         # matches participate: this control cannot create evidence for a gap.
         maximum = max((score for _, score in ranked), default=1)
@@ -99,7 +106,10 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
             + level * (1 - source_order[e.source_id] / max(1, len(documents)))
             for e, score in ranked
         }
-        ranked.sort(key=lambda item: (-ranking_scores[item[0].source_id], item[0].source_id))
+        fused_order = {entry.source_id: index for index, (entry, _) in enumerate(ranked)}
+        ranked.sort(key=lambda item: (-ranking_scores[item[0].source_id],
+                                     fused_order[item[0].source_id] if hybrid_trace.get('method') == 'local_bm25_dense_rrf'
+                                     else item[0].source_id))
         mode = "ranked" if ranked else "no_matches"
         used = sum(len(e.text) for e in selected.values())
         for entry, score in ranked[:top_k]:
@@ -108,7 +118,7 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
                     continue
                 selected[entry.source_id] = entry
                 used += len(entry.text)
-            reasons[entry.source_id] = "lexical_match"
+            reasons[entry.source_id] = "hybrid_match" if hybrid_trace.get('method') == 'local_bm25_dense_rrf' else "lexical_match"
             scores[entry.source_id] = round(score, 6)
     except Exception:
         # No exception text or candidate data in logs. The previous full catalog
@@ -119,9 +129,10 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         reasons = {i: "catalog_fallback" for i in selected}
     entries = list(selected.values())
     return RetrievalResult(entries, {
-        "method": "local_bm25", "mode": mode, "top_k": top_k,
+        "method": hybrid_trace.get('method', 'local_bm25'), "mode": mode, "top_k": top_k,
+        "hybrid": hybrid_trace,
         "tailoring_level": job.tailoring_level,
-        "ranking_policy": "blend_normalized_bm25_with_profile_order",
+        "ranking_policy": "blend_normalized_rrf_with_profile_order" if hybrid_trace.get('method') == 'local_bm25_dense_rrf' else "blend_normalized_bm25_with_profile_order",
         "index_revision": hashlib.sha256(json.dumps(
             [(e.source_id, e.kind, e.owner_name, e.text) for e in documents],
             ensure_ascii=False).encode()).hexdigest(),

@@ -1,0 +1,3 @@
+# Optional; the default application does not import these packages.
+langchain-ollama==1.1.0
+langgraph==1.2.20
