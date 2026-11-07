@@ -39,6 +39,10 @@ Reference PDFs/DOCX and their derived index live in ignored `data/reference_cvs/
 
 ## Candidate retrieval
 
+An optional default-off [hybrid semantic extension](hybrid-semantic-matching.md)
+adds local LangChain/Ollama embeddings and an alternative bounded LangGraph analysis
+path. Existing validation remains authoritative; all analysis evidence stays available.
+
 After requirement analysis, direct Ollama and Gemini generation use request-local BM25 retrieval over canonical `FactCatalog` documents. `build_compact_tailor_payload` supplies selected source IDs/facts and identity metadata. No persisted retrieval cache or additional service is used. Full-profile analysis and independent export validation remain in place. See [RAG audit, ranking, lifecycle and fallback](rag.md).
 
 ## Truth Lock

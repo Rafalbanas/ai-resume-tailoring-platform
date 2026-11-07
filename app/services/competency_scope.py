@@ -1,7 +1,14 @@
 """Scoped evidence for knowledge and practice, shared by both analysis paths."""
 import re
 
+NAMED_TECH_SCOPES = {
+    'LangChain': r'\bLangChain\b',
+    'LangGraph': r'\bLangGraph\b',
+    'Azure AI Services': r'\bAzure AI Services\b',
+}
+
 SCOPES = {
+    **{name: (pattern, pattern) for name, pattern in NAMED_TECH_SCOPES.items()},
     'networking': (r'network(?:ing)? (?:concepts|principles)|networking', r'\b(?:tcp/ip|dns|dhcp|vpn|mikrotik|fortigate|network(?:ing)?)\b'),
     'security': (r'security (?:best practices|principles|practices)', r'security (?:best practices|principles|policies)|firewall|fortigate|\bvpn\b|access management|security updates'),
     'backup': (r'\bbackup\b', r'\b(?:backups?|veeam)\b'),
@@ -85,6 +92,8 @@ def scoped_match(matcher, name):
         complete = False
     if re.search(r'professional experience', name, re.I):
         complete = complete and any(e.kind == 'experience' or re.search(r'professional', e.text, re.I) for e in practical)
+    if key in NAMED_TECH_SCOPES and re.search(r'\bcommercial\b|\bkomercyjn\w*', name, re.I):
+        complete = complete and any(e.kind == 'experience' for e in practical)
     if re.search(r'proficien\w*|advanced|expert', name, re.I):
         complete = complete and any(re.search(r'proficien\w*|advanced|expert', e.text, re.I) for e in positive)
     return EvidenceMatch(Status.STRONG if complete else Status.PARTIAL, unique(positive),

@@ -71,6 +71,7 @@ class OllamaProvider(AIProvider):
         semaphore: asyncio.Semaphore | None = None,
     ):
         self.call_metrics = []
+        self.semantic_settings = settings
         self._run_metrics = ContextVar("ollama_run_metrics", default=None)
         self.summary_review_key = settings.csrf_secret
         self.base_url = settings.ollama_base_url.rstrip("/")
@@ -367,8 +368,15 @@ class OllamaProvider(AIProvider):
             raise OllamaAnalysisError("envelope", "Ollama returned invalid structured JSON: missing message content.") from exc
 
     async def analyze_job(self, job: JobRequest, profile: CandidateProfile, on_stage=None) -> JobAnalysis:
+        if self.semantic_settings.analysis_graph_enabled:
+            from app.services.analysis_graph import analyze_with_graph, graph_available
+            if graph_available():
+                return await analyze_with_graph(self, job, profile)
         from app.services.indexed_analysis import INDEXED_PROMPT, interpretation_payload
         inventory = AnalysisInventory.build(job, profile, self.skills_bank)
+        from app.services.hybrid_retrieval import prepare_inventory_retrieval
+        async with self.semaphore:
+            await prepare_inventory_retrieval(inventory, self.semantic_settings)
         counter = (lambda payload: self.token_counter.prompt(f"{TRUTH_RULES}\n\n{INDEXED_PROMPT}", payload)) if self.token_counter else None
         batches = plan_batches(inventory, self.analysis_output, self.num_ctx, prompt_tokens=counter)
         rows = []
@@ -552,7 +560,14 @@ class OllamaProvider(AIProvider):
         else:
             allowed_skills = [skill for values in profile.skills.values() for skill in values]
             allowed_skill_ids = []
-        payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
+        if self.semantic_settings.hybrid_retrieval_enabled:
+            from app.services.hybrid_retrieval import retrieval_in_thread
+            async with self.semaphore:
+                payload = await retrieval_in_thread(
+                    build_compact_tailor_payload, job, profile, analysis, self.skills_bank, layout_guide,
+                    references, retrieval_settings=self.semantic_settings)
+        else:
+            payload = build_compact_tailor_payload(job, profile, analysis, self.skills_bank, layout_guide, references)
         from app.services.ollama_payload import compact_generation
         wire_payload = compact_generation(payload)
         prompt = (resume_system_prompt(job) + "\nInclude every employment and education owner exactly once. Bullet citations must belong to that employment. Never turn a missing requirement into expertise in the summary. "

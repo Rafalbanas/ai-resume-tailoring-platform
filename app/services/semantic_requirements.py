@@ -120,11 +120,17 @@ def append_reason(item, note):
 
 
 def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=False):
-    from app.services.competency_scope import scoped_match
+    from app.services.competency_scope import NAMED_TECH_SCOPES, scoped_match
     from app.services.evidence_strength import CI
     source_quote = getattr(item, 'source_quote', '')
     query = source_quote if re.search(r'\bsuch as\b|\bfor example\b|\btakich jak\b|\be\.g\.|\bnp\.', source_quote, re.I) else item.name
-    scoped = None if aggregate else scoped_match(validator.matcher, query)
+    scope_name = query
+    if any(re.search(pattern, item.name, re.I) for pattern in NAMED_TECH_SCOPES.values()):
+        # Preserve commercial scope even when the model shortens its label.
+        context = source_quote + ' ' + ml_context
+        if re.search(r'\bcommercial\b|\bkomercyjn\w*', context, re.I):
+            scope_name += ' commercial experience'
+    scoped = None if aggregate else scoped_match(validator.matcher, scope_name)
     degree = None
     if not aggregate:
         from app.services.education_evidence import degree_match

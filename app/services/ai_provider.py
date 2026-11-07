@@ -236,10 +236,11 @@ def build_compact_tailor_payload(
     skills_bank: Any = None,
     layout_guide: dict[str, Any] | None = None,
     references: list[dict[str, Any]] | None = None,
+    *, retrieval_settings=None,
 ) -> dict[str, Any]:
     from app.services.fact_retrieval import retrieve_facts
 
-    retrieval = retrieve_facts(job, profile, analysis, skills_bank)
+    retrieval = retrieve_facts(job, profile, analysis, skills_bank, settings=retrieval_settings)
     source_catalog = [dict(source_id=e.source_id, type=e.kind, owner=e.owner_name,
                            fact=e.text, owner_index=e.owner_index) for e in retrieval.entries]
     grouped_facts = {

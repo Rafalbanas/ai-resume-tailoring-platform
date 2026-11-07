@@ -51,11 +51,11 @@ def reference_schema(inventory, ids):
     return {'type': 'object', 'properties': {'rows': {'type': 'array', 'items': row}}, 'required': ['rows']}
 
 
-async def indexed_interpretation(provider, inventory, *, validation_feedback=None):
+async def indexed_interpretation(provider, inventory, *, validation_feedback=None, max_attempts=2):
     pending = inventory.unique_assessment_ids(list(inventory.passages))
     rows = []
     error_message = '; '.join(validation_feedback or [])
-    for _attempt in range(2):
+    for _attempt in range(max_attempts):
         prompt = ROWS_PROMPT
         if error_message:
             prompt += f"\nVALIDATION FEEDBACK: {error_message}. Correct the response for every supplied passage; do not invent evidence."

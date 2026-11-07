@@ -184,6 +184,10 @@ class EvidenceMatcher:
         Apply only explicit domain ceilings, not job-title inference. Other
         domains retain the model's cited-duty interpretation.
         """
+        from app.services.competency_scope import NAMED_TECH_SCOPES
+        named = [pattern for pattern in NAMED_TECH_SCOPES.values() if re.search(pattern, scope, re.I)]
+        if len(named) == 1:
+            entries = [entry for entry in entries if all(re.search(pattern, entry.text, re.I) for pattern in named)]
         domains = [
             (r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*)\b',
              r'\b(?:pentest\w*|penetration test\w*|test\w* penetracyjn\w*|offensive security|red[ -]team(?:ing)?)\b'),
@@ -258,7 +262,7 @@ class EvidenceMatcher:
                 if scopes:
                     relevant = [e for e in relevant if all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in scopes)]
             else:
-                terms = [v for v in ('Python', 'SQL', 'SAP', 'JavaScript', 'Linux', 'Windows', 'Kubernetes') if re.search(r'\b' + v + r'\b', name, re.I)]
+                terms = [v for v in ('Python', 'SQL', 'SAP', 'JavaScript', 'Linux', 'Windows', 'Kubernetes', 'LangChain', 'LangGraph', 'Azure AI Services') if re.search(r'\b' + v + r'\b', name, re.I)]
                 relevant = [e for e in facts if terms and all(re.search(r'\b' + v + r'\b', e.text, re.I) for v in terms)]
             relevant = self._specialist_tenure_entries(relevant, name)
             entries.extend(relevant)
@@ -357,6 +361,9 @@ class EvidenceMatcher:
         if ceiling is not None:
             relevant = ml_entries(name, self.entries)
             return EvidenceMatch(Status(ceiling[0]), relevant, ceiling[1])
+        from app.services.competency_scope import NAMED_TECH_SCOPES
+        if required_years(name) is not None and any(re.search(p, name, re.I) for p in NAMED_TECH_SCOPES.values()):
+            return self._tenure(name)
         scoped = scoped_match(self, name)
         if scoped is not None:
             return scoped
