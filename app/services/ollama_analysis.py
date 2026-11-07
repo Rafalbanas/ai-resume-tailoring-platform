@@ -84,6 +84,10 @@ For duties use responsibility; a duty is not a prior-experience qualification.
 Portal/role technology tags are checked independently by code. Use context with
 only p and k for those tag passages; do not generate a long component list for them.
 Never infer mandatory priority from portal tags.
+Qualification prose is not a portal tag merely because it follows a tech stack.
+Assess education, proficiency and soft-skill conditions under qualification sections.
+Leading "nice to have", "docenimy" and "dodatkowym atutem" clauses are preferences;
+a trailing preference must not weaken the preceding mandatory condition.
 Soft skill descriptions are candidate capabilities, not company context: classify them
 as competencies unless a qualification priority is explicit. Tenure, language proficiency
 and hands-on experience conditions remain qualifications even under unfamiliar headings.
@@ -637,8 +641,15 @@ def condition_text(passage):
     import re
 
     text = clean_source_line(passage["text"])
-    from app.services.source_dispositions import english_candidate_condition, polish_candidate_condition
-    if english_candidate_condition(text) or polish_candidate_condition(text):
+    from app.services.source_dispositions import (
+        english_candidate_condition,
+        explicit_skill_condition,
+        inline_candidate_preference,
+        polish_candidate_condition,
+    )
+    if (english_candidate_condition(text) or polish_candidate_condition(text)
+            or explicit_skill_condition(text) or inline_candidate_preference(text)
+            or re.match(r'^(?:must|required|requires)\b', text, re.I)):
         # A predicate followed by ':' is not a presentation label. Stripping
         # it would erase proficiency/tenure before a programming-language list.
         return text
@@ -650,10 +661,18 @@ def needs_assessment(passage):
     """Detect candidate capability passages left as context, not infer their status."""
     import re
 
-    from app.services.source_dispositions import english_candidate_condition, polish_candidate_condition, source_heading
+    from app.services.source_dispositions import (
+        english_candidate_condition,
+        inline_candidate_preference,
+        polish_candidate_condition,
+        section_assessment_required,
+        source_heading,
+    )
     if source_heading(passage['text']):
         return False
     if passage.get("assessment_required") or objective_condition(passage):
+        return True
+    if inline_candidate_preference(passage['text']) or section_assessment_required(passage):
         return True
     text = condition_text(passage)
     if text.endswith(":") or len(text.split()) < 2:
@@ -693,12 +712,15 @@ def assessment_priority(passage):
     import re
 
     from app.services.job_sections import PREFERENCE_MARKER
+    from app.services.source_dispositions import inline_candidate_preference
 
     if not needs_assessment(passage):
         return None
     hints = set(passage.get('hints', []))
     if objective_condition(passage) and re.search(r'\b(?:is|are) required\b', passage['text'], re.I):
         return RequirementPriority.MANDATORY
+    if inline_candidate_preference(passage['text']):
+        return RequirementPriority.PREFERRED
     # An explicit mandatory section wins over an optional trailing clause.
     if 'mandatory' in hints:
         return RequirementPriority.MANDATORY

@@ -19,7 +19,12 @@ def model_source_units(candidate, text):
     for unit in parsed:
         source_hints.setdefault(clean_source_line(unit.quote), set()).add(unit.category)
         if unit.category == 'competency':
-            portal_metadata.update(clean_source_line(quote) for quote in [unit.quote, *unit.supporting_quotes])
+            from app.services.ollama_analysis import needs_assessment
+            # An unknown heading can leave real candidate conditions inside a
+            # stack section. Metadata is not a blanket coverage exemption.
+            if not needs_assessment({'text': unit.quote, 'hints': ['competency']}):
+                portal_metadata.add(clean_source_line(unit.quote))
+            portal_metadata.update(clean_source_line(quote) for quote in unit.supporting_quotes)
     for row in candidate.requirements:
         for quote in dict.fromkeys([row.source_quote, *row.source_quotes]):
             if quote:

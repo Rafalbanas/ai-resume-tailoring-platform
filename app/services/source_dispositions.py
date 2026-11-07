@@ -42,8 +42,8 @@ _SKILL_CONDITION = re.compile(
     r'(?:podstawow\w*|dobr\w*|praktyczn\w*|zaawansowan\w*)\s+umiejętnoś\w*\b|'
     r'drive\s+and\s+a\s+proactive\s+approach\b)', re.I)
 _POLISH_QUALIFICATION = re.compile(
-    r'^(?:(?:(?:praktyczn|dobr|bardzo\s+dobr|wysok|podstawow|zaawansowan)\w*\s+)*'
-    r'(?:doświadczeni\w*|rozumieni\w*|zrozumieni\w*|umiejętnoś\w*|wiedz\w*|zdolnoś\w*)\s+\S)', re.I)
+    r'^(?:(?:(?:praktyczn|dobr|bardzo\s+dobr|wysok|podstawow|zaawansowan|doskonał|głębok|inżynieryjn)\w*[, ]+)*'
+    r'(?:doświadczeni\w*|rozumieni\w*|zrozumieni\w*|umiejętnoś\w*|wiedz\w*|zdolnoś\w*|znajomoś\w*)\s+\S)', re.I)
 _POLISH_LANGUAGE = re.compile(
     r'język\s+(?:angielski|niemiecki|polski|francuski|hiszpański)'
     r'(?:\s*\(?[ABC][12]\+?\)?|\s+na\s+poziomie\s+(?:[ABC][12]\+?|zaawansowan\w*|komunikatywn\w*|biegł\w*))?'
@@ -58,6 +58,56 @@ _ENGLISH_CANDIDATE = re.compile(
     r'(?:you(?:[’\x27]re|\s+are)|are)\s+(?:proficient\s+in|familiar\s+with|self.reliant\b|accountable\b|eager\s+to\s+share\s+knowledge\b)|'
     r'you\s+(?:know\s+how\s+to\b|understand\s+\S|can\s+(?:communicate|explain|recommend)\b|'
     r'take\s+a\s+critical\s+approach\b|must\s+\S|need\s+to\s+\S))', re.I)
+
+_INLINE_PREFERENCE = re.compile(
+    r'^(?:nice[ -]to[ -]have\s*:\s*|'
+    r'docenimy\s+(?=(?:(?:praktyczn\w*|twoj\w*)\s+)?(?:doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wiedz\w*)\b)|'
+    r'dodatkowym\s+atutem\s+będzie\s+)\S', re.I)
+_EDUCATION = re.compile(
+    r'^(?:wykształceni\w*\s+|(?:BSc|MSc|PhD)\s+(?:or\s+equivalent|in)\b|'
+    r'(?:bachelor|master)(?:[’\x27]s)?\s+degree\b)', re.I)
+
+
+def inline_candidate_preference(text: str) -> bool:
+    """A leading preference qualifies the whole clause, unlike a trailing example."""
+    return bool(_INLINE_PREFERENCE.match(clean_source_line(text)))
+
+
+def section_assessment_required(passage) -> bool:
+    """Protect nominal candidate conditions in qualification sections.
+
+    This is a coverage obligation, not evidence of candidate competence. Unknown
+    headings and bare products remain advisory; a candidate attribute, skill or
+    educational/practice predicate must be present before constraining grammar.
+    """
+    if not set(passage.get('hints', [])) & {'mandatory', 'preferred', 'nice_to_have'}:
+        return False
+    line = clean_source_line(passage['text'])
+    if not line or source_heading(line) or line.endswith(':'):
+        return False
+    if len(line.split()) < 2:
+        return False
+    from app.services.source_scope import AVAILABILITY
+    if AVAILABILITY.search(line):
+        # Arrangement notes have a separate personal-clarification path. Actual
+        # "You must ..." predicates are protected independently above this guard.
+        return False
+    if _ADMIN.match(line) or _ORGANIZATION.match(line):
+        return False
+    if re.match(
+        r'^(?:we\s+offer\b|free\s+|apply\b|salary\b|wynagrodzeni\w*\b|oferujemy\b|'
+        r'our\s+|nasz\w*\s+|https?://|[\w.+-]+@[\w.-]+\.\w{2,})', line, re.I
+    ):
+        return False
+    return bool(re.match(
+        r'^(?:sumiennoś\w*|rzetelnoś\w*|elastycznoś\w*|otwartoś\w*|innowacyjn\w*\s+podejści\w*|'
+        r'własne\s+projekty|background\b|analytical\s+mindset\b|'
+        r'(?:the\s+)?desire\s+to\s+learn\b|(?:a\s+)?structured\s+approach\b|'
+        r'passion\s+for\s+innovation\b)', line, re.I
+    ) or re.search(
+        r'\b(?:skills?|abilities|aptitude|proficiency|expertise|foundations|knowledge|'
+        r'leadership|capabilities|experience|portfolio)\b', line, re.I
+    ))
 
 
 def polish_candidate_condition(text: str) -> bool:
@@ -81,8 +131,10 @@ def english_qualification_condition(text: str) -> bool:
 def explicit_skill_condition(text: str) -> bool:
     """An explicit skill predicate is not an action duty or a bare technology tag."""
     line = clean_source_line(text)
-    return bool(_SKILL_CONDITION.match(line) or _POLISH_QUALIFICATION.match(line)
+    return bool(_SKILL_CONDITION.match(line) or _POLISH_QUALIFICATION.match(line) or _EDUCATION.match(line)
                 or re.match(r'^(?:deep\s+(?:understanding|knowledge)|demonstrated\s+ability|'
+                            r'mandatory\s+\S.*\b(?:proficiency|knowledge|experience|skills)\b|'
+                            r'(?:English|Polish|German|French|Spanish)\s+on\s+an?\s+\w+\s+level\b|'
                             r'codzienn\w*,?\s+(?:praktyczn\w*\s+)?prac\w*\s+z\s+agentami)\b', line, re.I)
                 or _POLISH_LANGUAGE.fullmatch(line))
 
