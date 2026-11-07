@@ -19,8 +19,8 @@ class SourceUnit:
     uncertain: bool = False
 
 
-PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane|ideally,? you[’\x27]ll also have)\s*:?$', re.I)
-MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze wymagania|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements)\s*:?$', re.I)
+PREFERRED = re.compile(r'^(?:preference will be given.*|preferred(?: qualifications| requirements| skills)?|nice.to.have|could have|optional(?: requirements)?|desirable(?: skills| qualifications)?|desired experience|optional qualifications|mile widziane|ideally,? you[’\x27]ll also have|It would be an additional advantage if you)\s*:?$', re.I)
+MANDATORY = re.compile(r'^(?:(?:basic|essential|minimum|key|skills?\s*&|technical|candidate)\s+)*(?:requirements|qualifications)|^(?:the skills you bring|what you bring|your profile|we are looking for(?: you,? if you have)?|must have|wymagania.*|nasze wymagania|nasze oczekiwania|czego oczekujemy|you bring|profil pracownika|candidate profile|mandatory requirements|You[’\x27]re\s+a\s+perfect\s+match\s+for\s+the\s+role\s*,?\s+if)\s*:?$', re.I)
 NEEDED = re.compile(
     r"^what you(?:['’]ll| will)? need(?:\s*\(\s*(?:essential|required|mandatory)\s*\))?\s*:?$",
     re.I,
@@ -37,7 +37,7 @@ ORG = re.compile(r'^(?:o nas|kim jesteśmy|opis firmy|company overview|departmen
 STACK = re.compile(r"^(?:tech stack|skills used|technologies used|portal technology tags)\s*:?$", re.I)
 CONTEXT_HEADINGS = {
     "keywords": re.compile(r"^(?:ATS keywords|ATS keyword list|keywords)\s*:?$", re.I),
-    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer|what (?:do )?we offer|what can you expect from us|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|co zyskujesz,? dołączając do [^?]+\?|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get|why [\w &.\-]+\?)\s*:?$', re.I),
+    "benefits": re.compile(r'^(?:perks(?:\s*&\s*benefits)?|benefits|we offer(?:\s+(?:valuable\s+)?benefits(?:,\s+such\s+as)?)?|what (?:do )?we offer|what can you expect from us|dla ciebie|oferujemy|to oferujemy|ze swej strony możemy zaoferować|co oferujemy\??|co zyskujesz,? dołączając do [^?]+\?|what you get in return|in return for .+|(?:also,?\s+)?to reward .+you[’\x27]ll get|Why is joining us worth it\?|why [\w &.\-]+\?)\s*:?$', re.I),
     "employment": re.compile(r'^(?:employment (?:conditions|terms)|compensation|salary|contract|work mode|working conditions)\s*:?$', re.I),
     "recruitment": re.compile(r'^(?:recruitment(?: process| stages)?|hiring process|what happens once you apply\??|interview(?:ing)?(?: process| stages| with .+)?|proces rekrutacji|etapy rekrutacji|Nasz proces rekrutacji|Potrzebujesz więcej informacji\??|Kontakt|Contact information)\s*:?$', re.I),
 }

@@ -31,7 +31,7 @@ _ADMIN = re.compile(
     r'skontaktujemy\s+się\s+(?:tylko\s+)?z\s+wybranymi\b|'
     r'contact\s+(?:us|our\s+recruiter)\b|only\s+(?:selected|shortlisted)\s+candidates\s+will\s+be\s+contacted\b)', re.I)
 _ORGANIZATION = re.compile(
-    r'^(?:jesteśmy\b|nasza\s+(?:firma|spółka|organizacja)\b|marka\s+obecna\b|'
+    r'^(?:what else sets us apart\?|jesteśmy\b|nasza\s+(?:firma|spółka|organizacja)\b|marka\s+obecna\b|'
     r'we\s+(?:are\s+(?!looking\s+for|seeking)|have\b|believe\b|build\b|operate\b)|'
     r'our\s+(?:company|team|business)\b)', re.I)
 _SKILL_CONDITION = re.compile(
@@ -49,9 +49,33 @@ _POLISH_LANGUAGE = re.compile(
     r'(?:\s*\(?[ABC][12]\+?\)?|\s+na\s+poziomie\s+(?:[ABC][12]\+?|zaawansowan\w*|komunikatywn\w*|biegł\w*))?'
     r'(?:\s*[-–—:]?\s*mile\s+widzian\w*)?[.,]?', re.I)
 
+_ENGLISH_CANDIDATE = re.compile(
+    r'^(?:(?:you\s+)?have\s+'
+    r'(?:(?:(?:at\s+least|minimum(?:\s+of)?)\s+)?\d+(?:\.\d+)?\+?\s+years?\s+(?:of\s+)?)?'
+    r'(?:(?:prior|practical|hands.on|commercial|professional|proven|relevant)\s+)?experience\b|'
+    r'you\s+have\s+(?:a\s+)?(?:(?:good|solid|strong|deep|basic|working)\s+)?(?:knowledge|understanding)\b|'
+    r'you\s+have\s+a\s+process.oriented\s+mindset\b|'
+    r'(?:you(?:[’\x27]re|\s+are)|are)\s+(?:proficient\s+in|familiar\s+with|self.reliant\b|accountable\b|eager\s+to\s+share\s+knowledge\b)|'
+    r'you\s+(?:know\s+how\s+to\b|understand\s+\S|can\s+(?:communicate|explain|recommend)\b|'
+    r'take\s+a\s+critical\s+approach\b|must\s+\S|need\s+to\s+\S))', re.I)
+
 
 def polish_candidate_condition(text: str) -> bool:
     return bool(_POLISH_CANDIDATE.match(clean_source_line(text)))
+
+
+def english_candidate_condition(text: str) -> bool:
+    """Explicit current candidate capabilities, not future duties or offered perks."""
+    return bool(_ENGLISH_CANDIDATE.match(clean_source_line(text)))
+
+
+def english_qualification_condition(text: str) -> bool:
+    """Experience/knowledge predicates, not an inferred priority for soft traits."""
+    line = clean_source_line(text)
+    return english_candidate_condition(line) and bool(re.match(
+        r'^(?:(?:you\s+)?have\s+(?!a\s+process.oriented\b)|'
+        r'(?:you(?:[’\x27]re|\s+are)|are)\s+(?:proficient|familiar)\b|'
+        r'you\s+(?:must\b|need\s+to\b))', line, re.I))
 
 
 def explicit_skill_condition(text: str) -> bool:

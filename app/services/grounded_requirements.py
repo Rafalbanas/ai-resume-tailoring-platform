@@ -210,6 +210,9 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
         semantic_key,
     )
     units, sections = extract_sections(job_text)
+    from app.services.source_dispositions import known_source_context
+    literal_context_quotes = {clean_source_line(unit.quote) for unit in units
+                              if known_source_context({'text': unit.quote, 'hints': [unit.category]})}
     # Portal tags are source metadata, not model-assigned qualifications. Keep
     # their independently parsed levels even when the model returns context rows.
     portal_units = [u for u in units if u.category == 'competency']
@@ -296,6 +299,10 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
     # Location outside the requirement section is still a real constraint.
     job_lines = job_text.splitlines()
     for index, raw in enumerate(job_lines):
+        if clean_source_line(raw) in literal_context_quotes:
+            # Employer descriptions and offered flexible work are not personal
+            # availability prerequisites just because they mention an office.
+            continue
         if any(u.category in {"responsibility", "organization", "preferred", "nice_to_have", "competency", "benefits", "employment", "recruitment", "keywords", "unknown"}
                and (raw.strip() == u.quote or raw.strip() in u.supporting_quotes) for u in units):
             continue

@@ -76,3 +76,42 @@ deprecations (pytest-asyncio also warns about its unset future fixture-loop defa
 Ruff, dependency consistency, environment conformity and diff checks passed.
 These are results for this correction branch, not the earlier hybrid feature run.
 No production documents or reports were rewritten, and no service was deployed.
+
+## Follow-up: English automation-offer section boundaries
+
+A subsequent public-offer structure exposed another classification failure:
+explicit `You have ...` qualifications became duties, elliptical preferred clauses
+became context, and employer benefits became candidate gaps. This is downstream
+of URL extraction; semantic fact retrieval cannot repair the job classification.
+
+The follow-up adds:
+
+* Explicit English qualification/preference headings and nested benefit headings.
+* Current candidate predicates (`You have experience`, `You're proficient`,
+  `You're familiar with`, `Have experience`, `Are familiar with`) independently
+  checked against context-only/duty-only model dispositions.
+* Candidate predicates before a colon retain their proficiency/scope; only real
+  presentation labels are stripped. Soft traits alone do not establish mandatory
+  priority outside a qualification section.
+* Gerund action duties remain duties, while offered flexible working and company
+  descriptions mentioning offices cannot be reintroduced as availability gaps.
+  Actual `You must work on-site ...` prerequisites remain assessment-bearing.
+* Existing schema/coverage recovery remains bounded; repeated omissions fail
+  rather than manufacturing a successful qualification report.
+
+`tests/test_english_candidate_coverage.py` uses a fictional company/profile with
+14 mandatory conditions, 4 preferred conditions, separate duties and benefits.
+The initial 37-case file against committed `c72d1c0` produced **29 failures and 8
+passes**. This is a targeted regression reproduction, not a general extraction
+accuracy benchmark. The final two English regression files pass **57 tests**;
+existing source/classification, tenure, token-budget, indexed-recovery and graph
+contracts pass **199 tests** in a separate focused run. Ruff and diff checks pass.
+The full follow-up run completed alone with **2104 passed, 1 skipped, 13 warnings
+in 1418.07 seconds (23:38)**. The skip and third-party warnings have the same
+causes described above. Ruff, environment, dependency and diff checks also pass.
+The 2047-test result above belongs to the preceding fix, not this follow-up.
+
+The previously validated `c72d1c0` was pushed separately at the user's request.
+No unfinished English follow-up changes were included in that push. Saved reports
+need fresh analysis after a separately authorized deployment; reloading an old
+report does not rerun interpretation.
