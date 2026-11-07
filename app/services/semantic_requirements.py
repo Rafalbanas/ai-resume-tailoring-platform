@@ -351,8 +351,13 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         # Check source priority independently of the model disposition map: a
         # preferred model row cannot redefine a literal minimum as optional.
         from app.services.ollama_analysis import assessment_priority
+        from app.services.source_dispositions import inline_candidate_preference
         literal_priorities = [assessment_priority({'text': quote, 'hints': [u.category for u in literal_units
             if clean_source_line(quote) in clean_source_line(u.quote)]}) for quote in quotes]
+        if not role and quotes and all(inline_candidate_preference(quote) for quote in quotes):
+            # Older/provider output may bypass compact row normalization. A
+            # leading optional clause is not made mandatory by its section.
+            req.priority = RequirementPriority.PREFERRED
         if not role and 'mandatory' in literal_priorities and req.priority != 'mandatory':
             req.priority = RequirementPriority.MANDATORY
             note = 'Explicit mandatory source wording corrected an inconsistent optional priority.'

@@ -1,5 +1,8 @@
 # Requirement audit corrections
 
+See also the [batch qualification-coverage follow-up](batch-qualification-coverage.md)
+for later nominal/education/soft-trait omissions and inline preference guards.
+
 These changes address reproducible source/classification/evidence failures without
 changing private profiles, SkillsBank data, existing reports or generated exports.
 They apply to newly validated analyses with either lexical or hybrid retrieval.
