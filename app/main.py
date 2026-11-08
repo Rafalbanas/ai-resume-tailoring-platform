@@ -122,6 +122,7 @@ async def instance_lifespan(app: FastAPI):
     )
     app.state.provider.settings_path = settings.data_dir / "ai_settings.json"
     app.state.provider.load_settings()
+    app.state.deployment_data_dir = settings.data_dir
     task_manager = TaskManager(settings.data_dir, budget_seconds=settings.llm_operation_budget_seconds, max_pending=settings.max_pending_tasks, auto_delete_history=settings.auto_delete_history)
     await task_manager.recover_on_startup()
     task_manager.start_worker(app.state)
@@ -166,6 +167,7 @@ async def lifespan(app: FastAPI):
         demo_settings._shared_account = True
         demo = create_app(demo_settings, shared_account=True)
         async with demo.router.lifespan_context(demo):
+            demo.state.deployment_data_dir = app.state.deployment_data_dir
             if demo.state.auth_store.username == app.state.auth_store.username:
                 raise RuntimeError("Private and demo login names must be different")
             if demo.state.sessions.path.samefile(app.state.sessions.path):

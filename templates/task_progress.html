@@ -30,8 +30,8 @@
   </div>
   <div class="actions"><a href="{{ app_root_path|default('') }}/history">Saved analyses</a>{% if job.get('job_url') %}<a href="{{ job.get('job_url') }}" target="_blank" rel="noopener noreferrer">Original job</a>{% endif %}</div>
   <div class="truth-badge" id="task-status-badge">
-    <span class="{% if task.status not in ['failed', 'completed', 'rejected'] %}pulse-indicator{% endif %}" id="task-badge-icon">
-      {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% elif task.status == 'rejected' %}—{% else %}⚡{% endif %}
+    <span class="{% if task.status not in ['failed', 'completed', 'rejected', 'cancelled'] %}pulse-indicator{% endif %}" id="task-badge-icon">
+      {% if task.status == 'failed' %}⚠️{% elif task.status == 'completed' %}✓{% elif task.status in ['rejected', 'cancelled'] %}—{% else %}⚡{% endif %}
     </span>
     <div>
       <strong id="task-status-text">
@@ -43,6 +43,8 @@
           Completed
         {% elif task.status == 'rejected' %}
           Rejected — history kept
+        {% elif task.status == 'cancelled' %}
+          Cancelled — saved results kept
         {% else %}
           Generation failed
         {% endif %}
@@ -57,10 +59,33 @@
      data-task-id="{{ task.task_id }}" data-status="{{ task.status }}"
      data-created-at="{{ task.created_at }}" data-started-at="{{ task.started_at or '' }}"
      data-token-usage="{{ task.token_usage|tojson|forceescape }}"
-     data-task-activity="{{ task_activity|default({})|tojson|forceescape }}">
+      data-task-activity="{{ task_activity|default({})|tojson|forceescape }}"
+      data-deployment-status="{{ deployment_status|default({})|tojson|forceescape }}">
+  <section id="deployment-notice" class="alert" role="status" {% if not (deployment_status|default({})).get('in_progress') %}hidden{% endif %}>
+    <strong>Deployment in progress</strong>
+    <p id="deployment-detail">New operations are temporarily blocked. Existing tasks continue.</p>
+    {% if task.kind == 'batch' %}<p>You can cancel the remaining offers below without deleting saved results. Do not submit a duplicate batch.</p>{% else %}<p>Existing tasks continue; wait for deployment to finish before submitting new work.</p>{% endif %}
+  </section>
+  {% if task.kind == 'batch' %}
+  <section id="batch-cancellation-controls" aria-label="Batch cancellation" {% if task.status not in ['queued', 'running'] %}hidden{% endif %}>
+    <form id="cancel-batch-form" action="{{ app_root_path|default('') }}/queue/tasks/{{ task.task_id }}/cancel-batch" method="post"
+          data-confirm="Cancel remaining offers? The current offer finishes normally and saved analyses and CVs are kept."
+          {% if task.cancellation_requested|default(false) %}hidden{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary">Cancel remaining offers</button>
+    </form>
+    <p id="batch-cancel-requested" role="status" {% if not task.cancellation_requested|default(false) %}hidden{% endif %}>Cancellation requested — waiting for the current offer to finish safely. Saved results are kept; this may take the remaining per-offer execution budget.</p>
+  </section>
+  <section id="batch-cancelled-results" {% if task.status != 'cancelled' %}hidden{% endif %}>
+    <h2>Batch cancelled — saved results kept</h2>
+    <p>Remaining offers were not started. No automatic retry was scheduled.</p>
+    <ul>{% for item in (task.result or {}).get('items', []) %}{% if item.get('draft_id') %}<li><a href="{{ app_root_path|default('') }}/analysis/{{ item.draft_id }}">Saved analysis {{ loop.index }}</a></li>{% endif %}{% endfor %}</ul>
+    <a href="{{ app_root_path|default('') }}/history">Open saved analyses and CVs</a>
+  </section>
+  {% endif %}
   <div class="task-card-header">
     <div class="task-stage-badge">
-      <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed', 'rejected'] %}display: none;{% endif %}"></span>
+      <span class="live-pulse" id="task-live-pulse" style="{% if task.status in ['failed', 'completed', 'rejected', 'cancelled'] %}display: none;{% endif %}"></span>
       <span id="task-stage">{{ task.stage|ui_text }}</span>
     </div>
     <div class="task-timer-meta">
@@ -77,7 +102,7 @@
   </div>
 
   {% set activity = task_activity|default({}) %}
-  <div id="task-activity-section" aria-live="polite" style="margin: 1rem 0;" {% if task.status in ['failed', 'completed', 'rejected'] %}hidden{% endif %}>
+  <div id="task-activity-section" aria-live="polite" style="margin: 1rem 0;" {% if task.status in ['failed', 'completed', 'rejected', 'cancelled'] %}hidden{% endif %}>
     <h2>Current background activity</h2>
     <p id="task-queue-position">{% if activity.get('paused') and task.status == 'queued' %}Queue paused — the active task finishes, but waiting requests do not start.{% elif activity.get('queue_position') %}Queue position: {{ activity.queue_position }} · {{ activity.queued_ahead }} queued requests ahead{% elif task.status == 'running' %}This task is processing on the server.{% else %}Waiting for the server worker to pick up this task{% endif %}</p>
     <ul id="running-tasks-list">
@@ -98,6 +123,8 @@
           Processing failed. Retry generation or edit the job.
         {% elif task.status == 'rejected' %}
           Rejected before execution. This entry remains in history until you delete it manually.
+        {% elif task.status == 'cancelled' %}
+          Batch cancelled. Saved analyses and CVs remain available; remaining offers were not started.
         {% else %}
           ℹ️ This task runs on the server independently of your browser. You may refresh, close this tab, or return later.
         {% endif %}

@@ -6,6 +6,44 @@ CVTailor is designed as a production-grade, single-owner automation system demon
 
 See the [documentation index](docs/README.md) for setup, operations, feature guides and historical reports.
 
+## See CVTailor in action
+
+**Job description → evidence-based match report → CV draft → reviewed PDF / DOCX.**
+
+1. Paste a job description or fetch a single selected public offer, then choose the AI provider and model.
+2. Review the match report, documented evidence and qualification gaps. A completed analysis is not yet a generated CV.
+3. Generate a draft from verified profile facts with Truth Lock enabled, then inspect the content and any warnings.
+4. Confirm the summary when required, export PDF / DOCX, and use History to preview, edit or find saved applications.
+
+### Desktop and mobile previews
+
+The desktop capture below comes from a local Ollama run with a fictional candidate and offer. The mobile capture is an existing synthetic UI example.
+
+<table>
+  <tr>
+    <th>Desktop · Gemma match report</th>
+    <th>Mobile · offer deadline</th>
+  </tr>
+  <tr>
+    <td><a href="docs/media/02-match-report.png"><img src="docs/media/match-report-overview.png" alt="Source-backed match report generated locally by Gemma for a fictional Technical Support Specialist offer; click for the full report" width="640"></a></td>
+    <td><a href="docs/images/offer-deadline-mobile.png"><img src="docs/images/offer-deadline-mobile.png" alt="Mobile synthetic offer card with an editable deadline and a past-deadline indicator" width="240"></a></td>
+  </tr>
+</table>
+
+History distinguishes reports from generated documents and shows export availability. Available files still require human review before applying. See [History filters](docs/history-filters.md) and [offer deadlines](docs/offer-deadlines.md).
+
+### Video walkthrough
+
+Recorded locally on **2026-11-08** using **Ollama · `gemma4:12b-it-q4_K_M`**, with automatic fallback disabled, the fictional **Alex Example** profile and a synthetic **Technical Support Specialist** offer. No mock provider was used.
+
+- **[Watch analysis and CV draft generation](docs/media/cvtailor-gemma-generation.webm)** — actual browser capture, including AI waiting time; trimmed after the export attempt starts, not a completed-export demonstration.
+- **[Watch report review and the initial export failure](docs/media/cvtailor-gemma-report.webm)** — a separate walkthrough of the saved report, source evidence, summary review and export status; it does not run AI again.
+- **Screenshots:** [job form](docs/media/01-job-form.png) · [match report](docs/media/02-match-report.png) · [initial export status](docs/media/03-export-status.png) · [History](docs/media/04-history.png).
+
+**Capture limitation:** analysis and CV text generation completed, but the first in-app export failed with `Document processing exceeded the time limit.` No completed PDF/DOCX export is claimed for that attempt. A separate direct PDF-rendering check succeeded; that is not proof that the full in-app export succeeded. The recordings are silent WebM files; open or download the links to play them.
+
+See the [walkthrough and privacy checklist](docs/demo-walkthrough.md) and [recording setup](#isolated-recording-demo) before capturing or publishing footage. Mock-provider footage must always be labelled as a deterministic offline demo, not live LLM generation.
+
 > [!IMPORTANT]
 > **Essential Operating Principles & Disclaimers:**
 > - **Explicitly selected postings only**: CVTailor fetches and analyzes user-provided postings, individually or through the bounded [batch API](docs/batch-api.md) (up to 50 URLs, processed sequentially). It does **not** discover offers or crawl job portals en masse.
@@ -492,7 +530,7 @@ Upload past PDF/DOCX resumes under the **Reference CVs** section (`data/referenc
 
 ## Isolated Recording Demo
 
-For creating video demonstrations or capturing screenshots without exposing personal candidate data, CVTailor includes an isolated demo runner:
+For video demonstrations or screenshots with fictional candidate data, CVTailor includes a demo initializer and a shared-login launcher. The launcher also loads the configured private account: sign in as `recording-demo` before capturing anything. Follow the [Recording Demo Guide](docs/recording-demo.md) for account isolation and deployment details.
 
 1. **Initialize the demo environment**:
    ```bash
@@ -500,14 +538,14 @@ For creating video demonstrations or capturing screenshots without exposing pers
    ```
    This generates synthetic candidate data ("Alex Example"), a fictional skills bank, a dedicated CSRF secret, and a one-time random password for the `recording-demo` user under `~/.local/share/cvtailor-recording-demo`.
 
-2. **Run the demo server**:
+2. **Run the shared-login server locally**:
    ```bash
    .venv/bin/python scripts/recording_demo.py run
    ```
-   Starts a separate Uvicorn instance on `127.0.0.1:18001` with `root_path="/demo"`, using isolated cookie names (`demo_session` and `demo_csrf_token`).
+    Starts Uvicorn on loopback, using `CV_TAILOR_PORT` (default `8000`) and the configured application root path. Both accounts use the same `/login`; the demo runtime has its own data directory and no separate listener. Stop any existing worker using the same account data before starting this launcher. Do not stop a running generation just to record a demo. The launcher retains the configured AI connections, models and timeouts.
 
 3. **Cleanup**:
-   Stop the process and delete the demo data directory (`~/.local/share/cvtailor-recording-demo`).
+    Stop the recording process. Remove the demo directory only if it is disposable and no running service uses it; never delete the private account data. Keep credentials, session cookies, API keys and terminal secrets out of screenshots and recordings.
 
 > [!NOTE]
 > The recording demo is intended for private video captures and local walkthroughs (see [Recording Demo Guide](docs/recording-demo.md)). It is **not** an isolated multi-tenant public demo environment.

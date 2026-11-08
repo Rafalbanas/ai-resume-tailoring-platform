@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 NAMESPACE = 'cvtailor-prod'
@@ -39,11 +40,40 @@ def object_get(*arguments):
     return json.loads(admin('get', *arguments, '-o', 'json'))
 
 
+def update_processors(images, *, best_effort=False):
+    """Pin every processor before waiting; rollback must not stop at one bad pod."""
+    failures = []
+    updated = []
+    for name, image in images.items():
+        try:
+            admin('set', 'image', 'deployment/' + name, 'processor=' + image)
+            updated.append(name)
+        except Exception:
+            failures.append(name)
+            if not best_effort:
+                raise
+    for name in updated:
+        try:
+            admin('rollout', 'status', 'deployment/' + name, '--timeout=240s')
+        except Exception:
+            print('Processor did not become ready: ' + name, file=sys.stderr, flush=True)
+            failures.append(name)
+            if not best_effort:
+                raise
+    if failures:
+        raise RuntimeError('Processor recovery incomplete: ' + ', '.join(failures))
+
+
 def drain(timeout=900):
     descriptor = os.open(DATA / '.deployment-admission.lock', os.O_CREAT | os.O_RDWR, 0o600)
     os.fchown(descriptor, 10001, 10001)
     deadline = time.monotonic() + timeout
+    started = datetime.now(timezone.utc)
+    metadata = {'started_at': started.isoformat(), 'drain_deadline_at': (started + timedelta(seconds=timeout)).isoformat()}
     try:
+        write_deployment_status({**metadata, 'phase': 'waiting_for_requests'})
+        print(f'Deployment drain started; waiting at most {timeout}s for existing requests and tasks. '
+              'Batch owners can cancel remaining offers from the batch status page.', flush=True)
         while True:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -52,14 +82,33 @@ def drain(timeout=900):
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Inflight requests did not finish; deployment refused') from None
                 time.sleep(1)
+        write_deployment_status({**metadata, 'phase': 'waiting_for_tasks'})
         while any(json.loads(path.read_text()).get('status') in {'queued', 'running'} for directory in (DATA, DATA.parent / 'demo') for path in (directory / 'tasks').glob('*.json')):
             if time.monotonic() >= deadline:
                 raise TimeoutError('Active analyses did not finish; deployment refused')
             time.sleep(2)
+        write_deployment_status({**metadata, 'phase': 'rollout'})
         return descriptor
     except BaseException:
-        os.close(descriptor)
+        try:
+            (DATA / '.deployment-status.json').unlink(missing_ok=True)
+        finally:
+            os.close(descriptor)
         raise
+
+
+def write_deployment_status(value):
+    """Only timing/phase metadata, readable by the app; atomic and credential-free."""
+    descriptor, temporary = tempfile.mkstemp(dir=DATA, prefix='.deployment-status-')
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            os.fchown(stream.fileno(), 10001, 10001)
+            os.fchmod(stream.fileno(), 0o600)
+            json.dump(value, stream)
+        os.replace(temporary, DATA / '.deployment-status.json')
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def ready_production_pod(pods):
@@ -140,12 +189,6 @@ def deploy(revision, digest):
             kubeconfig.chmod(0o600)
             cli = ['k3s', 'kubectl', '--kubeconfig', str(kubeconfig), '-n', NAMESPACE]
 
-            def update_processors(images):
-                for name, processor_image in images.items():
-                    # Fixed isolated deployments only; images are validated digests.
-                    admin('set', 'image', 'deployment/' + name, 'processor=' + processor_image)
-                    admin('rollout', 'status', 'deployment/' + name, '--timeout=240s')
-
             def release(target_image, target_revision, environment):
                 patch = {'metadata': {'annotations': {'cvtailor.dev/revision': target_revision}}, 'spec': {'template': {'spec': {
                     'imagePullSecrets': [{'name': 'cvtailor-ghcr'}], 'containers': [{'name': 'app', 'image': target_image,
@@ -165,17 +208,29 @@ def deploy(revision, digest):
                 environment.extend([{'name': 'APP_BUILD_SHA', 'value': revision},
                                     {'name': 'APP_BUILD_TIMESTAMP', 'value': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}])
                 release(image, revision, environment)
-            except BaseException:
+            except BaseException as deployment_error:
                 print('Deployment failed; restoring previous pinned image.', file=sys.stderr, flush=True)
-                update_processors(processors)
-                release(previous_image, previous_revision, previous_environment)
+                rollback_failures = []
+                try:
+                    update_processors(processors, best_effort=True)
+                except Exception:
+                    rollback_failures.append('processors')
+                try:
+                    release(previous_image, previous_revision, previous_environment)
+                except Exception:
+                    rollback_failures.append('application')
+                if rollback_failures:
+                    raise RuntimeError('Rollback incomplete; inspect ' + ', '.join(rollback_failures)) from deployment_error
                 print('Previous image restored.', file=sys.stderr, flush=True)
                 raise
         (STATE / 'previous-k8s-image.json').write_text(json.dumps({'image': previous_image, 'revision': previous_revision}))
         (STATE / 'current-k8s-image.json').write_text(json.dumps({'image': image, 'revision': revision}))
         print('Deployed ' + revision + ' to Kubernetes successfully.')
     finally:
-        os.close(descriptor)
+        try:
+            (DATA / '.deployment-status.json').unlink(missing_ok=True)
+        finally:
+            os.close(descriptor)
 
 
 def main():

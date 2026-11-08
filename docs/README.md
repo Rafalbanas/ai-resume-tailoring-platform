@@ -10,6 +10,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Runtime images and verification](runtime-images.md)
 - [Processing isolation and resource budgets](processing-security.md)
 - [Private and demo accounts](recording-demo.md)
+- [Recorded synthetic walkthrough and privacy checklist](demo-walkthrough.md)
 - [n8n setup](n8n-setup.md)
 - [Batch URL file automation / macOS quickstart (Polish)](batch-api-macos-pl.md)
 - [Kubernetes practice lab](kubernetes-lab.md)
@@ -26,6 +27,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Source-grounded analysis and CV quality guards](cv-quality-guards.md)
 - [Project-focused CV content and qualification coverage](project-first-cv-quality.md)
 - [Batch CV API: URL files, options, results and security](batch-api.md)
+- [Safe batch cancellation and deployment admission](batch-cancellation.md)
 - [Provider-reported token usage](token-usage.md)
 
 ## Security and historical evidence
