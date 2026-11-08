@@ -34,17 +34,6 @@ History distinguishes reports from generated documents and shows export availabi
 
 ### Video walkthrough
 
-**[Open the video and screenshot gallery](docs/demo.html)** — two native video
-players and full-size screenshots. GitHub displays HTML as source: to use the
-gallery locally, run `python3 -m http.server 8080 --bind 127.0.0.1 --directory docs`
-from the repository and open <http://127.0.0.1:8080/demo.html>. No application login
-is needed. Serve only the documentation directory, not private account data.
-
-[![Animated screenshot slideshow: synthetic job form, Gemma report, export timeout and History](docs/media/cvtailor-report-preview.gif)](docs/media/cvtailor-gemma-generation.webm)
-
-*Animated screenshot slideshow, not real-time footage or a generation-speed measurement.
-Click for the actual generation recording; the export timeout is retained below.*
-
 Recorded locally on **2026-11-08** using **Ollama · `gemma4:12b-it-q4_K_M`**, with automatic fallback disabled, the fictional **Alex Example** profile and a synthetic **Technical Support Specialist** offer. No mock provider was used.
 
 - **[Watch analysis and CV draft generation](docs/media/cvtailor-gemma-generation.webm)** — actual browser capture, including AI waiting time; trimmed after the export attempt starts, not a completed-export demonstration.

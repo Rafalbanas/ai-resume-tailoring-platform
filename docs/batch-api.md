@@ -94,58 +94,6 @@ example. `options` is a JSON object without `urls`; unknown fields are rejected.
 the default Gemini model, themes and limits. These routes and typed contracts
 are described in the application's OpenAPI schema.
 
-### Alternative local model: ISTA-DASLab Qwen 27B
-
-The user reports running
-`hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ2_XS`
-(approximately **9.4 GB** in `ollama ls`) with a **65,536-token context window**
-and generation at approximately **20 tokens per second**. This is a user-reported
-observation, not a reproducible project benchmark or a hardware-independent speed
-guarantee. GPU/VRAM details and actual GPU/CPU offload were not recorded.
-
-The user also reports VRAM pressure high enough that this setup requires stopping
-the graphical desktop to free GPU memory. The 9.4 GB figure is the listed model
-size, **not total runtime VRAM usage**: KV cache, compute buffers and other GPU
-applications need additional memory. This is a limitation of the reported machine,
-not a universal requirement to disable or uninstall a GUI. Stopping a desktop can
-end graphical sessions and lose unsaved work; no desktop/service changes are made
-by the application or the documented model selection.
-
-The supplied `systemctl show ollama -p Environment` output lists:
-
-```text
-OLLAMA_CONTEXT_LENGTH=65536
-OLLAMA_KV_CACHE_TYPE=q4_0
-OLLAMA_FLASH_ATTENTION=1
-OLLAMA_NUM_PARALLEL=1
-OLLAMA_MAX_LOADED_MODELS=1
-```
-
-**`IQ2_XS` quantizes the model weights; `q4_0` configures the KV cache, not Q8.**
-27B refers to model parameters, not context length. The service environment
-configures defaults and does not by itself prove the effective settings of a
-particular running request. An explicit request can override the default context;
-check `ollama ps` and runner logs when verifying an actual run.
-
-To select this installed model explicitly, use these upload options:
-
-```json
-{
-  "llm_provider": "ollama",
-  "ollama_model": "hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ2_XS",
-  "ollama_context": 65536,
-  "template_name": "modern_sidebar",
-  "export": true,
-  "allow_fallback": false
-}
-```
-
-Save the object as a local `options.json` and pass `upload --options-file options.json`
-to the [CLI](../scripts/batch_api.py). This replaces the CLI's default options object;
-it does not change the server's default model or existing tasks. Discover installed
-models first with `GET /api/v1/batches/options`. The report above is not evidence
-that this model completed the application's full analysis/export pipeline.
-
 ## Responses, polling and idempotency
 
 `202 Accepted` returns `task_id`, `status_url`, `view_url`, `Location` and

@@ -11,7 +11,6 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Processing isolation and resource budgets](processing-security.md)
 - [Private and demo accounts](recording-demo.md)
 - [Recorded synthetic walkthrough and privacy checklist](demo-walkthrough.md)
-- [Local video and screenshot gallery](demo.html) — download/open locally; GitHub displays HTML source.
 - [n8n setup](n8n-setup.md)
 - [Batch URL file automation / macOS quickstart (Polish)](batch-api-macos-pl.md)
 - [Batch API Automation script](../scripts/batch_api.py)

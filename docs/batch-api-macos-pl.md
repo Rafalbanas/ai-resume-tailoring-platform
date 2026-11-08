@@ -125,10 +125,6 @@ curl -fSs -b "$COOKIE_FILE" "$BASE/api/v1/batches/options" | python3 -m json.too
 
 Wybierz dokładną nazwę z `ollama_models`. Przykłady poniżej używają `gemma4:12b-it-q4_K_M`, ale obecność nazwy w instrukcji **nie oznacza**, że model jest zainstalowany na serwerze. Ollama to silnik lokalny; Gemma to model, a **Gemini** to odrębny dostawca Google.
 
-Alternatywa zgłoszona przez użytkownika: `hf.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF:IQ2_XS` (około 9,4 GB), kontekst 65 536 tokenów i około 20 tokenów/s. W pokazanej konfiguracji usługi **wagi są w `IQ2_XS`, a KV cache w `q4_0`, nie Q8**; Flash Attention jest włączone, a limity równoległości i załadowanych modeli wynoszą 1. To obserwacja użytkownika, nie benchmark ani potwierdzenie pełnego eksportu aplikacji. Zobacz [konfigurację i gotowe opcje JSON](batch-api.md#alternative-local-model-ista-daslab-qwen-27b). Domyślny kontekst usługi można nadpisać w żądaniu; tutaj wybierz jawnie `ollama_context: 65536`.
-
-Na komputerze użytkownika ta konfiguracja zajmuje tyle VRAM, że wymaga zatrzymania graficznego pulpitu, aby zwolnić pamięć GPU. **9,4 GB to rozmiar modelu, nie całkowite zużycie VRAM** — dochodzą KV cache, bufory obliczeń i inne aplikacje. Nie jest to uniwersalny wymóg usuwania GUI. Zatrzymanie pulpitu może zakończyć sesję i spowodować utratę niezapisanej pracy; aplikacja nie wykonuje takich zmian.
-
 Ta wersja API domyślnie blokuje fallback dla paczek (`allow_fallback: false`). Z żądaniem `llm_provider: ollama` błąd Gemmy nie wyśle wtedy danych do Gemini. Na starszych wdrożeniach Ollama mogła korzystać z globalnego fallbacku — wyłącz go w ustawieniach UI, jeśli wymagasz pracy wyłącznie lokalnej. Świadome `allow_fallback: true` dopuszcza fallback tylko wtedy, gdy zezwalają też ustawienia globalne; Gemini otrzymuje wówczas dane oferty i fakty kandydata.
 
 ### 3. Przesłanie ofert
