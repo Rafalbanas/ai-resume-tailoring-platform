@@ -1,5 +1,8 @@
 # Batch qualification coverage follow-up
 
+See [final source/scope integrity](final-source-scope-integrity.md) for subsequent
+whole-condition identity checks, compensation/context and credential safeguards.
+
 This follow-up addresses source conditions omitted from otherwise complete model
 disposition maps. It does not modify saved reports, candidate profiles, CVs or
 SkillsBank data and does not deploy or rerun a production batch.

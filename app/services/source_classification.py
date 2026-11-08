@@ -4,6 +4,26 @@ from app.services.semantic_requirements import resolve_source_quotes
 from app.services.source_dispositions import known_source_context
 
 
+def _continuation_quotes(header, text):
+    """Bound an open clause to its following literal lines, not unrelated quotes."""
+    from app.services.source_dispositions import source_heading
+    lines = text.splitlines()
+    choices = set()
+    for index, line in enumerate(lines):
+        if clean_source_line(line) != clean_source_line(header):
+            continue
+        for following in lines[index + 1:index + 25]:
+            value = clean_source_line(following)
+            if not value:
+                if choices:
+                    break
+                continue
+            if source_heading(value) or value.endswith(':') or len(value.split()) > 20:
+                break
+            choices.add(value)
+    return choices
+
+
 def model_source_units(candidate, text):
     """Return verified dispositions, or explicit coverage/provenance errors.
 
@@ -54,8 +74,14 @@ def model_source_units(candidate, text):
             continue
         for literal in resolved:
             from app.services.ollama_analysis import assessment_priority, needs_assessment, needs_responsibility
+            from app.services.source_dispositions import candidate_mandate
             literal_category, literal_row, literal_name = category, row, name
             passage = {'text': literal, 'hints': list(source_hints.get(clean_source_line(literal), []))}
+            if (row is not None and candidate_mandate(literal) and literal.rstrip().endswith(':')
+                    and not any(clean_source_line(q) in _continuation_quotes(literal, text)
+                                and resolve_source_quotes(q, text)
+                                for q in row.source_quotes)):
+                issues.append(f'Incomplete candidate condition needs continuation: {literal}')
             if row is not None and clean_source_line(literal) not in portal_metadata:
                 from app.services.source_scope import source_alignment_issue
                 alignment_issue = source_alignment_issue(name, literal)

@@ -119,6 +119,27 @@ def append_reason(item, note):
         item.reason = (item.reason.rstrip() + ' ' + note.strip()).strip()
 
 
+def guard_confirmation_explanation(validator, item):
+    """An explicit evidence denial cannot coexist with full confirmation.
+
+    Deterministic matchers may first replace a stale model explanation with
+    independently supported evidence. Any remaining contradiction needs review;
+    it is not proof that the candidate lacks the skill.
+    """
+    if item.status != Status.STRONG or not re.match(
+        r'^(?:no\s+(?:specific\s+)?(?:evidence|mention)\s+(?:of|for)\s+|'
+        r'not\s+documented\b)', item.reason.strip(), re.I
+    ):
+        return
+    if re.search(r'\b(?:lack|absence|missing|gaps?)\b', item.reason.split('.', 1)[0], re.I):
+        return
+    item.status = Status.PARTIAL if item.source_fact_ids else Status.MISSING
+    if hasattr(item, 'interpretation_uncertain'):
+        item.interpretation_uncertain = True
+    append_reason(item, 'Full confirmation conflicts with the evidence explanation; scope needs review, not an inferred absence.')
+    validator._evidence_issues.append(f'Full confirmation contradicted its evidence explanation: {item.name}.')
+
+
 def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=False):
     from app.services.competency_scope import NAMED_TECH_SCOPES, scoped_match
     from app.services.evidence_strength import CI
@@ -224,6 +245,7 @@ def _facts(validator, item, *, practical_scope=False, ml_context="", aggregate=F
     apply_source_ceiling(item, entries)
     from app.services.source_proficiency import apply_proficiency_ceiling
     apply_proficiency_ceiling(item, entries, validator.skills_bank)
+    guard_confirmation_explanation(validator, item)
     if original_status == Status.STRONG and item.status != Status.STRONG:
         validator._evidence_issues.append(f'Unsupported model confirmation corrected: {item.name}.')
     if set(original_ids) - set(item.source_fact_ids):
@@ -515,6 +537,7 @@ def validated_model_requirements(validator, candidate, job_text, units, fallback
         apply_source_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup])
         from app.services.source_proficiency import apply_proficiency_ceiling
         apply_proficiency_ceiling(req, [lookup[i] for i in req.source_fact_ids if i in lookup], validator.skills_bank)
+        guard_confirmation_explanation(validator, req)
         from app.services.source_scope import apply_availability
         apply_availability(req)
         req.required_level = req.required_level or required_level(req.name)

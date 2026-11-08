@@ -35,6 +35,7 @@ NEEDED = re.compile(
 QUALIFICATION_HEADING = re.compile(
     r'^(?:(?:required|mandatory|essential|minimum)\s+(?:technical\s+)?skills|'
     r'(?:required|mandatory|essential|minimum)\s+(?:technical\s+and\s+professional\s+|technical\s+|professional\s+)?expertise|'
+    r'technical\s+capabilities|'
     r'professional\s+requirements|what sets you apart|idealnie abyś posiadał/a|'
     r'jakie kompetencje są dla nas ważne\??|to qualify for the role,? you must have|'
     r'sprawdzisz się w tej roli, jeżeli|Experience required|Wymagane doświadczenie)\s*:?$', re.I,
