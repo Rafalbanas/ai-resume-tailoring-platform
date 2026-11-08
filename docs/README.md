@@ -13,6 +13,7 @@ or [contributing](../CONTRIBUTING.md) for local development and checks.
 - [Recorded synthetic walkthrough and privacy checklist](demo-walkthrough.md)
 - [n8n setup](n8n-setup.md)
 - [Batch URL file automation / macOS quickstart (Polish)](batch-api-macos-pl.md)
+- [Batch API Automation script](../scripts/batch_api.py)
 - [Kubernetes practice lab](kubernetes-lab.md)
 
 ## Architecture and features

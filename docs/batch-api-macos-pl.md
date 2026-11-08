@@ -2,6 +2,56 @@
 
 Jedno wysłanie pliku uruchamia kolejno analizę każdej wskazanej oferty i generowanie CV. Wyniki trafiają do zwykłej Historii. Poniższe polecenia wklejaj do **tej samej karty terminala zsh**; nie zapisuj hasła w poleceniach ani plikach. Nie wymagają `watch`, którego macOS domyślnie nie dostarcza.
 
+## Automatyzacja skryptem batch_api.py
+Skrypt [`scripts/batch_api.py`](../scripts/batch_api.py) wysyła paczki i monitoruje postęp. Nie loguje automatycznie ani nie pobiera CV.
+
+**Wymagania:**
+- Python3
+- curl >=7.76 (wymaga flagi `--fail-with-body`)
+
+**Uruchomienie:**
+Po wykonaniu `cv_login` z sekcji logowania poniżej albo własnego logowania przez `curl /login` wyeksportuj zmienne z tej samej karty terminala:
+```zsh
+export BASE COOKIE_FILE CSRF
+```
+
+**Interfejs:**
+```zsh
+# Dostosuj ścieżkę do miejsca sklonowania repozytorium.
+CV_API="$HOME/ai-resume-tailoring-platform/scripts/batch_api.py"
+
+export BASE COOKIE_FILE CSRF
+
+python3 "$CV_API" options
+
+cd "$HOME/Documents/Jobs"
+
+python3 "$CV_API" upload --key-prefix oferty-gemma-modern-20261108 --manifest tasks-20261108.jsonl batch-01-2026-11-08.txt batch-02-2026-11-08.txt batch-03-2026-11-08.txt
+
+python3 "$CV_API" watch --manifest tasks-20261108.jsonl --interval 30
+
+```
+
+Nie wysyłaj ponownie już działających paczek. Dla istniejących zadań użyj bezpośrednio `python3 "$CV_API" watch TASK_ID_1 TASK_ID_2 TASK_ID_3 --interval 30`, zastępując znaczniki własnymi identyfikatorami.
+
+Pojedynczy odczyt: `python3 "$CV_API" status TASK_ID`. Opcjonalne anulowanie: `python3 "$CV_API" cancel TASK_ID`. Zastąp `TASK_ID` własnym identyfikatorem; anulowania nie uruchamiaj, jeśli chcesz tylko sprawdzić postęp.
+
+**Szczegóły:**
+- **Opcje domyślne:** `ollama/gemma4:12b-it-q4_K_M/context65536/modern_sidebar/export true/allow_fallback false`.
+- **Plik opcji:** `upload --options-file options.json` zastępuje cały domyślny obiekt opcji; pola pominięte w pliku przyjmują domyślne wartości API. Format opisuje [kontrakt API](batch-api.md#json-submission-and-options).
+- **Klucze idempotencji:** Skrypt tworzy klucze `prefix-01`, `prefix-02`, `prefix-03` zgodnie z kolejnością plików. Ponawianie musi używać tych samych plików (także zawartości) w tej samej kolejności oraz tego samego prefiksu/opcji. Nowy prefiks oznacza celowe nowe generowanie.
+- **Manifest:** Skrypt zapisuje każdą odpowiedź jako wiersz JSONL w pliku manifestu `{file, idempotency_key, task_id, ...pełna odpowiedź}`. Plik jest zapisywany z uprawnieniami `0600`.
+- **Monitorowanie (`watch`):**
+  - Polecenie `watch` wykonuje GET i kończy się, gdy wszystkie paczki osiągną status `completed`, `failed`, `rejected` lub `cancelled`.
+  - `Ctrl+C` przerywa tylko monitorowanie, nie przerywa zadania na serwerze.
+- **Kody wyjścia:** `watch` i `status` zwracają `1` dla paczek `failed`, `rejected`, `cancelled` albo dowolnej oferty `manual_required`, `review_required`, `failed`, `cancelled`. Kod `0` dla odczytu trwającej paczki nie oznacza zakończenia. `completed` paczki nie gwarantuje sukcesu każdej oferty. Ctrl+C daje `130`.
+- **Błędy sieciowe:** Błąd HTTP lub sieciowy kończy skrypt z błędem, nie pętli się w nieskończoność.
+- **Kolejkowanie (`queued`):** Pierwsza paczka `running`, a kolejne `queued` to normalny widok przy jednym workerze. Same statusy nie dowodzą awarii ani konfiguracji wdrożenia.
+- **Anulowanie:** `cancel ID` anuluje pozostałe oferty po zakończeniu bieżącej; zapisane wyniki zostają zachowane.
+- **Przerwana wysyłka:** Pierwszy błąd zatrzymuje serię bez automatycznego ponawiania. Wcześniejsze odpowiedzi pozostają w manifeście. Jeśli odpowiedź zaginęła lub zapis manifestu się nie udał, powtórz całą serię z identycznymi kluczami i danymi — nie twórz nowego prefiksu. Manifest jest dopisywany; monitor usuwa powtarzające się identyfikatory. Przechowuj go poza repozytorium, ponieważ zawiera prywatne adresy ofert i wyników.
+
+Znajdź instrukcję szybkiego startu w [docs/README.md](README.md).
+
 ## Wymagania
 - **curl**: do komunikacji z API.
 - **python3**: do parsowania odpowiedzi JSON.
