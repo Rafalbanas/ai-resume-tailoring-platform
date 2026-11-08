@@ -84,6 +84,9 @@ For duties use responsibility; a duty is not a prior-experience qualification.
 Portal/role technology tags are checked independently by code. Use context with
 only p and k for those tag passages; do not generate a long component list for them.
 Never infer mandatory priority from portal tags.
+Offered salary is employer context, not a missing candidate salary expectation.
+An AND condition needs evidence for every scope: generic MFA does not prove Entra ID
+or Conditional Access. Product use/training does not prove a professional credential.
 Qualification prose is not a portal tag merely because it follows a tech stack.
 Assess education, proficiency and soft-skill conditions under qualification sections.
 Leading "nice to have", "docenimy" and "dodatkowym atutem" clauses are preferences;
@@ -642,12 +645,13 @@ def condition_text(passage):
 
     text = clean_source_line(passage["text"])
     from app.services.source_dispositions import (
+        candidate_mandate,
         english_candidate_condition,
         explicit_skill_condition,
         inline_candidate_preference,
         polish_candidate_condition,
     )
-    if (english_candidate_condition(text) or polish_candidate_condition(text)
+    if (candidate_mandate(text) or english_candidate_condition(text) or polish_candidate_condition(text)
             or explicit_skill_condition(text) or inline_candidate_preference(text)
             or re.match(r'^(?:must|required|requires)\b', text, re.I)):
         # A predicate followed by ':' is not a presentation label. Stripping
@@ -662,6 +666,7 @@ def needs_assessment(passage):
     import re
 
     from app.services.source_dispositions import (
+        employer_offer_context,
         english_candidate_condition,
         inline_candidate_preference,
         polish_candidate_condition,
@@ -670,6 +675,11 @@ def needs_assessment(passage):
     )
     if source_heading(passage['text']):
         return False
+    if employer_offer_context(passage['text']):
+        return False
+    if re.search(r'\b(?:you\s+must|(?:the\s+)?candidate\s+must|wymagamy)\s+\S',
+                 clean_source_line(passage['text']), re.I):
+        return True
     if passage.get("assessment_required") or objective_condition(passage):
         return True
     if inline_candidate_preference(passage['text']) or section_assessment_required(passage):

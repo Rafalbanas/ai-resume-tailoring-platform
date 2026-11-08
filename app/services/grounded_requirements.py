@@ -261,6 +261,7 @@ def validate_grounded(validator, candidate, job_text, *, semantic=False):
                                          if clean_source_line(quote) not in portal_quotes]
     for issue in source_issues:
         for prefix in ('Unclassified source passage needs review: ', 'Candidate condition was classified as context: ',
+                       'Incomplete candidate condition needs continuation: ',
                        'Explicit qualification was excluded from qualification scoring: ',
                        'Explicit responsibility was scored as a qualification: ',
                        'Explicit responsibility was classified as context: '):

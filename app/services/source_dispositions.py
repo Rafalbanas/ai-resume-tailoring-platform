@@ -61,11 +61,34 @@ _ENGLISH_CANDIDATE = re.compile(
 
 _INLINE_PREFERENCE = re.compile(
     r'^(?:nice[ -]to[ -]have\s*:\s*|'
+    r'(?:dużym|dodatkowym)\s+plusem\s+będzie\s+|'
     r'docenimy\s+(?=(?:(?:praktyczn\w*|twoj\w*)\s+)?(?:doświadczeni\w*|znajomoś\w*|umiejętnoś\w*|wiedz\w*)\b)|'
     r'dodatkowym\s+atutem\s+będzie\s+)\S', re.I)
 _EDUCATION = re.compile(
     r'^(?:wykształceni\w*\s+|(?:BSc|MSc|PhD)\s+(?:or\s+equivalent|in)\b|'
     r'(?:bachelor|master)(?:[’\x27]s)?\s+degree\b)', re.I)
+_CANDIDATE_MANDATE = re.compile(
+    r'^(?:(?:the\s+)?(?:(?:successful|ideal)\s+)?candidate|applicants?)\s+'
+    r'(?:must|needs?\s+to|is\s+required\s+to)\s+\S', re.I)
+
+
+def employer_offer_context(text: str) -> bool:
+    """Literal offered compensation is not a candidate salary expectation.
+
+    A mixed paragraph with an actual candidate mandate must still be assessed;
+    merely mentioning experience in a pay scale is not such a mandate.
+    """
+    line = clean_source_line(text)
+    if re.search(r'\b(?:you\s+must|candidate\s+must|must\s+have|wymagamy)\b', line, re.I):
+        return False
+    return bool(re.match(
+        r'^(?:(?:the\s+)?(?:base\s+)?(?:salary|pay|compensation)\s+'
+        r'(?:we\s+offer\b|for\s+(?:this|the)\s+(?:role|position)\b|(?:is|ranges)\b)|'
+        r'oferujemy\s+wynagrodzeni\w*\b|wynagrodzeni\w*\s+(?:wynosi|od|w\s+przedziale)\b)', line, re.I))
+
+
+def candidate_mandate(text: str) -> bool:
+    return bool(_CANDIDATE_MANDATE.match(clean_source_line(text)))
 
 
 def inline_candidate_preference(text: str) -> bool:
@@ -103,7 +126,9 @@ def section_assessment_required(passage) -> bool:
         r'^(?:sumiennoś\w*|rzetelnoś\w*|elastycznoś\w*|otwartoś\w*|innowacyjn\w*\s+podejści\w*|'
         r'własne\s+projekty|background\b|analytical\s+mindset\b|'
         r'(?:the\s+)?desire\s+to\s+learn\b|(?:a\s+)?structured\s+approach\b|'
-        r'passion\s+for\s+innovation\b)', line, re.I
+        r'passion\s+for\s+innovation\b|'
+        r'(?:strategic\s+)?relationship\s+(?:development|management)\b|'
+        r'(?:jasn\w*|sprawn\w*|skuteczn\w*)\s+komunikacj\w*\b)', line, re.I
     ) or re.search(
         r'\b(?:skills?|abilities|aptitude|proficiency|expertise|foundations|knowledge|'
         r'leadership|capabilities|experience|portfolio)\b', line, re.I
@@ -132,7 +157,10 @@ def explicit_skill_condition(text: str) -> bool:
     """An explicit skill predicate is not an action duty or a bare technology tag."""
     line = clean_source_line(text)
     return bool(_SKILL_CONDITION.match(line) or _POLISH_QUALIFICATION.match(line) or _EDUCATION.match(line)
+                or candidate_mandate(line)
                 or re.match(r'^(?:deep\s+(?:understanding|knowledge)|demonstrated\s+ability|'
+                            r'(?:proven|demonstrated)\s+ability\b|highly\s+adept\s+with\b|abiliy\s+to\b|'
+                            r'certyfikat\w*\s+(?:związane\s+z|z\s+(?:obszaru|zakresu)|potwierdzaj\w*)\b|'
                             r'mandatory\s+\S.*\b(?:proficiency|knowledge|experience|skills)\b|'
                             r'(?:English|Polish|German|French|Spanish)\s+on\s+an?\s+\w+\s+level\b|'
                             r'codzienn\w*,?\s+(?:praktyczn\w*\s+)?prac\w*\s+z\s+agentami)\b', line, re.I)
@@ -149,6 +177,8 @@ def source_heading(text: str) -> bool:
 def known_source_context(passage) -> bool:
     """A real candidate condition wins over an inherited administrative section."""
     if source_heading(passage['text']):
+        return True
+    if employer_offer_context(passage['text']):
         return True
     from app.services.ollama_analysis import needs_assessment
     if needs_assessment(passage):

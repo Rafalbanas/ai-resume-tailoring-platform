@@ -311,6 +311,8 @@ class EvidenceMatcher:
 
     def _security(self, name):
         facets = {
+            'Microsoft Entra ID': r'\b(?:Microsoft\s+)?Entra\s+ID\b|\bAzure\s+(?:AD|Active Directory)\b',
+            'Conditional Access': r'\bConditional\s+Access\b',
             'endpoint protection': r'endpoint protection|antivirus|anti.malware|microsoft defender|edr',
             'access management': r'access management|(?:administ|manag)\w*.*(?:access|permissions)',
             'security policies / GPO': r'group polic(?:y|ies)|\bgpo\b|security policies',
@@ -318,7 +320,7 @@ class EvidenceMatcher:
             'security monitoring': r'security monitoring|security (?:logs|alerts)|siem|compliance monitoring',
             'VPN': r'\bvpn\b',
             'MFA': r'\bmfa\b|multi.factor authentication',
-            'identity security': r'identity security|conditional access|identity protection',
+            'identity security': r'identity security|identity protection',
             'compliance': r'\bcompliance\b',
         }
         general = bool(re.search(r'IT security|security practices', name, re.I))
@@ -334,6 +336,11 @@ class EvidenceMatcher:
         related = [e for key in facets for e in matches[key]] if general else []
         missing = [key for key in selected if not matches[key]]
         complete = bool(requested) and not missing
+        if (re.search(r'\b(?:or|lub)\b', name, re.I)
+                and not re.search(r'\b(?:and|oraz|i)\b|[&+]', name, re.I)):
+            # Pure alternatives need one requested facet; mixed source logic
+            # keeps the conservative all-facet result for component review.
+            complete = bool(requested) and any(matches[key] for key in selected)
         reason = 'Security practices are verified per scope. Documented: ' + ', '.join(key for key in facets if matches[key]) + '. Needs confirmation: ' + ', '.join(missing) + '. Application logs do not prove security monitoring; access/VPN work does not prove endpoint protection, MFA or compliance.'
         return self._qualified(name, evidenced or related, complete, reason)
 
