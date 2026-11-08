@@ -31,6 +31,8 @@ async def run_batch(manager, task, state):
 
     persist()
     for index, item in enumerate(items):
+        if manager.batch_cancel_requested(task.task_id):
+            break
         child = None
         item['status'] = 'running'
         manager.update_task_progress(task.task_id, f'Offer {index + 1}/{len(items)}', int(index / len(items) * 100))
@@ -39,6 +41,10 @@ async def run_batch(manager, task, state):
             async with asyncio.timeout(manager.budget_seconds):
                 state.resource_budget.check_disk()
                 extracted = await state.job_extractor.extract(item['url'])
+                if manager.batch_cancel_requested(task.task_id):
+                    item.update(status='cancelled', error_code='batch_cancelled',
+                                error='Not analyzed: batch cancellation requested during offer extraction.')
+                    break
                 item['offer_valid_until'] = extracted.offer_valid_until.isoformat() if extracted.offer_valid_until else None
                 if extracted.extraction_method == 'manual_required':
                     item.update(status='manual_required', error=extracted.failure_reason or 'description_unavailable')
@@ -129,8 +135,16 @@ async def run_batch(manager, task, state):
                     manager._save_task(current_child)
             persist()
     current = manager.get_task(task.task_id) or task
-    current.status = TaskStatus.COMPLETED
-    current.stage = 'Batch finished — inspect individual offer results'
+    cancelled = manager.batch_cancel_requested(task.task_id)
+    if cancelled:
+        for pending in items:
+            if pending['status'] == 'queued':
+                pending.update(status='cancelled', error_code='batch_cancelled',
+                               error='Not started: batch cancelled by request.')
+        current.result = {'items': items, 'history_url': '/history', 'redirect_url': '/history'}
+    current.status = TaskStatus.CANCELLED if cancelled else TaskStatus.COMPLETED
+    current.stage = ('Batch cancelled — saved results kept' if cancelled
+                     else 'Batch finished — inspect individual offer results')
     current.progress_percent = 100
     current.completed_at = now()
     current.execution_duration_seconds = round((datetime.now(timezone.utc) - datetime.fromisoformat(current.started_at)).total_seconds(), 2)

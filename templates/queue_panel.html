@@ -28,6 +28,12 @@
           <strong>{{ task.company }}</strong> - {{ task.role }} ({{ task.stage }})
           {% if task.model %} <small>- {{ task.model }}</small>{% endif %}
           <a href="{{ app_root_path|default('') }}/tasks/{{ task.task_id }}/view">View</a>
+          {% if task.kind|default('') == 'batch' %}
+            {% if task.cancellation_requested|default(false) %}<small>Cancellation requested — current offer finishes safely.</small>
+            {% else %}<form action="{{ app_root_path|default('') }}/queue/tasks/{{ task.task_id }}/cancel-batch" method="post" data-confirm="Cancel remaining offers? The current offer finishes normally and saved results are kept.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="secondary">Cancel remaining offers</button>
+            </form>{% endif %}
+          {% endif %}
         </li>
         {% endfor %}
       </ul>

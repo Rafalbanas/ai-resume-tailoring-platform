@@ -18,6 +18,7 @@ STATUSES = {
     'queued': 'Queued',
     'running': 'In progress',
     'rejected': 'Rejected — history kept',
+    'cancelled': 'Cancelled — saved results kept',
     'manual_required': 'Manual input required',
 }
 

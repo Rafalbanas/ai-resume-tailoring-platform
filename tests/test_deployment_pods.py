@@ -10,11 +10,13 @@ import pytest
 
 
 @pytest.fixture
-def deployer():
+def deployer(tmp_path):
     path = Path(__file__).resolve().parents[1] / 'deploy/k8s/production/deploy.py'
     spec = importlib.util.spec_from_file_location('pod_deployer', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.DATA = tmp_path / 'owner'
+    module.DATA.mkdir()
     return module
 
 
@@ -76,8 +78,8 @@ def test_already_deployed_image_check_ignores_evicted_pod_but_checks_digest(depl
         deployer.deploy(revision, digest)
 
 
-@pytest.mark.parametrize('fail_release', [False, True])
-def test_release_and_rollback_ignore_terminal_pods(deployer, monkeypatch, tmp_path, fail_release):
+@pytest.mark.parametrize('fail_release,fail_processor_rollback', [(False, False), (True, False), (True, True)])
+def test_release_and_rollback_ignore_terminal_pods(deployer, monkeypatch, tmp_path, fail_release, fail_processor_rollback):
     old_revision, new_revision = 'a' * 40, 'b' * 40
     old_image = deployer.REPOSITORY + '@sha256:' + 'a' * 64
     new_digest = 'sha256:' + 'b' * 64
@@ -113,9 +115,18 @@ def test_release_and_rollback_ignore_terminal_pods(deployer, monkeypatch, tmp_pa
     monkeypatch.setattr(deployer, 'pull_and_validate', lambda *args: None)
     monkeypatch.setattr(deployer, 'drain', lambda: os.open(tmp_path / 'lock', os.O_CREAT | os.O_RDWR, 0o600))
     monkeypatch.setattr(deployer.sys, 'stdin', io.StringIO(''))
+    if fail_processor_rollback:
+        def update_processors(images, *, best_effort=False):
+            if best_effort:
+                raise RuntimeError('Synthetic processor rollback failure')
+        monkeypatch.setattr(deployer, 'update_processors', update_processors)
+    marker = deployer.DATA / '.deployment-status.json'
+    marker.write_text('{"phase":"rollout"}')
     mock_health(monkeypatch, deployer)
     if fail_release:
-        with pytest.raises(AssertionError, match='running and ready'):
+        error = RuntimeError if fail_processor_rollback else AssertionError
+        message = 'Rollback incomplete; inspect processors' if fail_processor_rollback else 'running and ready'
+        with pytest.raises(error, match=message):
             deployer.deploy(new_revision, new_digest)
         assert state['image'] == old_image
         assert patches == [new_image, old_image]
@@ -123,3 +134,4 @@ def test_release_and_rollback_ignore_terminal_pods(deployer, monkeypatch, tmp_pa
         deployer.deploy(new_revision, new_digest)
         assert patches == [new_image]
         assert json.loads((tmp_path / 'current-k8s-image.json').read_text())['image'] == new_image
+    assert not marker.exists()

@@ -23,7 +23,7 @@
 
   function updateActivity(activity) {
     if (!activityEl) return;
-    activityEl.hidden = ["completed", "failed", "rejected"].includes(currentStatus);
+    activityEl.hidden = ["completed", "failed", "rejected", "cancelled"].includes(currentStatus);
     if (activityEl.hidden) return;
     activity = activity || {};
     if (queuePositionEl) {
@@ -62,7 +62,30 @@
   }
   updateTokens(JSON.parse(card.dataset.tokenUsage || "{}"));
   let timerInterval = null;
-  let isDone = ["completed", "failed", "rejected"].includes(initialStatus);
+  let isDone = ["completed", "failed", "rejected", "cancelled"].includes(initialStatus);
+
+  function updateBatchControl(requested) {
+    const form = document.getElementById("cancel-batch-form");
+    const notice = document.getElementById("batch-cancel-requested");
+    if (form) form.hidden = Boolean(requested);
+    if (notice) notice.hidden = !requested;
+  }
+
+  function updateDeployment(deployment) {
+    const notice = document.getElementById("deployment-notice");
+    const detail = document.getElementById("deployment-detail");
+    if (!notice || !detail) return;
+    deployment = deployment || {};
+    notice.hidden = deployment.in_progress !== true;
+    if (notice.hidden) return;
+    const remaining = deployment.drain_seconds_remaining;
+    detail.textContent = deployment.phase === "rollout"
+      ? "The application is being updated. New operations are temporarily blocked."
+      : Number.isFinite(remaining)
+        ? `Deployment is waiting for existing work. Drain deadline in ${Math.max(0, remaining)} s (not an estimate of batch completion).`
+        : "Deployment is waiting for existing work. Timing metadata is unavailable for this deployer version.";
+  }
+  updateDeployment(JSON.parse(card.dataset.deploymentStatus || "{}"));
 
   function formatDuration(sec) {
     const min = Math.floor(sec / 60);
@@ -110,6 +133,8 @@
         currentStatus = data.status;
         updateActivity(data.activity);
         updateTokens(data.token_usage);
+        updateBatchControl(data.cancellation_requested);
+        updateDeployment(data.deployment);
         if (data.started_at) {
           window._taskStartedAt = data.started_at;
         }
@@ -141,6 +166,13 @@
           setTimeout(() => {
             window.location.href = cvAppUrl(redirectUrl);
           }, 800);
+          return;
+        }
+
+        if (data.status === "cancelled") {
+          isDone = true;
+          clearInterval(timerInterval);
+          window.location.reload();
           return;
         }
 

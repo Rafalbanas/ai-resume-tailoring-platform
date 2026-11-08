@@ -33,6 +33,7 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 
 class TaskKind(str, Enum):
@@ -62,6 +63,7 @@ class TaskRecord(BaseModel):
     error_status_code: int | None = None
     token_usage: dict[str, Any] = Field(default_factory=dict)
     keep_history: bool = False
+    cancellation_requested: bool = False
 
 
 def compute_idempotency_key(kind: str, **kwargs) -> str:
@@ -99,6 +101,7 @@ class TaskManager:
         return self.tasks_dir / f"{task_id}.json"
 
     def _save_task(self, task: TaskRecord) -> None:
+        task.cancellation_requested = task.cancellation_requested or self.batch_cancel_requested(task.task_id)
         path = self._task_path(task.task_id)
         temp_path = path.with_suffix(".tmp")
         serialized = task.model_dump_json(indent=2)
@@ -117,7 +120,9 @@ class TaskManager:
         if not path.is_file():
             return None
         try:
-            return TaskRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            task = TaskRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            task.cancellation_requested = task.cancellation_requested or self.batch_cancel_requested(task_id)
+            return task
         except Exception as exc:
             logger.error("Failed to read task %s (%s)", task_id, type(exc).__name__)
             return None
@@ -158,6 +163,7 @@ class TaskManager:
             job = {'company': 'Batch CV generation', 'role': f"{len(task.payload.get('batch', {}).get('urls', []))} selected offers"}
         return {'task_id': task.task_id, 'company': str(job.get('company', '')),
                 'role': str(job.get('role', '')), 'kind': task.kind.value, 'stage': task.stage,
+                'cancellation_requested': task.cancellation_requested,
                 'started_at': task.started_at, 'model': task.token_usage.get('model')}
 
     def set_paused(self, paused: bool) -> None:
@@ -201,6 +207,39 @@ class TaskManager:
         for _ in range(drained):
             self._queue.task_done()
         return task
+
+    def batch_cancel_requested(self, task_id: str) -> bool:
+        return bool(re.fullmatch(r'[a-f0-9]{32}', task_id) and (self.tasks_dir / (task_id + '.cancel')).is_file())
+
+    def request_batch_cancel(self, task_id: str) -> TaskRecord:
+        """Request cooperative cancellation, never cancel an active writer/model call.
+
+        A separate durable marker survives stale task/token-progress saves. Running
+        records are not rewritten here, avoiding races with incremental results.
+        """
+        task = self.get_task(task_id)
+        if task is None:
+            raise HTTPException(404, 'Batch not found')
+        if task.kind != TaskKind.BATCH:
+            raise HTTPException(409, 'Only batches support cooperative cancellation')
+        if task.status not in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
+            return task
+        marker = self.tasks_dir / (task_id + '.cancel')
+        descriptor = os.open(marker, os.O_CREAT | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        if task.status == TaskStatus.QUEUED:
+            # Reuse the established FIFO/join-safe compaction, retaining history.
+            task = self.reject_queued(task_id)
+            task.status = TaskStatus.CANCELLED
+            task.stage = 'Batch cancelled before execution — saved results kept'
+            task.progress_percent = 100
+            task.execution_duration_seconds = 0
+            task.result = {'items': [{'url': url, 'status': 'cancelled', 'error_code': 'batch_cancelled',
+                                     'error': 'Not started: batch cancelled by request.'}
+                                    for url in task.payload['batch']['urls']],
+                           'history_url': '/history', 'redirect_url': '/history'}
+            self._save_task(task)
+        return self.get_task(task_id)
 
     def retain_history(self, task: TaskRecord) -> None:
         task.keep_history = True

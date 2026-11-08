@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class BatchItem(BaseModel):
     url: str
-    status: Literal['queued', 'running', 'completed', 'draft_ready', 'manual_required', 'review_required', 'failed']
+    status: Literal['queued', 'running', 'completed', 'draft_ready', 'manual_required', 'review_required', 'failed', 'cancelled']
     task_id: str | None = None
     draft_id: str | None = None
     analysis_url: str | None = None
@@ -33,7 +33,8 @@ class BatchResult(BaseModel):
 
 class BatchResponse(BaseModel):
     task_id: str
-    status: Literal['queued', 'running', 'completed', 'failed', 'rejected']
+    status: Literal['queued', 'running', 'completed', 'failed', 'rejected', 'cancelled']
+    cancellation_requested: bool = False
     status_url: str
     view_url: str
     stage: str

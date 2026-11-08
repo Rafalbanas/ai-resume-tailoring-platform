@@ -1,7 +1,8 @@
-"""Keep application behavior; serialize deployment drain with mutating requests."""
+"""Serialize deployment drain with mutations; cancellation retains app auth/CSRF."""
 
 import fcntl
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -17,12 +18,36 @@ class DeploymentAdmission:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH", "DELETE"}:
             return await self.app(scope, receive, send)
+
+        # Normalize path for root_path awareness
+        root_path = scope.get("root_path", "")
+        path = scope["path"]
+        if root_path and path.startswith(f"{root_path}/"):
+            path = path[len(root_path):]
+
         descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
             except BlockingIOError:
-                response = JSONResponse({"detail": "Deployment in progress. Please retry shortly."}, status_code=503, headers={"Retry-After": "30"})
+                # Exception for specific transport skip paths
+                allowed_cancel_paths = [
+                    r"/api/v1/batches/[0-9a-f]{32}/cancel",
+                    r"/queue/tasks/[0-9a-f]{32}/cancel-batch",
+                ]
+                is_bypass = scope["method"] == "POST" and any(re.fullmatch(p, path) for p in allowed_cancel_paths)
+
+                if is_bypass:
+                    return await self.app(scope, receive, send)
+
+                response = JSONResponse(
+                    {
+                        "code": "deployment_in_progress",
+                        "detail": "Deployment in progress. Existing tasks continue; new operations are temporarily blocked. Cancel remaining offers from the batch status page or retry after deployment.",
+                    },
+                    status_code=503,
+                    headers={"Retry-After": "30", "Cache-Control": "no-store"},
+                )
                 return await response(scope, receive, send)
             return await self.app(scope, receive, send)
         finally:

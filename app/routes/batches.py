@@ -40,6 +40,7 @@ def response_for(request, task, status_code=200):
     if status_code == 202:
         headers.update({'Location': url, 'Retry-After': '3'})
     return JSONResponse({'task_id': task.task_id, 'status': task.status.value,
+                         'cancellation_requested': task.cancellation_requested,
                          'status_url': url, 'view_url': f'{root}/tasks/{task.task_id}/view',
                          'stage': task.stage, 'result': result, 'error': task.error},
                         status_code=status_code,
@@ -114,3 +115,13 @@ async def get_batch(request: Request, task_id: str):
     if task is None or task.kind != TaskKind.BATCH:
         raise HTTPException(404, 'Batch not found')
     return response_for(request, task)
+
+
+@router.post('/{task_id}/cancel', response_model=BatchResponse,
+             summary='Cancel remaining offers after the current offer finishes; preserve saved results')
+async def cancel_batch(request: Request, task_id: str, csrf_token: CSRF):
+    queue_control_guard(request, csrf_token)
+    if request.app.state.settings.demo_mode:
+        raise HTTPException(403, 'Batch cancellation is disabled for the demo account')
+    task = request.app.state.task_manager.request_batch_cancel(task_id)
+    return response_for(request, task, 202 if task.status == TaskStatus.RUNNING else 200)

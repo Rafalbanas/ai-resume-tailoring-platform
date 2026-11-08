@@ -106,6 +106,15 @@ async def reject_queued_task(request: Request, task_id: str, csrf_token: Annotat
     return RedirectResponse(f"{request.scope.get('root_path', '')}/diagnostics#live-queue-panel", status_code=303)
 
 
+@router.post('/queue/tasks/{task_id}/cancel-batch')
+async def cancel_batch_task(request: Request, task_id: str, csrf_token: Annotated[str, Form()]):
+    queue_control_guard(request, csrf_token)
+    if request.app.state.settings.demo_mode:
+        raise HTTPException(403, 'Batch cancellation is disabled for the demo account')
+    request.app.state.task_manager.request_batch_cancel(task_id)
+    return RedirectResponse(f"{request.scope.get('root_path', '')}/tasks/{task_id}/view", status_code=303)
+
+
 @router.post('/queue/tasks/{task_id}/delete')
 async def delete_task_entry(request: Request, task_id: str, csrf_token: Annotated[str, Form()]):
     queue_control_guard(request, csrf_token)
@@ -385,7 +394,17 @@ async def get_task_status(request: Request, task_id: str):
     payload["stage"] = ui_text(task.stage)
     payload["error"] = ui_text(task.error) if task.error else None
     payload['activity'] = await run_in_threadpool(queue_activity, request, task)
+    from app.services.deployment_status import deployment_status
+    payload['deployment'] = await run_in_threadpool(deployment_status, request.app.state.deployment_data_dir)
     return JSONResponse(content=payload, headers={'Cache-Control': 'no-store'})
+
+
+@router.get('/deployment/status')
+async def get_deployment_status(request: Request):
+    guard(request)
+    from app.services.deployment_status import deployment_status
+    status = await run_in_threadpool(deployment_status, request.app.state.deployment_data_dir)
+    return JSONResponse(status, headers={'Cache-Control': 'no-store'})
 
 
 @router.post('/retailor/{source_type}/{source_id}')
@@ -436,9 +455,11 @@ async def task_progress_view(request: Request, task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     if task.status == TaskStatus.COMPLETED and task.result and task.result.get("redirect_url"):
         return RedirectResponse(url=task.result["redirect_url"], status_code=303)
+    from app.services.deployment_status import deployment_status
+    deploy = await run_in_threadpool(deployment_status, request.app.state.deployment_data_dir)
     return request.app.state.templates.TemplateResponse(
         request=request, name="task_progress.html",
-        context=context(request, task=task),
+        context=context(request, task=task, deployment_status=deploy),
     )
 
 
