@@ -6,6 +6,28 @@ The owner-only API processes explicitly selected job URLs **sequentially**, with
 discovering/crawling additional offers. It saves ordinary analyses/drafts in
 **History** and optionally generates PDF/DOCX using the normal export pipeline.
 
+## Endpoint reference
+
+All endpoints require the existing authenticated session cookie. POST requests
+also require the session-bound `X-CSRF-Token` header.
+
+| Method | Endpoint | Purpose | Additional header |
+| --- | --- | --- | --- |
+| GET | `/api/v1/batches/options` | Discover models, themes and limits | — |
+| POST | `/api/v1/batches` | Submit URLs and options as JSON | `Idempotency-Key` |
+| POST | `/api/v1/batches/upload` | Submit TXT `file` and JSON `options` as multipart | `Idempotency-Key` |
+| GET | `/api/v1/batches/{task_id}` | Read progress and incremental results | — |
+| POST | `/api/v1/batches/{task_id}/cancel` | Cancel remaining offers | — |
+
+Cancellation is cooperative: the current offer finishes, remaining offers are
+cancelled and saved results are preserved. Inspect `cancellation_requested` and
+continue polling until the batch reaches a terminal status. This does not undo
+completed exports. Cancelling a running batch returns `202`; otherwise `200`.
+
+The ready-to-run [CLI](../scripts/batch_api.py) supports `options`, `upload`,
+`status`, `watch` and `cancel`; see the [Polish instructions](batch-api-macos-pl.md#automatyzacja-skryptem-batch_apipy)
+for login, three-file submission, a private JSONL manifest and monitoring.
+
 ## Authentication and file submission
 
 Use the existing session cookie and session-bound CSRF token. There are no bearer
