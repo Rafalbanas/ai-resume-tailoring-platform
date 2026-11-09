@@ -48,6 +48,20 @@ tests. CI also builds the Dockerfile and checks application imports, PDF/DOCX
 exports, and Chromium inside the image. Documentation-only changes can be
 checked with link, YAML, and diff validation; describe those checks in the PR.
 
+### Generated README sections
+
+Exact dependency versions belong in `requirements.txt` and `requirements-dev.txt`,
+not in a duplicate README version table. Dependency-only version bumps (including
+Dependabot updates) do not require README changes. After adding/removing a package
+or changing the Python runtime, run `python scripts/sync_readme.py` and commit any
+README changes with that update. `python scripts/sync_readme.py --check` detects
+stale generated sections without writing files. The script needs only the Python
+standard library; it does not collect tests or install dependencies. Use
+`pytest --collect-only -q` when you need the current parametrized test count.
+
+CI checks these sections before running the full tests. The separate README
+workflow is read-only and never pushes follow-up commits to `main`.
+
 ## Pull requests
 
 - Branch from the current `main` and keep the change focused.

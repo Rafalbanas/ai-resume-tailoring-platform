@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Synchronize pinned dependency versions, runtime, and test counts in README.md.
+"""Synchronize dependency sources and the Python runtime in README.md.
 
-This script parses requirements.txt, requirements-dev.txt, Dockerfile, and runs
-pytest to extract exact versions and test suite statistics. It then replaces
-the content within marked comments in README.md.
+Parse requirements.txt, requirements-dev.txt and Dockerfile using only the
+standard library. Link to authoritative version sources instead of duplicating
+pins that change with every dependency update. Never collect or count tests.
 
 Markers supported:
 - <!-- TECH_STACK:START --> ... <!-- TECH_STACK:END -->
-- <!-- TEST_COUNT:START --> ... <!-- TEST_COUNT:END -->
 - <!-- PYTHON_VERSION:START --> ... <!-- PYTHON_VERSION:END -->
 """
 
 import argparse
-import ast
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -87,69 +84,20 @@ def parse_requirements(file_path: Path) -> dict[str, str]:
     return reqs
 
 
-def count_tests_ast(repo_root: Path) -> int:
-    """Fallback: count test functions in tests/ directory using AST parsing."""
-    tests_dir = repo_root / "tests"
-    if not tests_dir.is_dir():
-        return 0
-
-    total = 0
-    for py_file in tests_dir.glob("test_*.py"):
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        except Exception:
-            continue
-
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
-                total += 1
-            elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-                for sub_node in node.body:
-                    if isinstance(sub_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub_node.name.startswith("test_"):
-                        total += 1
-
-    return total
-
-
-def get_test_count(repo_root: Path) -> int:
-    """Discover the exact number of tests via pytest --collect-only, falling back to AST."""
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "--collect-only", "-q"],
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        combined = proc.stdout + "\n" + proc.stderr
-        match = re.search(r"(\d+)\s+tests?\s+collected", combined)
-        if match:
-            return int(match.group(1))
-
-        # Check line count in -q output if line-based
-        test_lines = [
-            line for line in proc.stdout.splitlines()
-            if "::" in line and not line.startswith("=") and not line.startswith("<")
-        ]
-        if test_lines:
-            return len(test_lines)
-    except Exception:
-        pass
-
-    ast_count = count_tests_ast(repo_root)
-    return ast_count
-
-
 def generate_tech_stack_table(
     prod_reqs: dict[str, str],
     dev_reqs: dict[str, str],
     python_version: str,
 ) -> str:
-    """Generate Markdown table of technologies, pinned versions, categories, and purposes."""
+    """Generate a version-bump-invariant technology and dependency-source table.
+
+    Keep python_version in the call signature for existing callers; literal
+    runtime versions belong only in the dedicated PYTHON_VERSION markers.
+    """
     lines = [
-        "| Component | Pinned Version | Category | Purpose |",
+        "| Component | Version source | Category | Purpose |",
         "|---|---|---|---|",
-        f"| **Python** | `{python_version}` | Runtime | Container runtime & execution environment |",
+        "| **Python** | [Dockerfile](Dockerfile) | Runtime | Container runtime & execution environment |",
     ]
 
     all_pkgs: dict[str, str] = {**prod_reqs, **dev_reqs}
@@ -174,13 +122,14 @@ def generate_tech_stack_table(
         }
         return (category_order.get(meta[1], 50), meta[0])
 
-    for pkg, version in sorted(all_pkgs.items(), key=sort_key):
+    for pkg, _version in sorted(all_pkgs.items(), key=sort_key):
         meta = PACKAGE_CATALOG.get(pkg)
         if meta:
             name, category, purpose = meta
         else:
             name, category, purpose = pkg.capitalize(), "Dependency", "Application dependency"
-        lines.append(f"| **{name}** | `{version}` | {category} | {purpose} |")
+        source = 'requirements.txt' if pkg in prod_reqs else 'requirements-dev.txt'
+        lines.append(f"| **{name}** | [{source}]({source}) | {category} | {purpose} |")
 
     return "\n".join(lines)
 
@@ -219,21 +168,17 @@ def sync_readme(
     python_version = get_python_version(repo_root)
     prod_reqs = parse_requirements(repo_root / "requirements.txt")
     dev_reqs = parse_requirements(repo_root / "requirements-dev.txt")
-    test_count = get_test_count(repo_root)
 
     # 1. Update TECH_STACK table
     table = generate_tech_stack_table(prod_reqs, dev_reqs, python_version)
     content = replace_marker(content, "TECH_STACK", table, inline=False)
 
-    # 2. Update TEST_COUNT markers
-    content = replace_marker(content, "TEST_COUNT", str(test_count), inline=True)
-
-    # 3. Update PYTHON_VERSION markers
+    # 2. Update PYTHON_VERSION markers
     content = replace_marker(content, "PYTHON_VERSION", python_version, inline=True)
 
     changed = content != original_content
     summary = (
-        f"Python: {python_version}, Tests: {test_count}, "
+        f"Python: {python_version}, "
         f"Prod Packages: {len(prod_reqs)}, Dev Packages: {len(dev_reqs)}"
     )
 
@@ -244,7 +189,7 @@ def sync_readme(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Synchronize README.md dependency versions and test counts.")
+    parser = argparse.ArgumentParser(description="Synchronize README.md dependency sources and Python runtime.")
     parser.add_argument(
         "--check",
         action="store_true",
