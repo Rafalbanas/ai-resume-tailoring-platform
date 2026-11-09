@@ -17,14 +17,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Verify pinned environment
         run: python scripts/check_environment.py --dev && python -m pip check
+      - name: Verify README dependency sources and Python runtime
+        run: python scripts/sync_readme.py --check
       - name: Install Chromium for layout regression tests
         run: python -m playwright install --with-deps chromium
       - name: Install native document and sandbox dependencies used by the image
         run: sudo apt-get install --yes --no-install-recommends libharfbuzz-subset0 libseccomp2
       - run: ruff check .
       - run: pytest -q
-      - name: Verify README is synced with current versions and test counts
-        run: python scripts/sync_readme.py --check
 
   image:
     runs-on: ubuntu-24.04

@@ -1,4 +1,4 @@
-name: Sync README Versions and Metrics
+name: Check README Generated Sections
 
 on:
   push:
@@ -8,12 +8,13 @@ on:
       - 'requirements.txt'
       - 'requirements-dev.txt'
       - 'Dockerfile'
-      - 'tests/**'
+      - 'README.md'
       - 'scripts/sync_readme.py'
+      - '.github/workflows/sync-readme.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync-readme:
@@ -30,21 +31,5 @@ jobs:
           python-version: "3.14"
           cache: pip
 
-      - name: Install test dependencies for discovery
-        run: pip install pytest pytest-asyncio
-
-      - name: Run README sync script
-        run: python scripts/sync_readme.py
-
-      - name: Commit and push changes if README was updated
-        run: |
-          set -euo pipefail
-          if ! git diff --quiet README.md; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "docs: auto-update dependency versions and test count in README [skip ci]"
-            git push
-          else
-            echo "README.md is already up to date; no changes to commit."
-          fi
+      - name: Verify README dependency sources and Python runtime
+        run: python scripts/sync_readme.py --check
