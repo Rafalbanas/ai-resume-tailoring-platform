@@ -101,6 +101,7 @@ class JobExtractorService:
         candidate.offer_valid_until = next(iter(dates)) if len(dates) == 1 and not candidate.deadline_conflict else None
 
     def _result(self, candidate: ExtractionCandidate, source: str, method: str) -> JobExtraction:
+        from app.services.offer_salary import extract_offer_salary
         if candidate.ambiguous or len(candidate.role) > 150 or len(candidate.company) > 150 or len(candidate.job_description) > self.max_description_chars:
             return JobExtraction(source=source, extraction_method="manual_required")
         return JobExtraction(
@@ -108,6 +109,7 @@ class JobExtractorService:
             role=candidate.role[:150],
             job_description=candidate.job_description[: self.max_description_chars],
             offer_valid_until=candidate.offer_valid_until,
+            salary_range=extract_offer_salary(candidate.job_description),
             source=source,
             extraction_method=method,
         )

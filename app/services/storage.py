@@ -123,6 +123,7 @@ class Storage:
             job, response = self._validate_draft(payload)
             job.offer_valid_until = self._deadline_override(
                 self.drafts_dir / f'{draft_id}.deadline.json', job.offer_valid_until)
+            job.salary_range = self._salary_override(self.drafts_dir / f'{draft_id}.salary.json', job.salary_range)
             return job, response
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise DraftDataError("Draft data could not be validated") from exc
@@ -156,6 +157,40 @@ class Storage:
             return parse_offer_date(json.loads(path.read_text(encoding='utf-8')).get('offer_valid_until'))
         except (OSError, ValueError, TypeError, AttributeError):
             return None
+
+    @staticmethod
+    def _salary_override(path, original=''):
+        if not path.is_file():
+            return original
+        try:
+            value = json.loads(path.read_text(encoding='utf-8')).get('salary_range')
+            return value.strip() if isinstance(value, str) and len(value) <= 500 else ''
+        except (OSError, ValueError, TypeError, AttributeError):
+            return ''
+
+    def update_offer_salary(self, kind, identifier, value):
+        if kind == 'draft':
+            job, _ = self.load_draft(identifier)
+            path = self.drafts_dir / f'{identifier}.salary.json'
+        elif kind == 'application':
+            job, _, _, _ = self.load_application(identifier)
+            path = self.application_folder(identifier) / 'offer-salary.json'
+        else:
+            raise ValueError('Invalid salary record kind')
+        if job.workflow != 'job':
+            raise ValueError('Custom CVs do not have an offer salary')
+        checked = JobRequest(company=job.company, role=job.role, job_description=job.job_description, salary_range=value)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump({'salary_range': checked.salary_range}, stream, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
 
     def update_offer_deadline(self, kind, identifier, value):
         """Write isolated record metadata; never rewrite a CV or model report.
@@ -235,6 +270,7 @@ class Storage:
             "role": job.role,
             "job_url": str(job.job_url) if job.job_url else None,
             "offer_valid_until": job.offer_valid_until.isoformat() if job.offer_valid_until else None,
+            "salary_range": job.salary_range,
             "date": date,
             "created_at": created_at.isoformat(),
             "match_level": analysis.match_level,
@@ -396,6 +432,7 @@ class Storage:
                 job_description=(folder / "job.txt").read_text(encoding="utf-8"),
             )
         job.offer_valid_until = self._deadline_override(folder / 'offer-deadline.json', job.offer_valid_until)
+        job.salary_range = self._salary_override(folder / 'offer-salary.json', job.salary_range)
         resume.summary_attestation = metadata.get('summary_attestation', '')
         generated.summary_attestation = metadata.get('generated_summary_attestation', '')
         resume._bullet_attestations = metadata.get('bullet_attestations', [])
@@ -467,6 +504,7 @@ class Storage:
         if isinstance(draft_id, str) and re.fullmatch(r"[a-f0-9]{32}", draft_id):
             (self.drafts_dir / f"{draft_id}.json").unlink(missing_ok=True)
             (self.drafts_dir / f"{draft_id}.deadline.json").unlink(missing_ok=True)
+            (self.drafts_dir / f"{draft_id}.salary.json").unlink(missing_ok=True)
 
     def clear_history(self) -> int:
         slugs = [path.parent.name for path in self.generated_dir.glob("*/metadata.json")]
@@ -492,6 +530,17 @@ class Storage:
                 deadline = self._deadline_override(metadata_path.parent / 'offer-deadline.json',
                                                    parse_offer_date(item.get('offer_valid_until')))
                 item['offer_valid_until'] = deadline.isoformat() if deadline else None
+                job_path = metadata_path.parent / 'job.json'
+                try:
+                    if job_path.is_file():
+                        job = JobRequest.model_validate_json(job_path.read_text(encoding='utf-8'))
+                    else:
+                        job = JobRequest(company=item['company'], role=item['role'],
+                                         job_description=(metadata_path.parent / 'job.txt').read_text(encoding='utf-8'))
+                    salary = job.salary_range
+                except (OSError, ValueError, KeyError):
+                    salary = ''
+                item['salary_range'] = self._salary_override(metadata_path.parent / 'offer-salary.json', salary)
                 rows.append(item)
             except (OSError, json.JSONDecodeError):
                 continue
@@ -541,6 +590,7 @@ class Storage:
                 rows.append({
                     'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
                     'offer_valid_until': job.offer_valid_until.isoformat() if job.offer_valid_until else None,
+                    'salary_range': job.salary_range,
                     'draft_id': draft_id if has_report else None,
                     'workflow': job.workflow,
                     'date': task.created_at, 'status': 'report_ready' if has_report else task.status.value,
@@ -556,6 +606,7 @@ class Storage:
             rows.append({
                 'company': job.company, 'role': job.role, 'job_url': str(job.job_url) if job.job_url else None,
                 'offer_valid_until': job.offer_valid_until.isoformat() if job.offer_valid_until else None,
+                'salary_range': job.salary_range,
                 'draft_id': draft_id,
                 'workflow': job.workflow,
                 'date': created, 'status': 'report_ready', 'interrupted': False,

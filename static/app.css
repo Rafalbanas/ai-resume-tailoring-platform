@@ -562,3 +562,6 @@ ins {
 .offer-deadline p { margin-block: .25rem; }
 .offer-deadline form { display: grid; gap: .5rem; margin-block: .5rem; }
 .offer-deadline input[type="date"] { max-width: 16rem; }
+.offer-salary { margin-block: .5rem; font-size: .9rem; overflow-wrap: anywhere; min-width: 0; }
+.offer-salary form { display: grid; gap: .5rem; margin-block: .5rem; }
+.offer-salary input { width: 100%; min-width: 0; }

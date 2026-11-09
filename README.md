@@ -30,7 +30,7 @@ The desktop capture below comes from a local Ollama run with a fictional candida
   </tr>
 </table>
 
-History distinguishes reports from generated documents and shows export availability. Available files still require human review before applying. See [History filters](docs/history-filters.md) and [offer deadlines](docs/offer-deadlines.md).
+History distinguishes reports from generated documents and shows export availability. Available files still require human review before applying. See [History filters](docs/history-filters.md), [offer deadlines](docs/offer-deadlines.md) and [salary ranges](docs/offer-salary.md).
 
 ### Video walkthrough
 

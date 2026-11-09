@@ -471,10 +471,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const roleInput = document.getElementById("role");
   const descriptionInput = document.getElementById("job-description");
   const deadlineInput = document.getElementById("offer-valid-until");
+  const salaryInput = document.getElementById("salary-range");
+  let salaryEdited = Boolean(salaryInput?.value);
+  salaryInput?.addEventListener("input", () => { salaryEdited = true; });
   let deadlineEdited = Boolean(deadlineInput?.value);
   deadlineInput?.addEventListener("input", () => { deadlineEdited = true; });
   function fillDeadline(result) {
     if (deadlineInput && !deadlineEdited) deadlineInput.value = result.offer_valid_until || "";
+    if (salaryInput && !salaryEdited) salaryInput.value = result.salary_range || "";
   }
   const fetchButton = document.getElementById("fetch-job");
   const submitButton = document.getElementById("submit");
@@ -488,7 +492,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const isPaste = () => isCustom() && customSource?.value === "paste";
   const refreshWorkflow = () => {
     const custom = isCustom(), paste = isPaste();
-    for (const id of ["job-identity-fields", "job-url-field", "offer-deadline-field", "clean-job-text", "job-prompt-hint"]) {
+    for (const id of ["job-identity-fields", "job-url-field", "offer-deadline-field", "offer-salary-field", "clean-job-text", "job-prompt-hint"]) {
       const node = document.getElementById(id);
       if (node) node.hidden = custom;
     }

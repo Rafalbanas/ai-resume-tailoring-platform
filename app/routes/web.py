@@ -218,6 +218,7 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
         "job_description": "",
         "job_url": "",
         "offer_valid_until": "",
+        "salary_range": "",
         "llm_provider": default_provider,
         "tailoring_level": 0.0,
         "selected_ollama_model": "",
@@ -235,11 +236,14 @@ async def index(request: Request, from_task: str | None = None, from_draft: str 
             form_data["job_description"] = job_payload.get("job_description", "")
             form_data["job_url"] = job_payload.get("job_url", "")
             form_data['offer_valid_until'] = job_payload.get('offer_valid_until') or ''
+            from app.services.offer_salary import extract_offer_salary
+            form_data['salary_range'] = job_payload.get('salary_range', extract_offer_salary(form_data['job_description']))
             draft_id = (task.result or {}).get('draft_id')
             if draft_id:
                 try:
                     saved_job, _ = request.app.state.storage.load_draft(draft_id)
                     form_data['offer_valid_until'] = saved_job.offer_valid_until or ''
+                    form_data['salary_range'] = saved_job.salary_range
                 except (OSError, ValueError):
                     pass
             form_data["tailoring_level"] = job_payload.get("tailoring_level", 0.0)
@@ -281,6 +285,7 @@ async def analyze(
     job_description: Annotated[str, Form()] = "",
     job_url: Annotated[str, Form()] = "",
     offer_valid_until: Annotated[str, Form(max_length=10)] = "",
+    salary_range: Annotated[str, Form(max_length=500)] = "",
     llm_provider: Annotated[str, Form()] = "auto",
     ollama_model: Annotated[str, Form(max_length=200)] = "",
     ollama_context: Annotated[int, Form(ge=32768, le=131072)] = 65536,
@@ -297,10 +302,12 @@ async def analyze(
     if ollama_context not in {32768, 65536, 98304, 131072}:
         raise HTTPException(status_code=422, detail="Choose a context of 32768, 65536, 98304 or 131072 tokens")
     try:
+        from app.services.offer_salary import extract_offer_salary
         job = JobRequest(company=company if workflow == "job" else "Custom CV",
                          role=role.strip() if workflow == "job" else cv_name.strip() or "Custom CV",
                          job_url=(job_url or None) if workflow == "job" else None,
                          offer_valid_until=offer_valid_until if workflow == 'job' else None,
+                         salary_range=(salary_range.strip() or extract_offer_salary(job_description)) if workflow == 'job' else '',
                          job_description=job_description if workflow == "job" else "",
                          custom_instructions=job_description if workflow == "custom" else "",
                          workflow=workflow, cv_name=cv_name, source_cv=source_cv,
@@ -324,6 +331,7 @@ async def analyze(
                 job_description=job_description,
                 job_url=job_url,
                 offer_valid_until=offer_valid_until,
+                salary_range=salary_range,
                 llm_provider=llm_provider,
                 tailoring_level=tailoring_level,
                 selected_ollama_model=ollama_model,
@@ -341,6 +349,7 @@ async def analyze(
         job_description=job_description.strip(),
         job_url=job_url.strip(),
         offer_valid_until=job.offer_valid_until.isoformat() if job.offer_valid_until else '',
+        salary_range=job.salary_range,
         llm_provider=llm_provider.strip(),
         ollama_model=ollama_model if llm_provider in {"auto", "ollama"} else "",
         ollama_context=ollama_context if llm_provider in {"auto", "ollama"} else 32768,
@@ -987,6 +996,22 @@ async def update_offer_deadline(request: Request, kind: Literal['draft', 'applic
         raise HTTPException(422, 'Use a valid YYYY-MM-DD date or leave the field blank for a job offer.') from exc
     target = f'/analysis/{identifier}' if kind == 'draft' else '/history'
     return RedirectResponse(request.scope.get('root_path', '') + target, status_code=303)
+
+
+@router.post('/offers/{kind}/{identifier}/salary')
+async def update_offer_salary(request: Request, kind: Literal['draft', 'application'], identifier: str,
+                              csrf_token: Annotated[str, Form()],
+                              salary_range: Annotated[str, Form(max_length=500)] = ''):
+    queue_control_guard(request, csrf_token)
+    if request.app.state.settings.demo_mode:
+        raise HTTPException(403, 'Offer metadata editing is disabled in the demo account')
+    try:
+        await run_in_threadpool(request.app.state.storage.update_offer_salary, kind, identifier, salary_range)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, 'Offer record not found') from exc
+    except ValueError as exc:
+        raise HTTPException(422, 'Enter up to 500 characters for a job offer.') from exc
+    return RedirectResponse(request.scope.get('root_path', '') + '/history', status_code=303)
 
 
 @router.post("/history/{slug}/delete")
