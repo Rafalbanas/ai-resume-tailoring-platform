@@ -6,15 +6,15 @@ def test_extract_offer_salary_positive():
     assert extract_offer_salary('10 000–15 000 PLN netto + VAT / miesiąc (B2B)') == '10 000–15 000 PLN netto + VAT / miesiąc (B2B)'
     assert extract_offer_salary('Salary: 60,000–80,000 EUR per year') == 'Salary: 60,000–80,000 EUR per year'
     assert extract_offer_salary('100–150 zł/h') == '100–150 zł/h'
-    
+
     # Test single rate
     assert extract_offer_salary('Salary: 5000 PLN') == 'Salary: 5000 PLN'
-    
+
     # Test multiple variants (should preserve both as separate fragments if on separate lines/segments)
     input_multi = "10 000 PLN B2B\n12 000 PLN UoP"
     assert "10 000 PLN B2B" in extract_offer_salary(input_multi)
     assert "12 000 PLN UoP" in extract_offer_salary(input_multi)
-    
+
     # Test deduplication
     input_dup = "10 000 PLN\n10 000 PLN"
     assert extract_offer_salary(input_dup) == "10 000 PLN"
@@ -23,10 +23,10 @@ def test_extract_offer_salary_negative():
     # Should return empty string for no salary info
     assert extract_offer_salary("") == ""
     assert extract_offer_salary("No salary information provided.") == ""
-    
+
     # Should ignore "competitive salary" without numbers
     assert extract_offer_salary("We offer a competitive salary for this role.") == ""
-    
+
     # Should ignore unrelated numbers (experience, phone, employees)
     assert extract_offer_salary("Requires 5 years of experience.") == ""
     assert extract_offer_salary("Contact us at +48 123 456 789.") == ""
