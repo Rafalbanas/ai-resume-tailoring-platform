@@ -23,6 +23,9 @@ data-batches="{{ row.batch_ids|default([])|join(' ') }}"
       {% set deadline_value = row.offer_valid_until|default(none) %}
       {% set deadline_action = (app_root_path|default('')) ~ '/offers/application/' ~ row.slug ~ '/deadline' %}
       {% include "_offer_deadline.html" %}
+      {% set salary_value = row.salary_range|default('') %}
+      {% set salary_action = (app_root_path|default('')) ~ '/offers/application/' ~ row.slug ~ '/salary' %}
+      {% include "_offer_salary.html" %}
     {% endif %}
   </div>
   <div class="history-meta">
@@ -46,7 +49,10 @@ data-batches="{{ row.batch_ids|default([])|join(' ') }}"
   {% if row.workflow|default('job') != 'custom' %}
   {% set deadline_value = row.offer_valid_until|default(none) %}
   {% set deadline_action = (app_root_path|default('')) ~ '/offers/draft/' ~ row.draft_id ~ '/deadline' if row.draft_id|default(none) else '' %}
-  {% include "_offer_deadline.html" %}
+   {% include "_offer_deadline.html" %}
+   {% set salary_value = row.salary_range|default('') %}
+   {% set salary_action = (app_root_path|default('')) ~ '/offers/draft/' ~ row.draft_id ~ '/salary' if row.draft_id|default(none) else '' %}
+   {% include "_offer_salary.html" %}
   {% endif %}
   </div>
   <div class="history-meta"><span>{{ row.history_time_label|default(row.date) }}</span><span class="pill">No export files</span><span class="pill">{% if row.interrupted %}Interrupted{% else %}{{ row.history_status_label|default({'queued': 'Queued', 'running': 'In progress', 'failed': 'Failed', 'rejected': 'Rejected — history kept', 'completed': 'Report unavailable', 'report_ready': 'Report ready — CV not generated'}.get(row.status, 'Review required')) }}{% endif %}</span>

@@ -10,6 +10,11 @@
     {% set deadline_value = job.offer_valid_until|default(none) %}
     {% set deadline_action = (app_root_path|default('')) ~ '/offers/draft/' ~ draft_id ~ '/deadline' if draft_id|default('') else '' %}
     {% include "_offer_deadline.html" %}
+    {% if job.workflow|default('job') == 'job' %}
+    {% set salary_value = job.salary_range|default('') %}
+    {% set salary_action = (app_root_path|default('')) ~ '/offers/draft/' ~ draft_id ~ '/salary' if draft_id|default('') else '' %}
+    {% include "_offer_salary.html" %}
+    {% endif %}
     <div class="provider-meta">
       <span class="badge provider-badge">Engine: {{ provider_used|default('unknown') }} ({{ model_used|default('unknown') }})</span>
       {% if fallback_used %}<span class="badge fallback-badge">Fallback: yes</span>{% else %}<span class="badge">Fallback: no</span>{% endif %}

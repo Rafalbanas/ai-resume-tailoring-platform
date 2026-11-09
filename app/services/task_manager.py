@@ -330,6 +330,7 @@ class TaskManager:
                 if isinstance(draft, str) and re.fullmatch(r'[a-f0-9]{32}', draft) and draft not in linked:
                     (self.tasks_dir.parent / '.drafts' / (draft + '.json')).unlink(missing_ok=True)
                     (self.tasks_dir.parent / '.drafts' / (draft + '.deadline.json')).unlink(missing_ok=True)
+                    (self.tasks_dir.parent / '.drafts' / (draft + '.salary.json')).unlink(missing_ok=True)
                 self._task_path(task_id).unlink(missing_ok=True)
             yield
         finally:

@@ -82,6 +82,7 @@ class JobRequest(BaseModel):
     role: str = Field(min_length=1, max_length=150)
     job_url: HttpUrl | None = None
     offer_valid_until: date | None = None
+    salary_range: str = Field(default="", max_length=500)
     job_description: str = Field(default="", max_length=30_000)
     tailoring_level: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
     workflow: Literal["job", "custom"] = "job"
@@ -92,6 +93,17 @@ class JobRequest(BaseModel):
     @property
     def relevance_text(self) -> str:
         return self.custom_instructions if self.workflow == "custom" else self.job_description
+
+    @model_validator(mode='before')
+    @classmethod
+    def recover_offer_salary(cls, value):
+        # Missing fields in legacy records/API requests can be recovered locally.
+        # An explicit empty value is retained, so clearing metadata stays possible.
+        if isinstance(value, dict) and 'salary_range' not in value and value.get('workflow', 'job') == 'job':
+            from app.services.offer_salary import extract_offer_salary
+            text = value.get('job_description', '')
+            value = {**value, 'salary_range': extract_offer_salary(text) if isinstance(text, str) else ''}
+        return value
 
     @field_validator('offer_valid_until', mode='before')
     @classmethod
@@ -113,7 +125,7 @@ class JobRequest(BaseModel):
         return self
 
 
-    @field_validator("company", "role", "job_description", "custom_instructions", "cv_name", mode="before")
+    @field_validator("company", "role", "job_description", "custom_instructions", "cv_name", "salary_range", mode="before")
     @classmethod
     def strip_text(cls, value):
         return value.strip() if isinstance(value, str) else value
@@ -128,6 +140,7 @@ class JobExtraction(BaseModel):
     role: str = ""
     job_description: str = ""
     offer_valid_until: date | None = None
+    salary_range: str = Field(default="", max_length=500)
     source: str
     extraction_method: Literal["jsonld", "html", "playwright", "manual_required"]
     failure_reason: Literal["blocked", "timeout", "fetch_failed", "description_unavailable", "unsafe_url", "unsupported_browser"] | None = None
