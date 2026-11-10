@@ -7,6 +7,7 @@ from app.services.job_extractors.base import (
     first_text,
     normalized_text,
 )
+from app.services.offer_salary import extract_offer_salary
 
 HEADINGS = {
     'technologie, których używamy': 'PORTAL TECHNOLOGY TAGS',
@@ -75,9 +76,14 @@ class PracujExtractor(BaseExtractor):
                 section = sections.setdefault(active, [])
                 if line not in section:
                     section.append(line)
+        # Salary widgets often split the amount, tax/period and contract across
+        # separate DOM nodes. Extract before filtering out non-employment lines.
+        salaries = extract_offer_salary('\n'.join(prelude)).splitlines()
         employment = [line for line in prelude if len(line) < 250
-                      and not re.search(r'\.(?:pdf|docx?)\b|domyślne cv|dopasowanie cv', line, re.I)
-                      and (self.employment_pattern.search(line) or line.casefold().endswith('śląskie'))]
+                       and not re.search(r'\.(?:pdf|docx?)\b|domyślne cv|dopasowanie cv', line, re.I)
+                       and not any(line in salary for salary in salaries)
+                       and (self.employment_pattern.search(line) or line.casefold().endswith('śląskie'))]
+        employment.extend(salaries)
         if employment:
             sections['EMPLOYMENT CONDITIONS'] = list(dict.fromkeys(employment))
         company = role = ''

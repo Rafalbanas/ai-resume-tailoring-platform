@@ -4,7 +4,7 @@
   <details><summary>Edit salary / Edytuj widełki</summary>
     <form method="post" action="{{ salary_action }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Salary range / Widełki<input name="salary_range" maxlength="500" value="{{ salary_value or '' }}" placeholder="10 000–15 000 PLN netto + VAT / mies. · B2B"></label>
+      <label>Salary range / Widełki<textarea name="salary_range" rows="2" maxlength="500" placeholder="10 000–15 000 PLN netto + VAT / mies. · B2B">{{ salary_value or '' }}</textarea></label>
       <small>Keep currency, period, contract and gross/net terms. Leave blank to clear.</small>
       <button type="submit">Save salary</button>
     </form>
