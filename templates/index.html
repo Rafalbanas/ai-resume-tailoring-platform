@@ -37,7 +37,7 @@
     <label id="job-url-field">Job URL <small>optional — paste a single public job offer</small><span class="url-field"><input id="job-url" name="job_url" value="{{ job_url or '' }}" type="url" maxlength="2048" placeholder="https://…"><button id="fetch-job" class="secondary" type="button">Fetch job</button></span></label>
   </div>
   <label id="offer-deadline-field">Offer valid until <small>optional — fetched when explicitly provided; you can correct or clear it</small><input id="offer-valid-until" name="offer_valid_until" type="date" value="{{ offer_valid_until or '' }}"></label>
-  <label id="offer-salary-field">Salary range / Widełki <small>optional — read from offer text when available; you can enter or correct it</small><input id="salary-range" name="salary_range" maxlength="500" value="{{ salary_range|default('') }}" placeholder="10 000–15 000 PLN netto + VAT / mies. · B2B"></label>
+  <label id="offer-salary-field">Salary range / Widełki <small>optional — all offered rates; one contract or rate per line</small><textarea id="salary-range" name="salary_range" rows="2" maxlength="500" placeholder="10 000–15 000 PLN netto + VAT / mies. · B2B">{{ salary_range|default('') }}</textarea></label>
   <div id="fetch-status" class="fetch-status" role="status" aria-live="polite"></div>
   <div class="form-grid">
     <label>Ollama model

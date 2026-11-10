@@ -11,7 +11,8 @@ job_page = _job_page
 
 @pytest.mark.parametrize('action,path', [('fetch-job', '/api/extract-job-url'), ('clean-job-text', '/api/clean-job-text')])
 @pytest.mark.parametrize('manual', [None, '200 PLN/h', ''])
-def test_salary_autofill_preserves_manual_input(job_page, action, path, manual):
+@pytest.mark.parametrize('salary', ['100–150 PLN/h B2B', '10 000 PLN brutto UoP\n15 000 PLN netto + VAT B2B'])
+def test_salary_autofill_preserves_manual_input(job_page, action, path, manual, salary):
     page, errors = job_page
     page.locator('#job-url').fill('https://example.com/job')
     field = page.locator('#salary-range')
@@ -20,10 +21,11 @@ def test_salary_autofill_preserves_manual_input(job_page, action, path, manual):
         field.fill(manual)
     page.route('**' + path, lambda route: route.fulfill(json={
         'company': 'Synthetic', 'role': 'Support', 'job_description': 'Verified Python support workflows. ' * 4,
-        'extraction_method': 'html', 'salary_range': '100–150 PLN/h B2B'}))
+        'extraction_method': 'html', 'salary_range': salary}))
     page.locator('#' + action).click()
     expect(page.locator('#fetch-status')).to_have_class('fetch-status success')
-    expect(field).to_have_value('100–150 PLN/h B2B' if manual is None else manual)
+    expect(field).to_have_value(salary if manual is None else manual)
+    assert field.evaluate("node => new FormData(node.form).get('salary_range')") == (salary if manual is None else manual)
     page.locator('#cv-workflow').select_option('custom')
     expect(field).to_be_hidden()
     assert not errors
@@ -33,7 +35,7 @@ def test_salary_autofill_preserves_manual_input(job_page, action, path, manual):
 def test_salary_editor_keyboard_and_narrow_layout(width, tmp_path):
     env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(['html']))
     salary = env.get_template('_offer_salary.html').render(
-        salary_value='10 000–15 000 PLN netto + VAT / miesiąc · B2B',
+        salary_value='10 000 PLN brutto / miesiąc · UoP\n10 000–15 000 PLN netto + VAT / miesiąc · B2B',
         salary_action='/offers/draft/synthetic/salary', csrf_token='synthetic')
     html = '<html><head><style>' + Path('static/app.css').read_text() + '</style></head>'
     html += '<body><main class="shell"><article class="history-row"><div><strong>Synthetic offer</strong>'
@@ -46,6 +48,7 @@ def test_salary_editor_keyboard_and_narrow_layout(width, tmp_path):
         page.keyboard.press('Enter')
         field = page.get_by_label('Salary range / Widełki')
         expect(field).to_be_visible()
+        expect(field).to_have_value('10 000 PLN brutto / miesiąc · UoP\n10 000–15 000 PLN netto + VAT / miesiąc · B2B')
         page.keyboard.press('Tab')
         expect(field).to_be_focused()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

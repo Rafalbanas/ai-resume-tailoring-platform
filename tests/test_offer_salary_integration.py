@@ -19,16 +19,18 @@ shared_app = _shared_app
 
 
 @pytest.mark.parametrize('kind', ['draft', 'application'])
-def test_salary_edit_clear_and_artifacts_unchanged(tmp_path, resume_payload, kind):
+@pytest.mark.parametrize('salary', ['10 000–15 000 PLN netto / mies. B2B',
+                                   '10 000 PLN brutto / mies. UoP\n15 000 PLN netto + VAT / mies. B2B'])
+def test_salary_edit_clear_and_artifacts_unchanged(tmp_path, resume_payload, kind, salary):
     storage = Storage(tmp_path)
     draft, slug, folder = seed(storage, resume_payload)
     original = {p: p.read_bytes() for p in folder.iterdir() if p.is_file()}
     draft_path = storage.drafts_dir / f'{draft}.json'
     original[draft_path] = draft_path.read_bytes()
     identifier = draft if kind == 'draft' else slug
-    storage.update_offer_salary(kind, identifier, '10 000–15 000 PLN netto / mies. B2B')
+    storage.update_offer_salary(kind, identifier, salary)
     job = storage.load_draft(draft)[0] if kind == 'draft' else storage.load_application(slug)[0]
-    assert job.salary_range == '10 000–15 000 PLN netto / mies. B2B'
+    assert job.salary_range == salary
     if kind == 'application':
         assert storage.history()[0]['salary_range'] == job.salary_range
     else:
@@ -62,7 +64,7 @@ def test_salary_route_and_form(monkeypatch, resume_payload):
         assert response.status_code == 303
         assert response.headers['location'] == '/tailor/history'
         assert '100–150 PLN/h B2B' in client.get('/history').text
-        assert 'value="100–150 PLN/h B2B"' in client.get('/?from_cv=' + slug).text
+        assert '>100–150 PLN/h B2B</textarea>' in client.get('/?from_cv=' + slug).text
         data['salary_range'] = '<script>alert(1)</script>'
         assert client.post(path, data=data, follow_redirects=False).status_code == 303
         assert '&lt;script&gt;alert(1)&lt;/script&gt;' in client.get('/history').text
@@ -74,21 +76,27 @@ def test_salary_route_and_form(monkeypatch, resume_payload):
         assert client.post(path, data=data).status_code == 403
 
 
-def test_salary_submit_and_clean_paste(monkeypatch):
+@pytest.mark.parametrize('salary', ['Salary: 100–150 PLN/h',
+                                   '100–150 PLN/h B2B\n10 000–14 000 PLN brutto UoP'])
+def test_salary_submit_and_clean_paste(monkeypatch, salary):
     monkeypatch.setattr(TaskManager, 'start_worker', lambda *args: None)
     with TestClient(app) as client:
         login(client)
         data = {'csrf_token': client.cookies.get('csrf_token'), 'company': 'Synthetic', 'role': 'Support',
-                'job_description': 'Support Python and Linux workflows. Salary: 100–150 PLN/h', 'llm_provider': 'mock'}
+                'job_description': 'Support Python and Linux workflows.\n' + salary, 'llm_provider': 'mock'}
         result = client.post('/analyze', data=data, headers={'Accept': 'application/json'})
         assert result.status_code == 202
         task = app.state.task_manager.get_task(result.json()['task_id'])
         assert '100–150 PLN' in task.payload['job']['salary_range']
+        if '\n' in salary:
+            assert task.payload['job']['salary_range'] == salary
         assert '100–150 PLN' in client.get('/?from_task=' + task.task_id).text
         response = client.post('/api/clean-job-text', json={'text': data['job_description']},
                                headers={'X-CSRF-Token': client.cookies.get('csrf_token')})
         assert response.status_code == 200
         assert '100–150 PLN' in response.json()['salary_range']
+        if '\n' in salary:
+            assert response.json()['salary_range'] == salary
         data['salary_range'] = '200 PLN/h'
         other = client.post('/analyze', data=data, headers={'Accept': 'application/json'})
         assert other.json()['task_id'] != task.task_id
