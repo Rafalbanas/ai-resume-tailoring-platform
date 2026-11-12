@@ -41,7 +41,7 @@ def test_html_resume_access(shared_app, account, synthetic_download):  # noqa: F
         with zipfile.ZipFile(io.BytesIO(zip_resp.content)) as archive:
             html_names = [name for name in archive.namelist() if name.endswith('.html')]
             assert len(html_names) == 1
-            assert set(archive.namelist()) == {html_names[0], 'style.css'}
+            assert set(archive.namelist()) == {'index.html', 'style.css'}
             assert profile_name in archive.read(html_names[0]).decode('utf-8')
 
         # --- Negative test for other account ---

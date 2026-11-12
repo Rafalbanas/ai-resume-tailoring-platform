@@ -1,0 +1,23 @@
+/* Browser-only A4 page furniture. All theme design remains in resume.css. */
+.offline-resume body { margin: 0; background: #e9eef3; }
+.offline-resume .resume-paper {
+  position: relative; width: 210mm; height: 297mm; margin: 24px auto;
+  background: white; box-shadow: 0 3px 20px #17253622;
+}
+.offline-resume.theme-modern-sidebar .resume-paper {
+  background: linear-gradient(to right, #102b46 0, #102b46 61mm, white 61mm, white 100%);
+}
+.offline-resume .resume-document { page: auto; }
+.offline-resume .consent-footer { transform: none; }
+.offline-resume .resume-running-header {
+  position: absolute; top: 2mm; right: 12mm; font: 8pt Arial, sans-serif; color: #526174;
+}
+.offline-resume a:focus-visible { outline: 2px solid #2684ff; outline-offset: 2px; }
+@media print {
+  @page { size: A4; margin: 0; }
+  .offline-resume body { background: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .offline-resume .resume-paper {
+    height: 297mm; margin: 0; box-shadow: none; break-after: page; break-inside: avoid;
+  }
+  .offline-resume .resume-paper:last-child { break-after: auto; }
+}

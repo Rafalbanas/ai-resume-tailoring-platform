@@ -100,7 +100,8 @@ def test_api_image_never_spawns_a_local_fallback(monkeypatch):
         processing.BROWSER_ENDPOINT.reset(browser)
 
 
-@pytest.mark.parametrize('role,allowed,forbidden', [('documents', 'pdf', 'browser'), ('browser', 'browser', 'pdf')])
+@pytest.mark.parametrize('role,allowed,forbidden', [('documents', 'pdf', 'browser'), ('browser', 'browser', 'pdf'),
+                                                ('documents', 'html', 'browser'), ('browser', 'browser', 'html')])
 def test_worker_role_rejects_cross_role_operations_and_invalid_token(monkeypatch, role, allowed, forbidden):
     monkeypatch.setenv('PROCESSING_ROLE', role)
     monkeypatch.setenv('PROCESSING_TOKEN', 'a' * 48)
