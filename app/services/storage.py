@@ -68,7 +68,7 @@ class Storage:
 
     def download_filename(self, slug: str, kind: str, metadata: dict) -> str:
         """Name both existing and new exports within the upload portal's 50-character limit."""
-        if kind not in {"pdf", "docx"}:
+        if kind not in {"pdf", "docx", "html", "zip"}:
             raise ValueError("Unsupported export format")
         self.application_folder(slug)
         digest = hashlib.sha256(slug.encode()).hexdigest()

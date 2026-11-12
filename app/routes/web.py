@@ -6,7 +6,7 @@ import time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -1434,20 +1434,47 @@ async def confirm_saved_summary(request: Request, slug: str,
 
 @router.get("/download/{slug}/{kind}")
 async def download(request: Request, slug: str, kind: str):
+    return await _saved_download(request, slug, kind)
+
+
+@router.get('/html-preview/{slug}', response_class=HTMLResponse)
+async def html_preview(request: Request, slug: str):
+    return await _saved_download(request, slug, 'html', inline=True)
+
+
+async def _saved_download(request: Request, slug: str, kind: str, *, inline=False):
     guard(request)
     filename = {"pdf": "resume.pdf", "docx": "resume.docx"}.get(kind)
-    if not filename:
+    if not filename and kind not in {'html', 'zip'}:
         raise HTTPException(status_code=404)
     try:
-        path = request.app.state.storage.artifact(slug, filename)
+        path = request.app.state.storage.artifact(slug, filename) if filename else None
         _, resume, _, metadata = request.app.state.storage.load_application(slug)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, ValidationError) as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
     review = summary_review(resume, request.app.state.profile, request.app.state.settings.csrf_secret,
         account_context(request.app.state.auth_store.username, 'saved', slug), metadata.get('summary_confirmation', ''))
     if review['required'] and 'text/html' in request.headers.get('accept', ''):
         return RedirectResponse(f'/preview/{slug}#summary-review', status_code=303)
     require_confirmation(review, '', '')
+    if kind in {'html', 'zip'}:
+        from app.services.html_resume import html_resume_zip, render_html_resume
+        storage = request.app.state.storage
+        download_name = storage.download_filename(slug, kind, metadata)
+        try:
+            if kind == 'zip':
+                content = html_resume_zip(resume, request.app.state.profile,
+                    storage.download_filename(slug, 'html', metadata))
+            else:
+                content = render_html_resume(resume, request.app.state.profile).encode('utf-8')
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        # The normal response middleware also applies CSP and frame protection.
+        headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
+        if not inline:
+            headers['Content-Disposition'] = f'attachment; filename="{download_name}"'
+        return Response(content, media_type='text/html; charset=utf-8' if kind == 'html' else 'application/zip',
+                        headers=headers)
     media_type = (
         "application/pdf"
         if kind == "pdf"

@@ -218,6 +218,7 @@ edits affect record metadata only, not CV documents or match scores.
 ### 6. Document Export & Hyperlink Integrity
 - **PDF Export**: Pixel-accurate WeasyPrint rendering with native hyperlink annotations (`mailto:`, `https://`) and Poppler-verified geometry.
 - **DOCX Export**: Clean, single-column editable Word document with active hyperlinks and standard headings for universal compatibility.
+- **Offline HTML Export**: Download self-contained UTF-8 HTML or an editable HTML + CSS ZIP from a saved CV, with a browser preview and A4 print styles. Existing access and summary-review checks still apply; exports never update the master profile. See [offline HTML export](docs/offline-html-export.md).
 - **URL & Contact Normalization**: RFC-compliant URL parsing and normalization preserve ASCII URLs byte-for-byte, encode Unicode paths cleanly, and format readable display text while keeping tracking parameters in link targets.
 
 ### 7. In-Browser Resume Editing
