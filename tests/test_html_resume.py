@@ -5,6 +5,7 @@ from io import BytesIO
 from zipfile import ZipFile
 
 import pytest
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 from weasyprint import HTML
@@ -52,10 +53,12 @@ def test_zip_and_single_file_are_offline_and_have_identical_text(profile, resume
     resume = TailoredResume.model_validate(resume_payload)
     single = render_html_resume(resume, profile)
     with ZipFile(BytesIO(html_resume_zip(resume, profile, 'candidate-support.html'))) as archive:
-        assert set(archive.namelist()) == {'candidate-support.html', 'style.css'}
-        external = archive.read('candidate-support.html').decode('utf-8')
+        assert set(archive.namelist()) == {'index.html', 'style.css'}
+        external = archive.read('index.html').decode('utf-8')
         assert 'href="style.css"' in external
-        assert archive.read('style.css') == CSS_PATH.read_bytes()
+        assert CSS_PATH.read_text(encoding='utf-8') in archive.read('style.css').decode('utf-8')
+        assert BeautifulSoup(single, 'html.parser').style.get_text() == archive.read('style.css').decode('utf-8')
+        assert str(BeautifulSoup(single, 'html.parser').body) == str(BeautifulSoup(external, 'html.parser').body)
     assert '<style>' in single and '<link' not in single
     assert '<script' not in single and '@import' not in single
     for source in (single, external):
@@ -77,7 +80,7 @@ def test_pdf_text_links_and_graceful_pagination(profile, resume_payload):
     reader = PdfReader(BytesIO(document.write_pdf()))
     assert len(reader.pages) > 1
     text = '\n'.join(page.extract_text() for page in reader.pages)
-    assert 'Żaneta Łęcka' in text
+    assert 'Żaneta Łęcka'.casefold() in text.casefold()
     assert text.count('Invented Kubernetes achievement') == 25  # no silent fact filtering/rewrite
     targets = {str(a.get_object().get('/A', {}).get('/URI', ''))
                for page in reader.pages for a in page.get('/Annots', [])}
@@ -86,13 +89,15 @@ def test_pdf_text_links_and_graceful_pagination(profile, resume_payload):
 
 
 @pytest.mark.parametrize('kind', ['html', 'zip'])
-def test_saved_download_access_review_and_no_mutation(synthetic_download, kind):
+@pytest.mark.parametrize('theme', ['modern_sidebar', 'ats_classic'])
+def test_saved_download_access_review_and_no_mutation(synthetic_download, kind, theme):
     with TestClient(app) as client:
         assert client.get(f'/download/saved/{kind}', follow_redirects=False).status_code == 401
         assert client.get('/html-preview/saved', follow_redirects=False).status_code in {303, 401}
         sign_in(client)
         synthetic_download(app, 'saved', b'%PDF synthetic')
         state = app.state
+        state.storage.update_presentation('saved', template_name=theme, photo_enabled=False)
         folder = state.storage.application_folder('saved')
         paths = list(folder.iterdir()) + [state.settings.data_dir / 'master_profile.json']
         original = {p: p.read_bytes() for p in paths if p.is_file()}
@@ -100,7 +105,16 @@ def test_saved_download_access_review_and_no_mutation(synthetic_download, kind):
         assert result.status_code == 200, result.text
         assert 'attachment;' in result.headers['content-disposition']
         assert result.headers['content-disposition'].endswith(f'.{kind}"')
-        assert result.headers['cache-control'] == 'no-store'
+        assert result.headers['cache-control'] == 'private, no-store, no-transform'
+        if kind == 'html':
+            assert result.headers['content-type'] == 'application/octet-stream'
+            downloaded = result.text
+        else:
+            with ZipFile(BytesIO(result.content)) as archive:
+                assert set(archive.namelist()) == {'index.html', 'style.css'}
+                downloaded = archive.read('index.html').decode('utf-8')
+        assert bool(BeautifulSoup(downloaded, 'html.parser').select_one('aside.resume-sidebar')) == (theme == 'modern_sidebar')
+        assert f'theme-{theme.replace("_", "-")}' in downloaded
         preview = client.get('/html-preview/saved')
         assert preview.status_code == 200 and '<style>' in preview.text
         assert 'content-disposition' not in preview.headers
@@ -145,15 +159,16 @@ def test_browser_opens_both_html_formats_without_server(tmp_path, profile, resum
 
         page.route('http://**/*', block_remote)
         page.route('https://**/*', block_remote)
-        for path in (standalone, extracted / 'candidate-support.html'):
+        for path in (standalone, extracted / 'index.html'):
             page.goto(path.as_uri())
-            assert page.locator('h1').inner_text() == profile.personal.name
+            assert page.locator('.candidate-name').text_content() == profile.personal.name
+            assert page.locator('h1').inner_text() == resume.headline
             assert page.evaluate('document.characterSet') == 'UTF-8'
-            assert page.locator('main').evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgb(255, 255, 255)'
-            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert page.locator('aside.resume-sidebar').count() == 1
+            assert abs(page.locator('.resume-paper').bounding_box()['width'] - 210 * 96 / 25.4) < 1
             assert page.locator('script').count() == 0
             page.emulate_media(media='print')
-            assert page.locator('main').evaluate('(el) => getComputedStyle(el).paddingTop') == '0px'
+            assert page.locator('.resume-paper').evaluate('(el) => getComputedStyle(el).paddingTop') == '0px'
             page.emulate_media(media='screen')
         assert not remote_requests
         browser.close()

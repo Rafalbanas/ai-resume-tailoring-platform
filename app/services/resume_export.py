@@ -63,7 +63,7 @@ def contacts(profile: CandidateProfile) -> list[Contact]:
         if secondary.casefold() != email.casefold():
             result.append(Contact("Alternative email", secondary, f"mailto:{secondary}"))
     if personal.phone.strip():
-        result.append(Contact("Phone", personal.phone.strip()))
+        result.append(Contact("Phone", personal.phone.strip(), 'tel:' + personal.phone.strip().replace(' ', '')))
     for label, value in (("LinkedIn", personal.linkedin), ("Website", personal.website), ("GitHub", personal.github)):
         if value.strip():
             target = web_link(value)

@@ -63,7 +63,7 @@ def dispatch(operation, payload, work):
     if operation == 'text_cv_export':
         from app.services.text_cv_export import text_cv_export_op
         return text_cv_export_op(payload)
-    if operation in {'pdf', 'preview', 'metrics', 'docx'}:
+    if operation in {'pdf', 'preview', 'metrics', 'docx', 'html'}:
         from app.models.candidate import CandidateProfile
         from app.models.resume import TailoredResume
         from app.services.pdf_generator import PDFGenerator
@@ -78,6 +78,8 @@ def dispatch(operation, payload, work):
         profile = CandidateProfile.model_validate(payload['profile'])
         guide = payload.get('guide') or {}
         options = payload.get('options') or {}
+        if operation == 'html':
+            return generator.export_html_assets(resume, profile, guide, **options)
         if operation == 'preview':
             return generator.render_preview(resume, profile, guide, **options)
         if operation == 'metrics':

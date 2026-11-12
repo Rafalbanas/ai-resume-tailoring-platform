@@ -325,7 +325,10 @@ async def request_context(request: Request, call_next):
         response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'self'"
     response.headers["Referrer-Policy"] = "no-referrer"
     if not request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-store"
+        response.headers["Cache-Control"] = (
+            "private, no-store, no-transform"
+            if "no-transform" in response.headers.get("Cache-Control", "") else "no-store"
+        )
     response.set_cookie(
         settings.csrf_cookie_name,
         request.session.get("csrf_token", request.state.csrf_token),

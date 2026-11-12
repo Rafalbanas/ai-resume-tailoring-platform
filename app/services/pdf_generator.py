@@ -52,11 +52,23 @@ class PDFGenerator:
         template_name: str = "modern_sidebar",
         photo_enabled: bool | None = None,
         interactive_photo: bool = False,
+        preserve_text: bool = False,
     ) -> str:
         if not profile.personal.name.strip():
             raise ValueError("Candidate name is missing from the active master profile.")
-        resume = prepare_resume(resume, profile)
-        resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
+        if preserve_text:
+            # A new format of an existing record is not another content edit.
+            from app.services.cv_content_policy import check_export_content
+            from app.services.resume_export import web_link
+            check_export_content(resume)
+            contacts(profile)
+            resume = deepcopy(resume)
+            for project in resume.projects:
+                if project.url:
+                    project.url = web_link(project.url)
+        else:
+            resume = prepare_resume(resume, profile)
+            resume.professional_summary = deduplicate_summary(resume.professional_summary, FactCatalog(profile))
         guide = layout_guide or {}
         if template_name not in {"modern_sidebar", "ats_classic"}:
             template_name = "modern_sidebar"
@@ -219,7 +231,33 @@ class PDFGenerator:
         validate_pdf_output(pdf, profile)
         output.write_bytes(pdf)
 
+    def export_html_assets(self, resume, profile, layout_guide=None, *, template_name='modern_sidebar',
+                           photo_enabled=None):
+        """Use the actual PDF template and pagination repairs, never a second CV theme."""
+        if template_name not in {'modern_sidebar', 'ats_classic'}:
+            raise ValueError('Choose an existing CV template.')
+        from app.services.cv_content_policy import check_export_content
+        from app.services.resume_export import web_link
+        check_export_content(resume)
+        contacts(profile)
+        for project in resume.projects:
+            if project.url:
+                web_link(project.url)
+        if self.isolated:
+            from app.services.processing import process
+            return process('html', self._processing_payload(resume, profile, layout_guide,
+                template_name=template_name, photo_enabled=photo_enabled))
+        from app.services.html_resume import offline_assets
+        markup = self.render_html(resume, profile, layout_guide, template_name=template_name,
+                                  photo_enabled=photo_enabled, preserve_text=True)
+        document, markup = self._render_document_and_markup(markup)
+        validate_layout(document)
+        return offline_assets(markup, template_name, document)
+
     def _render_document(self, markup: str):
+        return self._render_document_and_markup(markup)[0]
+
+    def _render_document_and_markup(self, markup: str):
         """Floats cannot fragment safely: move overflow sections into normal flow.
 
         WeasyPrint may silently omit a float's final child while reporting one
@@ -269,11 +307,18 @@ class PDFGenerator:
                 for spacing in ("layout-compact", "layout-tight-bullets"):
                     if spacing not in classes:
                         article["class"] = classes + [spacing]
-                        return self._render_document(str(original))
+                        return self._render_document_and_markup(str(original))
         # This verifies every expected section remains text, including pages
         # created by long skills/languages/interests. No silent clipping allowed.
-        actual_all = key(" ".join(b.text for p in document.pages for b in p._page_box.descendants()
-                                  if type(b).__name__ == "TextBox"))
+        # Running headers/consent are not candidate content. Including them
+        # between two fragments of one paragraph falsely reports missing text.
+        content_boxes = []
+        for page in document.pages:
+            article = next(b for b in page._page_box.descendants()
+                           if type(b).__name__ == 'BlockBox' and getattr(b, 'element', None) is not None
+                           and 'resume-document' in b.element.get('class', '').split())
+            content_boxes.extend(b.text for b in article.descendants() if type(b).__name__ == 'TextBox')
+        actual_all = key(' '.join(content_boxes))
         for section in soup.select("section"):
             # Bullet markers are separate boxes; compare each paragraph/list
             # item rather than relying on a particular PDF reading order.
@@ -347,7 +392,7 @@ class PDFGenerator:
         final = HTML(string=str(soup), base_url=str(self.data_dir)).render()
         if len(final.pages) != len(document.pages):
             raise ValueError("Consent changed pagination unexpectedly; export stopped.")
-        return final
+        return final, str(soup)
 
     def fit_resume(
         self,

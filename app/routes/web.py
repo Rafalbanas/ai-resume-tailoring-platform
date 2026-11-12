@@ -1461,19 +1461,24 @@ async def _saved_download(request: Request, slug: str, kind: str, *, inline=Fals
         from app.services.html_resume import html_resume_zip, render_html_resume
         storage = request.app.state.storage
         download_name = storage.download_filename(slug, kind, metadata)
+        options = {'generator': request.app.state.pdf_generator,
+                   'template_name': metadata.get('template_name', 'modern_sidebar'),
+                   'layout_guide': metadata.get('layout_guide'),
+                   'photo_enabled': metadata.get('photo_enabled', request.app.state.profile_photo.exists())}
         try:
             if kind == 'zip':
-                content = html_resume_zip(resume, request.app.state.profile,
-                    storage.download_filename(slug, 'html', metadata))
+                content = await cpu_work(request, html_resume_zip, resume, request.app.state.profile, **options)
             else:
-                content = render_html_resume(resume, request.app.state.profile).encode('utf-8')
+                content = (await cpu_work(request, render_html_resume, resume, request.app.state.profile, **options)).encode('utf-8')
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         # The normal response middleware also applies CSP and frame protection.
-        headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
+        headers = {'Cache-Control': 'private, no-store, no-transform', 'X-Content-Type-Options': 'nosniff'}
         if not inline:
             headers['Content-Disposition'] = f'attachment; filename="{download_name}"'
-        return Response(content, media_type='text/html; charset=utf-8' if kind == 'html' else 'application/zip',
+        # Binary attachment transport prevents CDN HTML/email/script rewriting.
+        media_type = 'text/html; charset=utf-8' if inline else 'application/octet-stream' if kind == 'html' else 'application/zip'
+        return Response(content, media_type=media_type,
                         headers=headers)
     media_type = (
         "application/pdf"
