@@ -28,6 +28,9 @@
     {% endif %}
     <a class="secondary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/docx{% endif %}">Download DOCX</a>
     <a class="primary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/pdf{% endif %}">Download PDF</a>
+    <a class="secondary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/html{% endif %}">Download HTML</a>
+    <a class="secondary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/download/{{ slug }}/zip{% endif %}">Download HTML + CSS ZIP</a>
+    <a class="secondary button" href="{% if summary_review and summary_review.required %}#summary-review{% else %}{{ app_root_path|default('') }}/html-preview/{{ slug }}{% endif %}">Preview offline HTML</a>
     <form action="{{ app_root_path|default('') }}/history/{{ slug }}/delete" method="post" data-confirm="Delete this generated CV?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="danger" type="submit">Delete</button>
