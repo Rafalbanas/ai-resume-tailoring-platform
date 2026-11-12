@@ -313,11 +313,17 @@ class PDFGenerator:
         # Running headers/consent are not candidate content. Including them
         # between two fragments of one paragraph falsely reports missing text.
         content_boxes = []
+        def collect_content(box):
+            # Floats can be reparented outside the article by WeasyPrint. Walk
+            # the entire page content tree, excluding only margin furniture.
+            if type(box).__name__ == 'MarginBox':
+                return
+            if type(box).__name__ == 'TextBox':
+                content_boxes.append(box.text)
+            for child in getattr(box, 'children', []):
+                collect_content(child)
         for page in document.pages:
-            article = next(b for b in page._page_box.descendants()
-                           if type(b).__name__ == 'BlockBox' and getattr(b, 'element', None) is not None
-                           and 'resume-document' in b.element.get('class', '').split())
-            content_boxes.extend(b.text for b in article.descendants() if type(b).__name__ == 'TextBox')
+            collect_content(page._page_box)
         actual_all = key(' '.join(content_boxes))
         for section in soup.select("section"):
             # Bullet markers are separate boxes; compare each paragraph/list

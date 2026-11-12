@@ -125,3 +125,16 @@ def test_original_pdf_and_docx_exports_still_work(renderer, tmp_path, theme):
         relationships = archive.read('word/_rels/document.xml.rels').decode('utf-8')
         assert profile.personal.name in xml
         assert 'mailto:' + str(profile.personal.email) in relationships
+
+
+def test_large_floated_sidebar_remains_complete_in_html(renderer, profile, resume_payload):
+    from tests.test_sidebar_pagination import long_resume
+
+    resume = long_resume(resume_payload)
+    soup = BeautifulSoup(render_html_resume(resume, profile, generator=renderer,
+        template_name='modern_sidebar', photo_enabled=False), 'html.parser')
+    assert len(soup.select('.resume-paper')) > 1
+    skills = [item.get_text() for item in soup.select('aside .skill-list li')]
+    assert skills == resume.core_skills
+    assert soup.body.get_text().count('Fact 0:') == len(resume.experience)
+    assert len(soup.select('.consent-footer')) == 1
