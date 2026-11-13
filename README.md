@@ -250,6 +250,12 @@ workflow. Opening a PR does not deploy; review deployment impact before merging.
 
 Read [SECURITY.md](SECURITY.md) and report vulnerabilities privately, not in public issues.
 
+## Testing
+
+Follow [contributor setup](CONTRIBUTING.md#local-development), then run `pytest -q`.
+Use `pytest --collect-only -q` to inspect the current test collection; counts vary
+with parametrization and the installed environment.
+
 ## Documentation and contributing
 
 [Documentation index](docs/README.md) · [Detailed feature/configuration reference](REFERENCE.md) ·
