@@ -14,6 +14,12 @@ _ACTIVITY_VERBS = {
     'built': 'building', 'maintained': 'maintaining', 'maintains': 'maintaining',
     'tested': 'testing', 'tests': 'testing', 'deployed': 'deploying', 'deploys': 'deploying',
     'completed': 'completing', 'evaluated': 'evaluating', 'compared': 'comparing',
+    'administers': 'administering', 'administered': 'administering',
+    'configures': 'configuring', 'configured': 'configuring',
+    'monitors': 'monitoring', 'monitored': 'monitoring',
+    'troubleshoots': 'troubleshooting', 'troubleshot': 'troubleshooting',
+    'investigates': 'investigating', 'investigated': 'investigating',
+    'resolves': 'resolving', 'resolved': 'resolving',
 }
 _FINITE_COORDINATION = {
     'was', 'were', 'is', 'are', 'has', 'have', 'had', 'did', 'does', 'can', 'could',
@@ -200,8 +206,20 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 for clause in group:
                     label = next((prefix for prefix in scopes if prefix and clause.startswith(prefix)), '')
                     scopes[label].append(clause[len(label):])
-                sentences.extend(scoped(label, parts) if label else clauses(parts) + '.'
-                                 for label, parts in scopes.items() if parts)
+                for label, parts in scopes.items():
+                    if parts:
+                        if label:
+                            sentences.append(scoped(label, parts))
+                        elif support:
+                            # Support composition can include background,
+                            # languages and projects as separate scope sentences.
+                            # Keep its duty block compact rather than making a
+                            # six-sentence catalogue.
+                            sentences.append(clauses(parts) + '.')
+                        else:
+                            # Current duties read as short sentences, not a list
+                            # joined by semicolons with inconsistent capitalization.
+                            sentences.extend(part + '.' for part in parts)
             else:
                 sentences.append(scoped('Project work: ', group) if index == 2 else clauses(group) + '.')
         return ' '.join(sentences)
@@ -264,6 +282,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         fact = next((e for e in entries if e.kind == "experience" and e.owner_index == 0), None)
         if fact:
             add(0, fact, f"{current.title} at {current.company}" if current.end.casefold() in {"present", "current", "now", "obecnie"} else f"Experience as {current.title} at {current.company}")
+            used.discard(fact.source_id)
     elif support:
         add(0, next(iter(entries), None))
     if support:
@@ -304,10 +323,12 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             if fact:
                 identity = f'{current.title} at {current.company}' if current.end.casefold() in {'present', 'current', 'now', 'obecnie'} else f'Experience as {current.title} at {current.company}'
                 add(0, fact, identity)
+                # Identity cites this owner, but has not displayed the duty.
+                used.discard(fact.source_id)
         ranked = sorted(entries, key=lambda e: (bool(role_focus_score(e.text, role)),
-                                                bool(e.kind == 'project' and role_focus_score(e.text, role)),
                                                 role_focus_score(e.text, role),
                                                 (priorities or {}).get(e.source_id, 0),
+                                                e.kind == 'experience',
                                                 bool(role_family(role) == 'data_science' and e.kind == 'project' and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
                                                 len(normalized_tokens(e.text) & tokens),
                                                 -len(e.text)), reverse=True)

@@ -217,17 +217,22 @@ def test_docx_does_not_stretch_rectangular_photo(tmp_path, profile, resume_paylo
 
 
 @pytest.mark.parametrize("layout", ["modern_sidebar", "ats_classic"])
-def test_generated_ten_skills_survive_pdf_and_docx_export(tmp_path, profile, layout):
+@pytest.mark.parametrize("relevant_basics", [False, True])
+def test_relevant_skill_selection_survives_pdf_and_docx_export(tmp_path, profile, layout, relevant_basics):
     values = [skill("Windows")] + [skill(f"Support Tool {i}", level="basic") for i in range(11)]
     store = bank(tmp_path, profile, values)
     validator = FactValidator(profile, store)
     candidate = TailoredResume(headline="Support Engineer", professional_summary=profile.summary_facts[0],
                               summary_source_fact_ids=["summary:0"], core_skills=["Windows"], experience=[])
+    description = "Windows technical support and incident handling."
+    if relevant_basics:
+        description += ' ' + '; '.join(s.name for s in values[1:10])
     resume = validator.validate(candidate, JobRequest(company="Example", role="Support specialist",
-                                job_description="Windows technical support and incident handling.")).resume
+                                job_description=description)).resume
     generator = PDFGenerator(Path("templates"), Path("static"), tmp_path)
     fitted, _ = generator.fit_resume(resume, profile, template_name=layout, one_page=True, fact_validator=validator)
-    assert len(fitted.core_skills) == 10
+    assert len(fitted.core_skills) == (10 if relevant_basics else 1)
+    assert fitted.core_skills == resume.core_skills
     pdf, docx = tmp_path / "skills.pdf", tmp_path / "skills.docx"
     generator.generate(fitted, profile, pdf, template_name=layout)
     generate_docx(fitted, profile, docx, template_name=layout)

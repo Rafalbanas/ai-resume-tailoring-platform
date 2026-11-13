@@ -258,8 +258,8 @@ def test_incomplete_summary_is_replaced_with_complete_source_sentence(tmp_path, 
         "Automates repeatable infrastructure and support workflows with Python and cross-tier."
     )
     result = FactValidator(profile, store).validate(candidate, job("Python support automation"))
-    expected = 'Support Engineer at Example Ltd. Broader experience includes automating repeatable infrastructure and support workflows with Python.'
-    assert expected in result.resume.professional_summary
+    assert result.resume.professional_summary.startswith('Support Engineer at Example Ltd.')
+    assert 'Broader experience includes automating repeatable infrastructure and support workflows with Python.' in result.resume.professional_summary
 
     catalog = FactCatalog(profile)
     summary_entry = next(e for e in catalog.prompt_entries if e.kind == 'summary' and e.text == profile.summary_facts[0])

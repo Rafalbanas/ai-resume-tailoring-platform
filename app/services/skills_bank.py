@@ -295,7 +295,8 @@ class SkillsBank:
 
         requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
         from app.services.role_focus import role_family, role_focus_score
-        focused_role = role_family(job_text) in {'ai', 'software', 'automation', 'data_engineering', 'data_science'}
+        focused_role = role_family(job_text) in {'ai', 'software', 'automation', 'data_engineering', 'data_science',
+                                               'devops', 'system_administration'}
         ranked = sorted(eligible, key=lambda skill: (
             role_focus_score(' '.join(self.aliases_for(skill)), job_text) if focused_role and not requested_only else 0,
             role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
@@ -316,7 +317,15 @@ class SkillsBank:
             label = _normal(self.wording(skill))
             if family in families or label in chosen_labels:
                 continue
-            relevant = role_relevance(skill) > 0 or (requested_only and skill.id in requested)
+            relevant = (role_relevance(skill) > 0 or (requested_only and skill.id in requested)
+                        or (focused_role and role_focus_score(' '.join(self.aliases_for(skill)), job_text) > 0))
+            # Do not pad practical strengths with unrelated introductory tools.
+            # Relevant Basic skills and explicit manual choices remain intact.
+            if (not requested_only and not relevant and skill.level == 'basic'
+                    and any(s.level in {'hands_on', 'intermediate', 'advanced'}
+                            and (role_relevance(s) > 0 or (focused_role and role_focus_score(
+                                ' '.join(self.aliases_for(s)), job_text) > 0)) for s in chosen)):
+                continue
             # Relevant skills rank first. Fill a sparse generated CV from the
             # remaining verified bank without weakening eligibility or deduplication.
             if not relevant and len(chosen) >= minimum:
