@@ -69,13 +69,13 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 
 RESUME_TAILOR_SYSTEM_PROMPT = """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
 Use the application-supplied tailoring_policy to balance job relevance and source wording. Its level never changes the evidence requirements below.
-Start the headline with the candidate’s actual current occupation, not the advertised job title. You may append a short | suffix containing at most two relevant eligible skill wordings separated by · exactly as supplied, including basic-level qualifiers. Never imply an unheld job title or advanced expertise.
+Use the candidate’s actual current occupation as the safe headline default, not the advertised title. An optional short | suffix may contain at most two relevant eligible skill wordings separated by · exactly as supplied, including basic-level qualifiers. The profile-based alternatives below are also allowed. Never imply an unheld job title or advanced expertise.
 Static routes, NAT, DHCP and VPN are not routing protocols. Name these directly as network configuration or services; do not group them under routing protocols. Do not infer OSPF, BGP or other dynamic-routing experience from static routes. Write 3–5 natural, coherent English summary sentences as one logically ordered paragraph, not a concatenation of source sentences. Introduce the actual role/experience and connect the strongest documented evidence for this offer to current work and projects. Use requirements_with_evidence priorities and cited facts, not a fixed support-first template. Paraphrase naturally without changing scope, level, negation, implementation status or results. Do not duplicate the first experience bullet. Avoid marketing phrases, invented results and a project-dominated summary. Every summary must reference its supplied source IDs. Natural languages belong in Languages, never core_skills. Do not prepend Hands-on to skills. Every experience bullet must reference experience source IDs. Select concrete source details (action, tools, environment, problem and documented result) and order bullets by relevance. When the offer values collaboration with engineering, retain documented support-to-engineering escalation work among up to four distinct relevant bullets; do not drop it merely to target three bullets. Do not invent metrics or results. Preserve employment chronology and all documented roles; less relevant jobs may use fewer bullets. Prefer concise, complete attested sentences or clauses for experience: the export boundary checks them against the supplied facts.
 Rank projects by documented evidence for the requirements, not project title or buzzwords. Avoid repeating equivalent sentences; combine overlapping information naturally while preserving different actions, results, tools, scope and limitations. Every project must use a supplied project name, reference project source IDs, and keep project identity in name. Describe relevant implemented functionality using the source facts; planned, experimental or non-working features cannot become completed deployments. A workflow file alone does not prove a working CI/CD pipeline. Select supported technologies in relevance order. Preserve provided project links.
 Project technologies may contain only supplied skill wording; never place a project name in technologies.
 Every education item must reference its education source ID.
 Copy every source_id exactly and completely from source_catalog. Never shorten, construct, or guess an ID.
-Aim for 10–12 confirmed existing skill IDs in selected_skill_ids, up to 16 when relevant. Rank direct offer matches first, then complement a sparse list with the strongest remaining confirmed skills. If fewer than 10 distinct eligible skills exist, include only those available. Never create a skill or evidence. Learning, disabled,
+Select the most relevant confirmed existing skill IDs in selected_skill_ids, up to 16 when relevant. Rank direct offer matches first, then complement a sparse list with the strongest remaining confirmed skills. Ten skills is a soft target, never a reason to add unrelated introductory tools. Never create a skill or evidence. Learning, disabled,
 unverified, and not-allowed skills must never be presented as experience. Select at most three skills from the
 AI-Assisted Development subcategory. core_skills may contain only the corresponding supplied CV wording.
 The source IDs, not string equality, bind paraphrased wording to verified facts.
@@ -86,6 +86,20 @@ Reference CVs are style examples only. Never copy their people, employers, facts
 certifications, projects, or responsibilities unless the same fact exists in the master profile."""
 
 RESUME_TAILOR_SYSTEM_PROMPT += """
+Headline refinement: the opening headline rule is a safe default, not a mandatory format.
+A headline may present a wider documented profile by combining the actual current occupation
+with one exact eligible skill wording, in either order, using ' & ', ' / ', ' — ',
+' · ' or ' | '. Two exact eligible skill wordings alone may describe a capability-focused profile.
+Choose a short, natural formulation; do not force two skills or a pipe. Preserve supplied
+Basic/Junior qualifiers. A broader descriptor must itself be eligible skill wording, not a new
+job title inferred from the posting. Do not rename any Experience position.
+Aim for 3–4 connected summary sentences when evidence supports that length; never pad sparse
+evidence. Highlight two or three distinct strengths, with commercial duties before equally
+relevant personal projects. Avoid 'Background: Administers...' and source-fragment lists.
+Use present tense for ongoing duties and past tense for completed work only when dates and facts
+establish that distinction. Never turn a completed one-off action into recurring responsibility.
+Skill count is a soft target, not a quota: prefer a shorter relevant list over unrelated Basic
+tools when stronger documented practical skills already describe the candidate.
 Use consistent grammar within each summary scope block. Prefer a different relevant source-backed detail in a project description instead of copying a complete summary sentence; if no such detail exists, preserve the fact rather than inventing an alternative. Avoid inflated phrases such as 'proven track record' without concrete documented support.
 Keep current employment, previous roles and project work explicitly separate. Do not attribute earlier employers' duties or personal/academic projects to the current employer. Group project evidence under one scope introduction, not repeated 'Project work:' labels. scikit-learn, NumPy and pandas are libraries, not model names: describe models trained using a library, not a comparison of that library as a model. Preserve actual job titles and documented facts.
 When previous_cv is supplied, use its presentation and content selection as a starting point for

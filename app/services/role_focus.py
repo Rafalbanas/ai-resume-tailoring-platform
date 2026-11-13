@@ -17,6 +17,10 @@ def role_family(role):
         return 'automation'
     if re.search(r'forward.deployed engineer|software (?:engineer|developer)|backend (?:engineer|developer)', title, re.I):
         return 'software'
+    if re.search(r'\b(?:DevOps|SRE|Site Reliability Engineer|Platform Engineer|Infrastructure Engineer)\b', title, re.I):
+        return 'devops'
+    if re.search(r'\b(?:(?:systems?|Linux|Windows) administrator|administrator(?: IT| systemów| systemow))\b', title, re.I):
+        return 'system_administration'
     return 'other'
 
 
@@ -44,6 +48,12 @@ def role_focus_score(text, role):
                     (r'\btests?\b|CI/CD|GitHub Actions', 1),
                     (r'\bdeploy\w*\b|Docker', 1)]
         return sum(weight for pattern, weight in weighted if re.search(pattern, text, re.I))
+    elif family == 'devops':
+        patterns = [r'\b(?:Linux|Unix)\b', r'\b(?:Docker|Kubernetes|containers?)\b', r'CI/CD|\bGitLab\b|GitHub Actions',
+                    r'\b(?:Bash|Python)\b|automat\w*|skrypt\w*', r'monitor\w*|\b(?:Prometheus|Grafana)\b', r'\b(?:networks?|networking|DNS)\b|TCP/IP|sieci']
+    elif family == 'system_administration':
+        patterns = [r'\b(?:Windows|Linux|Unix)\b', r'\bAD\b|Active Directory', r'\b(?:networks?|networking|DNS)\b|TCP/IP|sieci',
+                    r'backup\w*|restor\w*|kopi\w* zapas', r'virtual\w*|wirtual\w*|\b(?:VMware|Proxmox)\b']
     else:
         return 0
     return sum(bool(re.search(pattern, text, re.I)) for pattern in patterns)

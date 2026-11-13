@@ -29,6 +29,22 @@ def _headline_with_suffix(occupation: str, suffixes: list[str]) -> str:
                  if len(occupation + ' | ' + part) <= 64), occupation)
 
 
+def _profile_headline(value: str, occupation: str, skills: list[str]) -> str | None:
+    """Accept compositions of whole attested labels, never a generated occupation.
+
+    Match complete labels rather than splitting on punctuation: a skill or actual
+    job title can itself contain '/', '&' or a level qualifier.
+    """
+    if len(value) > 64:
+        return None
+    from itertools import permutations
+    for left, right in permutations(dict.fromkeys([occupation, *skills]), 2):
+        for separator in (' & ', ' / ', ' — ', ' · ', ' | '):
+            if value == left + separator + right:
+                return value
+    return None
+
+
 @dataclass
 class ValidationResult:
     resume: TailoredResume
@@ -186,6 +202,9 @@ class FactValidator:
         if self.analysis is not None and draft.headline.strip() == job.role.strip() and draft.headline.strip() != occupation:
             suffixes = draft.core_skills[:2]
         verified_headline = _headline_with_suffix(occupation, suffixes)
+        # Both generated and manually retained headlines resolve whole labels
+        # against the same current profile and eligible skill selection.
+        verified_headline = _profile_headline(draft.headline.strip(), occupation, draft.core_skills) or verified_headline
         if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
         draft.headline = verified_headline
@@ -276,7 +295,9 @@ class FactValidator:
                 for entry in self._experience_entries(exp_index, job):
                     if self.fact_priorities.get(entry.source_id, 0) and entry.source_id not in cited:
                         bullets.append(ResumeBullet(text=self._experience_wording(entry.text), source_fact_ids=[entry.source_id]))
-                bullets.sort(key=lambda b: max((self.fact_priorities.get(i, 0) for i in b.source_fact_ids), default=0), reverse=True)
+            if not preserve_skills:
+                bullets.sort(key=lambda b: max((self._entry_relevance(entry, job)
+                    for entry in self.catalog.valid(b.source_fact_ids, kind='experience')), default=(0, 0, 0)), reverse=True)
             exp.bullets = deduplicate_bullets(bullets)[:4]
             clean_experience.append(exp)
         if not clean_experience:
@@ -608,13 +629,17 @@ class FactValidator:
                    and ':fact:' in e.source_id]
         return sorted(entries, key=lambda e: self._entry_relevance(e, job), reverse=True)[:4]
 
-    def _entry_relevance(self, entry, job: JobRequest) -> tuple[float, int]:
+    def _entry_relevance(self, entry, job: JobRequest) -> tuple[float, float, float]:
         from app.services.job_sections import relevance_text
+        from app.services.role_focus import role_focus_score
         terms = normalized_tokens(relevance_text(f'{job.role}\n{job.relevance_text}'))
         # The LLM's cited match evidence supplies the primary ordering; literal
         # overlap is only a fallback/tiebreaker, never proof of competence.
         overlap = normalized_tokens(entry.text) & terms
-        return self.fact_priorities.get(entry.source_id, 0), len(overlap)
+        # Keep the slider's source-order endpoint when analysis has no priority.
+        level = job.tailoring_level
+        return (self.fact_priorities.get(entry.source_id, 0),
+                (1 - level) * role_focus_score(entry.text, job.role), (1 - level) * len(overlap))
 
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
         # A target advertisement cannot confer a new occupation or seniority.
