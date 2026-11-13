@@ -24,7 +24,8 @@ cp data/skills.example.json data/skills.json
 
 Edit the local `.env` before starting. Set `AI_PROVIDER=mock`,
 `LLM_PROVIDER=mock`, `LLM_FALLBACK_PROVIDER=none`, `PROFILE_MODE=sample`, and
-`BASE_URL=http://127.0.0.1:8000`. Choose your own local `APP_USERNAME`,
+`BASE_URL=http://127.0.0.1:8000`, and `DATA_DIR=./data` (the example's `/app/data`
+is for containers). Choose your own local `APP_USERNAME`,
 `APP_PASSWORD`, and random `CSRF_SECRET`. Mock mode does not require AI API keys.
 
 ```bash
@@ -33,7 +34,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 Use the bundled example profile or fictional data. Do not copy a production
 data directory or credentials into your development environment. See the
-[README](README.md) for configuration and Docker setup.
+[Quick Start](docs/quickstart.md) for fresh-checkout Docker setup and the
+[detailed reference](REFERENCE.md) for configuration. Never run the demo
+initializer against an existing development or private account.
 
 ## Checks
 
