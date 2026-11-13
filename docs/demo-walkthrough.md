@@ -17,7 +17,12 @@ This document provides a structured scenario for recording a demo of the CVTailo
 ## Technical Notes
 - **Latency**: AI response time depends on the server. If editing out or accelerating waiting time in the video, disclose the cut or speed-up and do not present the edited duration as measured generation latency.
 - **Warnings**: Do not hide any system warnings or errors during the recording; they should be captured as they appear.
-- **Capture status (2026-11-08)**: Local Gemma analysis and CV text generation completed with fallback disabled. The first in-app PDF/DOCX export timed out; a separate direct PDF-rendering check succeeded. The available videos document generation and a separate report/status walkthrough, not a successful full export. See the [README recordings](../README.md#video-walkthrough).
+- **Capture status (2026-11-08)**: Local Gemma analysis and CV text generation completed with fallback disabled. The first in-app PDF/DOCX export timed out; a separate direct PDF-rendering check succeeded. The available videos document generation and a separate report/status walkthrough, not a successful full export. See the [README recordings](../README.md#see-it-working).
+
+For a fresh Linux checkout without a real AI provider, follow the separate
+[mock walkthrough](quickstart.md). Label mock captures explicitly. A future
+end-to-end recording must include successful downloads and opening both generated
+documents; do not hide the current capture's timeout or replace its provenance.
 
 ## Privacy & Security
 - **Confidentiality**: Ensure that no real logins, secrets, or production data are captured in the recording.
