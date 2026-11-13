@@ -19,3 +19,23 @@ Both are silent WebM/VP9 files. These are two separate captures, not a continuou
 Analysis and the CV draft completed. The in-app export failed with **Document processing exceeded the time limit**; the error remains visible in the status screenshot and report video. A separate isolated direct PDF-rendering check completed in approximately 42 seconds, but that does not validate the full application PDF/DOCX export. No successful in-app PDF/DOCX download is claimed.
 
 The PNG files show the submitted form, full report, initial export failure and History. `match-report-overview.png` is a crop of the full report for the main README, not a different result. The capture scripts, account credentials, raw outtakes and diagnostics remain outside the repository.
+
+## Landing-page assets
+
+`hero-match-report.webp` is a smaller crop of `match-report-overview.png`, removing
+the navigation/blank top area without changing report content. It is not a new
+recording or a composite result. Reproduce from the repository root using the
+existing Pillow dependency:
+
+```python
+from PIL import Image
+source = Image.open("docs/media/match-report-overview.png")
+source.crop((0, 300, source.width, source.height)).resize((1100, 1069)).save(
+    "docs/media/hero-match-report.webp", quality=86, method=6
+)
+```
+
+`html-export-modern-sidebar.png` and `html-export-ats-classic.png` are separate
+fictional renderer comparisons, not screenshots of a completed UI export. They
+compare browser HTML, WeasyPrint PDF and browser A4 print; the abstract avatar is
+not a real photograph. See [offline exports and reproduction](../offline-html-export.md).
