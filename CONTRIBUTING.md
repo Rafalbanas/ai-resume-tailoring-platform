@@ -51,6 +51,14 @@ tests. CI also builds the Dockerfile and checks application imports, PDF/DOCX
 exports, and Chromium inside the image. Documentation-only changes can be
 checked with link, YAML, and diff validation; describe those checks in the PR.
 
+### Dependency updates
+
+Dependabot is configured with a 7-day cooldown for routine pip updates to reduce exposure
+to fresh releases, while security updates remain unaffected. We also maintain a separate
+group for browser-related dependencies (e.g., Playwright) to isolate their updates.
+Changes involving Playwright or its dependencies must be carefully reviewed to ensure
+consistent Docker image construction and runtime compatibility.
+
 ### Generated README sections
 
 Exact dependency versions belong in `requirements.txt` and `requirements-dev.txt`,
