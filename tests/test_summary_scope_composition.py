@@ -88,7 +88,8 @@ def test_model_approval_does_not_allow_previous_duties_to_migrate_to_current_com
     assert again.professional_summary == checked.professional_summary
 
 
-def test_correctly_scoped_approved_summary_keeps_owner_confirmation(profile):
+@pytest.mark.parametrize('preserve_skills', [False, True])
+def test_correctly_scoped_approved_summary_keeps_owner_confirmation(profile, preserve_skills):
     profile = with_history(profile)
     old = next(e for e in FactCatalog(profile).prompt_entries if e.kind == 'experience' and e.owner_index == 1)
     text = 'Support Engineer at Example Ltd. Previous roles included SQL and T-SQL operational verification.'
@@ -96,7 +97,7 @@ def test_correctly_scoped_approved_summary_keeps_owner_confirmation(profile):
                             summary_source_fact_ids=[old.source_id], core_skills=[], experience=[])
     resume.summary_attestation = sign_summary(resume, profile, 'synthetic-key')
     job = JobRequest(company='Synthetic', role='Data developer', job_description='Requirements\nSQL operational verification.')
-    checked = FactValidator(profile, review_key='synthetic-key').validate(resume, job).resume
+    checked = FactValidator(profile, review_key='synthetic-key').validate(resume, job, preserve_skills=preserve_skills).resume
     assert checked.professional_summary == text
     assert valid_summary_attestation(checked, profile, 'synthetic-key')
     assert summary_review(checked, profile, 'synthetic-key', 'synthetic-document')['required']

@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 
@@ -96,11 +97,14 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
             ranked, hybrid_trace = hybrid_search(documents, queries, settings)
         else:
             ranked = FactIndex(documents).search(queries)
-        # Blend lexical relevance with the canonical profile order. Only ranked
-        # matches participate: this control cannot create evidence for a gap.
+        # Source-order presentation can select non-hits too, but only from the
+        # same canonical, policy-filtered documents. Ranking is never evidence.
         maximum = max((score for _, score in ranked), default=1)
         source_order = {e.source_id: index for index, e in enumerate(documents)}
         level = job.tailoring_level
+        if level:
+            matched_ids = {e.source_id for e, _ in ranked}
+            ranked.extend((e, 0.0) for e in documents if e.source_id not in matched_ids)
         ranking_scores = {
             e.source_id: (1 - level) * score / maximum
             + level * (1 - source_order[e.source_id] / max(1, len(documents)))
@@ -108,8 +112,8 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         }
         fused_order = {entry.source_id: index for index, (entry, _) in enumerate(ranked)}
         ranked.sort(key=lambda item: (-ranking_scores[item[0].source_id],
-                                     fused_order[item[0].source_id] if hybrid_trace.get('method') == 'local_bm25_dense_rrf'
-                                     else item[0].source_id))
+                                      fused_order[item[0].source_id] if hybrid_trace.get('method') == 'local_bm25_dense_rrf'
+                                      else item[0].source_id))
         mode = "ranked" if ranked else "no_matches"
         used = sum(len(e.text) for e in selected.values())
         for entry, score in ranked[:top_k]:
@@ -118,8 +122,37 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
                     continue
                 selected[entry.source_id] = entry
                 used += len(entry.text)
-            reasons[entry.source_id] = "hybrid_match" if hybrid_trace.get('method') == 'local_bm25_dense_rrf' else "lexical_match"
+            reasons[entry.source_id] = (
+                "profile_order" if not score else
+                "hybrid_match" if hybrid_trace.get('method') == 'local_bm25_dense_rrf' else "lexical_match")
             scores[entry.source_id] = round(score, 6)
+        # A technology-only hit is not enough to import a whole repository.
+        # Scope by BOTH kind and index: education[0] is not project[0].
+        hit_project_indices = {e.owner_index for e in selected.values()
+            if e.kind == 'project' and e.owner_index is not None
+            and (':fact:' in e.source_id or ':description:' in e.source_id)
+            and reasons[e.source_id] in {'lexical_match', 'hybrid_match'}}
+        technical_context = re.compile(
+            r'\b(?:evaluat\w*|compar\w*|train\w*|implement\w*|method\w*|result\w*|'
+            r'cross.validation|accuracy|regression|dataset\w*|preprocess\w*|features?|'
+            r'pipeline\w*|benchmark\w*)\b', re.I)
+        query_terms = set().union(*(normalized_tokens(q) for q, _ in queries))
+        for index in sorted(hit_project_indices):
+            parts = [e for e in documents if e.kind == 'project' and e.owner_index == index
+                     and (':description:' in e.source_id or (':fact:' in e.source_id and (
+                         technical_context.search(e.text) or normalized_tokens(e.text) & query_terms)))]
+            parts.sort(key=lambda e: ':description:' not in e.source_id)
+            added = 0
+            for entry in parts:
+                if entry.source_id in selected or used + len(entry.text) > max_chars:
+                    continue
+                selected[entry.source_id] = entry
+                used += len(entry.text)
+                reasons[entry.source_id] = 'owner_context'
+                added += 1
+                if added >= 5:
+                    break
+
     except Exception:
         # No exception text or candidate data in logs. The previous full catalog
         # behavior is safe only because the same Truth Lock still guards export.
@@ -139,7 +172,7 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         "queries": [{"text": q, "weight": w} for q, w in queries],
         "max_context_chars": max_chars, "document_count": len(documents),
         "selected": [{"source_id": e.source_id, "type": e.kind, "owner": e.owner_name,
-                      "reason": reasons[e.source_id], "score": scores.get(e.source_id, 0),
-                      "ranking_score": round(ranking_scores.get(e.source_id, 0), 6) if mode == 'ranked' else 0}
-                     for e in entries],
+                       "reason": reasons[e.source_id], "score": scores.get(e.source_id, 0),
+                       "ranking_score": round(ranking_scores.get(e.source_id, 0), 6) if mode == 'ranked' else 0}
+                      for e in entries],
     })

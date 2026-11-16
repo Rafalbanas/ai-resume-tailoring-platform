@@ -61,7 +61,7 @@
 <details class="warnings pre-fit-diff">
   <summary>Page Fit Transparency: View {{ pre_fit_diff.total_items }} item(s) trimmed or shortened for 1-page fit</summary>
   <div class="diff-content-wrapper">
-    <p class="diff-notice">The AI model drafted these facts, but the 1-page layout engine tightened them to maintain A4 boundaries. You can re-include or edit any items via <a href="{{ app_root_path|default('') }}/edit/{{ slug }}">Edit CV</a>.</p>
+    <p class="diff-notice">The validated draft contained these details. Lower-priority content was omitted or condensed to prefer one readable A4 page. You can re-include or edit any items via <a href="{{ app_root_path|default('') }}/edit/{{ slug }}">Edit CV</a>.</p>
     {% if pre_fit_diff.trimmed_skills %}
     <div class="diff-group">
       <strong>Lower-priority skills trimmed:</strong>

@@ -118,6 +118,16 @@ class FactCatalog:
                     ),
                     f"education:{index}:thesis",
                 )
+            # These are saved education facts too, not template-only metadata.
+            # Keep their educational ownership; never silently turn coursework
+            # or a thesis summary into commercial/project implementation.
+            for field in ("specialisation", "thesis_summary"):
+                value = getattr(education, field, "").strip()
+                if value:
+                    self._add(FactEntry(
+                        f"education:{owner}:{field}:{_digest(value)}", "education",
+                        f"Specialisation: {value}" if field == "specialisation" else value,
+                        index, education.institution))
         for index, project in enumerate(self.profile.projects):
             owner = _digest(project.name)
             if project.description:

@@ -41,7 +41,10 @@ def test_headline_cannot_create_an_occupation_skill_or_level(profile, headline):
     profile.skills = {'technical': ['Basic Linux']}
     draft = TailoredResume(headline=headline, professional_summary='Needs review.', core_skills=['Basic Linux'], experience=[])
     job = JobRequest(company='Synthetic', role='DevOps Engineer', job_description='Requirements\nLinux and Kubernetes administration.')
-    assert FactValidator(profile).validate(draft, job).resume.headline == profile.experience[0].title
+    result = FactValidator(profile).validate(draft, job).resume
+    assert result.headline == ("Basic Linux | Support Engineer" if headline == job.role
+                               else profile.experience[0].title)
+    assert result.experience[0].title == profile.experience[0].title
 
 
 def test_headline_revalidates_after_skill_removal(profile):

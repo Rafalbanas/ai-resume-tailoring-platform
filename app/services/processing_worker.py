@@ -83,7 +83,8 @@ def dispatch(operation, payload, work):
         if operation == 'preview':
             return generator.render_preview(resume, profile, guide, **options)
         if operation == 'metrics':
-            return generator._layout_metrics(resume, profile, guide)
+            return generator._layout_metrics(resume, profile, guide,
+                                             template_name=options.get('template_name', 'modern_sidebar'))
         if operation == 'docx':
             from app.services.docx_generator import _generate_docx_local
             path = work / 'resume.docx'

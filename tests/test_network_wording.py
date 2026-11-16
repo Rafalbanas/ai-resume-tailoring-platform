@@ -40,7 +40,8 @@ def test_signed_model_summary_cannot_bypass_terminology_validation(profile, resu
     job = JobRequest(company='Example', role='Support', job_description='Requirements: Python operational automation and support.')
     result = FactValidator(profile, review_key='secret').validate(resume, job).resume
     assert 'routing protocols' not in result.professional_summary
-    expected = 'Support Engineer at Example Ltd. Broader experience includes automating repeatable infrastructure and support workflows with Python.'
+    assert result.professional_summary.startswith('Support Engineer at Example Ltd.')
+    expected = 'Broader experience includes automating repeatable infrastructure and support workflows with Python.'
     assert result.professional_summary.endswith(expected)
 
     catalog = FactCatalog(profile)

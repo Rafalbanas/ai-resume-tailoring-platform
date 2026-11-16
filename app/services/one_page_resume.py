@@ -5,6 +5,98 @@ from app.services.content_quality import deduplicate_bullets
 from app.services.fact_catalog import normalized_tokens
 
 
+def prefer_one_page(resume, validator, job_text, fits, *, known_overflow=False):
+    """Prefer one page, omitting only optional detail, with a full-CV fallback.
+
+    Unlike the explicit legacy hard fit, retain the complete validated summary,
+    the strongest relevant project, employment identities, education and learning status.
+    Test every single omission; never collapse all projects before measuring.
+    """
+    draft = deepcopy(resume)
+    actions = []
+    protected = set()
+    if validator.analysis:
+        for requirement in [*validator.analysis.requirements, *validator.analysis.role_competencies]:
+            if requirement.priority == 'mandatory' and requirement.status in {'strong', 'partial'}:
+                for source_id in requirement.source_fact_ids:
+                    entry = validator.catalog.get(source_id)
+                    protected.add(entry.source_id if entry else source_id)
+                    if validator.skills_bank:
+                        skill = validator.skills_bank.get(source_id.removeprefix('skill:'))
+                        skill = skill or (validator.skills_bank.find(entry.text)
+                                          if entry and entry.kind == 'skill' else None)
+                        if skill and validator.skills_bank.eligible(skill):
+                            for evidence in skill.evidence:
+                                if validator.skills_bank.evidence_supports(skill, evidence):
+                                    resolved = validator.catalog.get(evidence.source_id)
+                                    protected.add(resolved.source_id if resolved else evidence.source_id)
+    terms = normalized_tokens(job_text)
+    from app.services.role_focus import role_focus_score
+
+    def utility(text, ids):
+        return (max((validator.fact_priorities.get(i, 0) for i in ids), default=0),
+                role_focus_score(text, job_text), len(normalized_tokens(text) & terms))
+
+    if not known_overflow and fits(draft):
+        return draft, actions
+    while True:
+        options = []
+        for i, experience in enumerate(draft.experience):
+            if len(experience.bullets) > 1:
+                for j, bullet in enumerate(experience.bullets):
+                    if not protected.intersection(bullet.source_fact_ids):
+                        options.append((utility(bullet.text, bullet.source_fact_ids), -i, 'bullet', i, j))
+        # Keep the strongest relevant project intact; it may be the only
+        # evidence for a career transition. An unrelated first project is not
+        # more important than relevant commercial duties merely by being first.
+        first_utility = (utility(draft.projects[0].description, draft.projects[0].source_fact_ids)
+                         if draft.projects else (0, 0, 0))
+        keep_first = first_utility[0] > 0 or first_utility[1] > 0 or first_utility[2] >= 2
+        start = 1 if keep_first else 0
+        for i, project in enumerate(draft.projects[start:], start=start):
+            if not protected.intersection(project.source_fact_ids):
+                options.append((utility(project.description, project.source_fact_ids), -i, 'project', i, 0))
+        # Keep a useful skills panel; remove only non-matching lower-priority
+        # entries, never a required skill or its Basic/Junior qualifier.
+        if len(draft.core_skills) > 10:
+            for i, wording in enumerate(draft.core_skills):
+                skill = validator.skills_bank.find(wording) if validator.skills_bank else None
+                ids = ([f'skill:{skill.id}', *(
+                    entry.source_id if (entry := validator.catalog.get(e.source_id)) else e.source_id
+                    for e in skill.evidence)] if skill else [])
+                direct = (validator.skills_bank.mentioned(skill, job_text) if skill else
+                          bool(normalized_tokens(wording) & terms))
+                if not direct and not protected.intersection(ids):
+                    options.append((utility(wording, ids), -i, 'skill', i, 0))
+        if draft.interests:
+            options.append(((-1, -1, -1), 0, 'interests', 0, 0))
+        if not options:
+            break
+        _, _, kind, i, j = min(options)
+        if kind == 'bullet':
+            owner = draft.experience[i]
+            owner.bullets.pop(j)
+            actions.append(f'Preferred one-page selection: omitted optional detail in {owner.company}.')
+        elif kind == 'project':
+            project = draft.projects.pop(i)
+            actions.append(f'Preferred one-page selection: omitted lower-priority project {project.name}.')
+        elif kind == 'skill':
+            original_count = len(draft.core_skills)
+            draft.core_skills.pop(i)
+            if len(draft.selected_skill_ids) == original_count:
+                draft.selected_skill_ids.pop(i)
+            actions.append('Preferred one-page selection: omitted an unrelated lower-priority skill.')
+        else:
+            draft.interests = []
+            draft.selected_interest_ids = []
+            actions.append('Preferred one-page selection: omitted optional interests.')
+        if fits(draft):
+            return draft, actions
+    # Do not silently weaken the only substantive project or mandatory evidence
+    # to achieve a nominal one-page success. Discard all trial omissions.
+    return deepcopy(resume), ['Preferred one-page selection: important evidence requires a complete multi-page CV; optional details retained.']
+
+
 def select_one_page(resume, validator, job_text, fits):
     """Omit lower-priority details, preserving citations and mandatory evidence."""
     draft = deepcopy(resume)
