@@ -26,7 +26,9 @@ RUN python scripts/runtime_requirements.py documents > /tmp/document-requirement
     && rm /tmp/document-requirements.txt
 
 FROM common AS browser-deps
-RUN python scripts/runtime_requirements.py browser > /tmp/browser-requirements.txt \
+# The bundled Node driver needs libatomic before Playwright can install its own OS dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && python scripts/runtime_requirements.py browser > /tmp/browser-requirements.txt \
     && pip install --no-cache-dir -r /tmp/browser-requirements.txt \
     && python -m playwright install --with-deps --no-shell chromium \
     && rm /tmp/browser-requirements.txt && rm -rf /var/lib/apt/lists/*
@@ -61,7 +63,8 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD python -c "import urllib
 # Compatibility target for existing CD/Kubernetes tooling and full-stack tests.
 # New Compose services select api/documents/browser explicitly.
 FROM document-deps AS full-deps
-RUN python scripts/runtime_requirements.py browser > /tmp/browser-requirements.txt \
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && python scripts/runtime_requirements.py browser > /tmp/browser-requirements.txt \
     && pip install --no-cache-dir -r /tmp/browser-requirements.txt \
     && python -m playwright install --with-deps chromium \
     && rm /tmp/browser-requirements.txt && rm -rf /var/lib/apt/lists/*
