@@ -41,7 +41,8 @@ async def export_draft(state, draft_id, *, template_name='ats_classic', summary_
     guide = {}
     fitted, layout_warnings = await cpu_work_for_state(state, state.pdf_generator.fit_resume,
         result.resume, state.profile, guide, template_name=template_name,
-        job_text=f'{job.role}\n{job.relevance_text}', one_page=template_name == 'modern_sidebar', fact_validator=validator)
+        job_text=f'{job.role}\n{job.relevance_text}', one_page=False,
+        prefer_one_page=job.workflow != 'custom', fact_validator=validator)
     # Layout selection can change text. Canonicalize before exact-text review,
     # rendering AND persistence, so JSON/PDF/DOCX describe the same final CV.
     from app.services.resume_export import prepare_resume

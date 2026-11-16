@@ -2,7 +2,7 @@ from app.services.fact_catalog import FactCatalog
 from app.services.professional_summary import build_summary
 
 
-def test_overlong_support_summary_uses_compact_source_composition(profile):
+def test_rich_support_summary_is_not_automatically_replaced_by_compact_composition(profile):
     profile = profile.model_copy(deep=True)
     profile.summary_facts = [
         'Provides Tier 2 support for Example partners across EMEA.',
@@ -15,10 +15,11 @@ def test_overlong_support_summary_uses_compact_source_composition(profile):
     catalog = FactCatalog(profile)
     text, ids = build_summary(catalog, 'Technical Support Engineer')
     compact, compact_ids = build_summary(catalog, 'Technical Support Engineer', compact=True)
-    assert len(text) <= 500
+    assert 500 < len(text) <= 1100
     assert text.endswith('.')
-    assert text == compact
-    assert ids == compact_ids
+    assert len(compact) <= 500
+    assert len(text) > len(compact)
+    assert set(compact_ids) <= set(ids)
     assert all(catalog.get(source_id) for source_id in ids)
     assert 'English' in text
 

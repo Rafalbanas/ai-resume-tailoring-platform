@@ -310,28 +310,45 @@ class PDFGenerator:
                         return self._render_document_and_markup(str(original))
         # This verifies every expected section remains text, including pages
         # created by long skills/languages/interests. No silent clipping allowed.
-        # Running headers/consent are not candidate content. Including them
-        # between two fragments of one paragraph falsely reports missing text.
-        content_boxes = []
-        def collect_content(box):
-            # Floats can be reparented outside the article by WeasyPrint. Walk
-            # the entire page content tree, excluding only margin furniture.
-            if type(box).__name__ == 'MarginBox':
-                return
-            if type(box).__name__ == 'TextBox':
-                content_boxes.append(box.text)
-            for child in getattr(box, 'children', []):
-                collect_content(child)
-        for page in document.pages:
-            collect_content(page._page_box)
-        actual_all = key(' '.join(content_boxes))
-        for section in soup.select("section"):
-            # Bullet markers are separate boxes; compare each paragraph/list
-            # item rather than relying on a particular PDF reading order.
-            for node in section.select("h2,h3,p,li"):
-                if key(node.get_text(" ", strip=True)) not in actual_all:
-                    raise ValueError("CV content was omitted during pagination; export stopped.")
+        self._validate_rendered_sources(document)
         return self._finish_document(str(soup), document)
+
+    @staticmethod
+    def _validate_rendered_sources(document):
+        """Join fragments by source DOM owner, not PDF/page reading order.
+
+        A footer, sidebar or repeated header may interrupt a paragraph spanning
+        pages. It is not missing content. Conversely, equal text in another
+        section must not conceal a genuinely omitted source node.
+        """
+        root = next((box.element for page in document.pages for box in page._page_box.descendants()
+                     if getattr(getattr(box, "element", None), "tag", None) == "html"), None)
+        if root is None:
+            raise ValueError("CV source geometry is unavailable; export stopped.")
+        expected, owners = {}, {}
+
+        def key(value):
+            return re.sub(r"\W+", "", value).casefold()
+
+        def visit(element, section=False, active=()):
+            section = section or element.tag == "section"
+            if section and element.tag in {"h2", "h3", "p", "li"}:
+                expected[element] = key("".join(element.itertext()))
+                active = (*active, element)
+            owners[element] = active
+            for child in element:
+                visit(child, section, active)
+
+        visit(root)
+        actual = {element: [] for element in expected}
+        for page in document.pages:
+            for box in page._page_box.descendants():
+                if type(box).__name__ == "TextBox":
+                    for owner in owners.get(getattr(box, "element", None), ()):
+                        actual[owner].append(box.text)
+        for element, text in expected.items():
+            if text and text not in key("".join(actual[element])):
+                raise ValueError("CV content was omitted during pagination; export stopped.")
 
     @staticmethod
     def page_content_metrics(document):
@@ -398,6 +415,7 @@ class PDFGenerator:
         final = HTML(string=str(soup), base_url=str(self.data_dir)).render()
         if len(final.pages) != len(document.pages):
             raise ValueError("Consent changed pagination unexpectedly; export stopped.")
+        self._validate_rendered_sources(final)
         return final, str(soup)
 
     def fit_resume(
@@ -409,14 +427,24 @@ class PDFGenerator:
         template_name: str = "modern_sidebar",
         job_text: str = "",
         one_page: bool = False,
+        prefer_one_page: bool = False,
         fact_validator=None,
     ) -> tuple[TailoredResume, list[str]]:
         fitted = deepcopy(resume)
         guide = layout_guide if layout_guide is not None else {}
         for key in ("compact_spacing", "compact_bullets", "compact_headings"):
             guide.pop(key, None)
-        if template_name == "ats_classic":
+        if template_name == "ats_classic" and not prefer_one_page:
             return fitted, []
+        def content_fits(candidate):
+            try:
+                if template_name == "ats_classic":
+                    return self._fits_one_page(candidate, profile, guide, template_name=template_name)
+                return self._fits_one_page(candidate, profile, guide)
+            except ValueError as exc:
+                if not prefer_one_page or "nearly empty continuation page" not in str(exc):
+                    raise
+                return False
         if one_page:
             if fact_validator is None:
                 raise ValueError("One-page generation requires source validation.")
@@ -431,26 +459,45 @@ class PDFGenerator:
             fitted, selections = select_one_page(fitted, fact_validator, job_text, fits)
             return fitted, selections + self._layout_warnings(resume, fitted, guide)
         # Existing/manual CVs retain their chosen content.
-        if self._fits_one_page(fitted, profile, guide):
+        if content_fits(fitted):
             return fitted, []
-        for key in ("compact_spacing", "compact_bullets"):
-            guide[key] = True
-            if self._fits_one_page(fitted, profile, guide):
-                return fitted, self._layout_warnings(resume, fitted, guide)
+        if prefer_one_page and template_name == "modern_sidebar":
+            # _render_document has already tried both spacing classes on modern
+            # overflow. Do not render the same overflowing CV three more times.
+            guide.update(compact_spacing=True, compact_bullets=True)
+        else:
+            for key in ("compact_spacing", "compact_bullets"):
+                guide[key] = True
+                if content_fits(fitted):
+                    return fitted, self._layout_warnings(resume, fitted, guide)
+        if prefer_one_page and fact_validator is not None:
+            from app.services.one_page_resume import prefer_one_page as select_preferred_page
+
+            def fits_preferred(candidate):
+                return content_fits(candidate)
+
+            selected, selections = select_preferred_page(fitted, fact_validator, job_text, fits_preferred,
+                                                        known_overflow=True)
+            if selected != fitted:
+                return selected, selections + self._layout_warnings(resume, selected, guide)
+            return fitted, selections + self._layout_warnings(resume, fitted, guide)
         # Pagination is presentation, not a second content generator. Preserve
         # the validated natural summary, evidence IDs and level-labelled skills.
         # Overflow sections move into normal flow in _render_document.
         return fitted, self._layout_warnings(resume, fitted, guide) + ["Full employment, education and projects retained across multiple pages; continuation balanced"]
 
-    def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> bool:
-        metrics = self._layout_metrics(resume, profile, guide)
+    def _fits_one_page(self, resume: TailoredResume, profile: CandidateProfile, guide: dict,
+                       *, template_name: str = "modern_sidebar") -> bool:
+        metrics = (self._layout_metrics(resume, profile, guide) if template_name == "modern_sidebar"
+                   else self._layout_metrics(resume, profile, guide, template_name=template_name))
         return bool(metrics["pages"] == 1 and metrics["main_fits"] and metrics["sidebar_fits"])
 
-    def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict) -> dict[str, float | bool]:
+    def _layout_metrics(self, resume: TailoredResume, profile: CandidateProfile, guide: dict,
+                        *, template_name: str = "modern_sidebar") -> dict[str, float | bool]:
         if self.isolated:
             from app.services.processing import process
-            return process('metrics', self._processing_payload(resume, profile, guide))
-        document = self._render_document(self.render_html(resume, profile, guide))
+            return process('metrics', self._processing_payload(resume, profile, guide, template_name=template_name))
+        document = self._render_document(self.render_html(resume, profile, guide, template_name=template_name))
         if not document.pages:
             return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}
         # Consent is in the reserved page margin, outside the content box.

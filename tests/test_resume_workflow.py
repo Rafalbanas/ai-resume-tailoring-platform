@@ -199,7 +199,8 @@ def test_truth_lock_resolves_paraphrase_to_exact_source_sentences(verified_profi
     assert "MSc in Computer Science" in result.resume.professional_summary
     assert result.resume.experience[0].bullets[0].text == verified_profile.experience[0].facts[1]
     assert result.resume.experience[0].company == "Motorola Solutions"
-    assert result.resume.core_skills[:2] == ["Python", "Bash (basic)"]
+    assert result.resume.core_skills[:2] == ["Linux", "Python"]
+    assert "Bash (basic)" in result.resume.core_skills
     assert set(result.resume.core_skills) == {
         skill for category, values in verified_profile.skills.items() if category != "languages"
         for skill in values
@@ -476,4 +477,3 @@ def test_layout_adjustments_never_increase_truth_lock_warning_count(verified_pro
     assert len(metadata["truth_lock_warnings"]) == 0
     assert len(metadata["layout_adjustments"]) == 4
     assert len(metadata["truth_lock_warnings"]) == len(validation.warnings)
-

@@ -197,7 +197,8 @@ class SkillsBank:
         return skill.name
 
     def select_for_job(
-        self, requested_ids: list[str], job_text: str, *, minimum: int = 0, maximum: int = 16, requested_only: bool = False
+        self, requested_ids: list[str], job_text: str, *, minimum: int = 0, maximum: int = 16,
+        requested_only: bool = False, tailoring_level: float = 0
     ) -> list[VerifiedSkill]:
         if maximum <= 0:
             return []
@@ -300,6 +301,11 @@ class SkillsBank:
         ranked = sorted(eligible, key=lambda skill: (
             role_focus_score(' '.join(self.aliases_for(skill)), job_text) if focused_role and not requested_only else 0,
             role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
+        if tailoring_level and not requested_only:
+            target_order = {s.id: i for i, s in enumerate(ranked)}
+            source_order = {s.id: i for i, s in enumerate(eligible)}
+            ranked.sort(key=lambda s: (1 - tailoring_level) * target_order[s.id]
+                        + tailoring_level * source_order[s.id])
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
         chosen_labels: set[str] = set()
@@ -321,14 +327,14 @@ class SkillsBank:
                         or (focused_role and role_focus_score(' '.join(self.aliases_for(skill)), job_text) > 0))
             # Do not pad practical strengths with unrelated introductory tools.
             # Relevant Basic skills and explicit manual choices remain intact.
-            if (not requested_only and not relevant and skill.level == 'basic'
+            if (not requested_only and tailoring_level < 1 and not relevant and skill.level == 'basic'
                     and any(s.level in {'hands_on', 'intermediate', 'advanced'}
                             and (role_relevance(s) > 0 or (focused_role and role_focus_score(
                                 ' '.join(self.aliases_for(s)), job_text) > 0)) for s in chosen)):
                 continue
             # Relevant skills rank first. Fill a sparse generated CV from the
             # remaining verified bank without weakening eligibility or deduplication.
-            if not relevant and len(chosen) >= minimum:
+            if not relevant and len(chosen) >= minimum and tailoring_level < 1:
                 continue
             if skill.subcategory == "AI-Assisted Development":
                 if ai_dev_count >= 1:

@@ -153,7 +153,7 @@ async def test_ollama_returns_valid_analysis_and_tailored_resume(profile):
     assert all(request["format"]["type"] == "object" for request in requests)
     assert all(request["stream"] is False for request in requests)
     assert all(request["think"] is False for request in requests)
-    assert [r["options"]["num_predict"] for r in requests] == [6144, 4096]
+    assert [r["options"]["num_predict"] for r in requests] == [6144, 6144]
     assert all(request["options"]["num_ctx"] == 32768 for request in requests)
     assert all(
         "MASTER PROFILE IS THE ONLY SOURCE OF FACTS" in request["messages"][0]["content"] for request in requests

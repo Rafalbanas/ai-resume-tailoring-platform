@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 32768
     ollama_tokenizer_path: str | None = None
     ollama_analysis_output_tokens: int = Field(default=6144, ge=512, le=32768)
-    ollama_resume_output_tokens: int = Field(default=4096, ge=512, le=32768)
+    ollama_resume_output_tokens: int = Field(default=6144, ge=512, le=32768)
     ollama_analysis_recovery_calls: int = Field(default=4, ge=0, le=8)
     ollama_draft_review_enabled: bool = True
     gemini_api_key: str = ""

@@ -73,7 +73,7 @@ def test_generated_modern_pdf_one_page_keeps_levels_and_learning(profile,tmp_pat
     generator.generate(fitted,profile,output,template_name='modern_sidebar')
     reader=PdfReader(output)
     assert len(reader.pages)==1
-    text=' '.join(p.extract_text() for p in reader.pages)
+    text=' '.join(' '.join(p.extract_text() for p in reader.pages).split())
     assert 'Basic Python' in text
     assert 'Kubernetes' in text and 'Course in progress' in text
     assert 'operational troubleshooting and data verification' in text
@@ -142,7 +142,7 @@ def test_generation_failure_explains_field_and_does_not_save_partial_cv(monkeypa
         draft=app.state.storage.save_draft(job(),response)
         before=list(app.state.storage.generated_dir.iterdir())
         def reject(*args,**kwargs):
-            assert kwargs['one_page'] is True
+            assert kwargs['one_page'] is False
             assert isinstance(kwargs['fact_validator'],FactValidator)
             raise ValueError('Modern Sidebar cannot fit one page. Select ATS Classic.')
         monkeypatch.setattr(app.state.pdf_generator,'fit_resume',reject)

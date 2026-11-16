@@ -70,20 +70,20 @@ def test_fact_validation_and_export_share_project_cleanup_without_changing_sourc
     assert resume.projects[0].description == NOMINAL + ' ' + EVALUATION
 
 
-def test_source_paragraphs_do_not_expand_into_six_sentences(profile):
+def test_relevant_project_can_retain_five_distinct_source_sentences(profile):
     sentences = ['Built Python API endpoints.', 'Tested Python API endpoints.', 'Documented Python API deployment.']
     profile.projects = [Project(name='API lab', description=' '.join(sentences),
                                 facts=['Configured Python API health checks. Implemented Python API rollback.'])]
     job = JobRequest(company='Synthetic', role='Python developer', job_description='Requirements\nPython API deployment and workflows.')
     description = FactValidator(profile)._project_description(profile.projects[0], job)
-    assert 1 <= len(project_sentences(description)) <= 2
-    assert len(description) <= 500
+    assert len(project_sentences(description)) == 5
+    assert len(description) <= 1100
     assert all(sentence in sentences + ['Configured Python API health checks.', 'Implemented Python API rollback.']
                for sentence in project_sentences(description))
 
 
 @pytest.mark.parametrize('preserve', [False, True])
-def test_generated_attested_paragraph_is_compact_but_manual_preserve_is_unchanged(profile, preserve):
+def test_relevant_attested_paragraph_and_manual_preserve_retain_distinct_details(profile, preserve):
     paragraph = 'Built Python API endpoints. Tested Python API endpoints. Documented Python API deployment.'
     profile.projects = [Project(name='API lab', facts=[paragraph])]
     ids = [e.source_id for e in FactCatalog(profile).prompt_entries if e.kind == 'project' and ':fact:' in e.source_id]
@@ -92,7 +92,7 @@ def test_generated_attested_paragraph_is_compact_but_manual_preserve_is_unchange
                             projects=[ResumeProject(name='API lab', description=paragraph, source_fact_ids=ids)])
     job = JobRequest(company='Synthetic', role='Python developer', job_description='Requirements\nPython API development and deployment.')
     checked = FactValidator(profile).validate(resume, job, preserve_skills=preserve).resume
-    assert len(project_sentences(checked.projects[0].description)) == (3 if preserve else 2)
+    assert len(project_sentences(checked.projects[0].description)) == 3
     assert checked.projects[0].description in paragraph
 
 

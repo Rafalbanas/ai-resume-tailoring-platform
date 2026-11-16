@@ -63,10 +63,10 @@ def valid_source_summary(resume, profile, key):
 
 async def review_summary(provider, resume, profile):
     from app.services.ai_provider import AIProviderError
-    from app.services.content_quality import quality_issues, unfinished
+    from app.services.content_quality import project_sentences, quality_issues, unfinished
     from app.services.fact_catalog import normalized_tokens
     from app.services.ml_terminology import ml_terminology_issue
-    from app.services.professional_summary import broken_activity_summary, employment_scope_issue
+    from app.services.professional_summary import broken_activity_summary, build_summary, employment_scope_issue
 
     resume.summary_attestation = ''  # Discard any model-supplied signature.
     catalog = FactCatalog(profile)
@@ -76,6 +76,14 @@ async def review_summary(provider, resume, profile):
             or ml_terminology_issue(resume.professional_summary)
             or broken_activity_summary(resume.professional_summary, entries)):
         return resume
+    # Completeness belongs before semantic approval. Never invalidate an
+    # existing server-approved summary later merely to meet a length target.
+    # Sparse profiles still qualify: expand only when scoped evidence can
+    # actually supply at least three sentences from three distinct sources.
+    if len(resume.professional_summary) < 300 and len(project_sentences(resume.professional_summary)) < 3:
+        source_text, source_ids = build_summary(catalog, '')
+        if len(set(source_ids)) >= 3 and len(project_sentences(source_text)) >= 3:
+            return resume
     # Some servers do not enforce JSON-schema minItems. Recover citations only
     # through semantic review of actual profile facts, never a guessed ID.
     if not entries or len(entries) != len(ids):

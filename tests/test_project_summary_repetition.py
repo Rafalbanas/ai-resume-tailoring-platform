@@ -28,7 +28,7 @@ def test_project_uses_other_relevant_source_fact_instead_of_repeating_summary(pr
     checked = validator.validate(resume, job).resume
     assert checked.professional_summary == text
     assert checked.projects[0].description == second
-    assert set(ids) <= set(checked.projects[0].source_fact_ids)
+    assert checked.projects[0].source_fact_ids == [ids[1]]
     again = validator.validate(checked, job).resume
     assert again.projects[0].description == second
 

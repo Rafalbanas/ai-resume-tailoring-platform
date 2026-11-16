@@ -153,7 +153,8 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
     return " ".join(result)
 
 
-def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None) -> tuple[str, list[str]]:
+def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None,
+                  tailoring_level: float = 0) -> tuple[str, list[str]]:
     """Build concise, provenance-scoped sentences from attested clauses.
 
     Only punctuation/capitalization and provenance labels are composed. The one L1/L2 historical clause
@@ -165,11 +166,19 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)
                or (e.kind == 'project' and ':description:' in e.source_id and role_focus_score(e.text, role))]
     entries = [e for e in entries if not re.search(r"\byears?\b|\blat\b", e.text, re.I)]
+    entries = [e for e in entries if not re.search(r"^\s*(?:plans?|planned|intends?|aims?|will)\b", e.text, re.I)
+               or (priorities or {}).get(e.source_id)]
+    from app.services.content_quality import _sql_query_subsumed
+    entries = [e for e in entries if not any(
+        other is not e and other.kind == e.kind and other.owner_index == e.owner_index
+        and _sql_query_subsumed(e.text, other.text) and not _sql_query_subsumed(other.text, e.text)
+        for other in entries)]
     from app.services.job_sections import relevance_text
     tokens = normalized_tokens(relevance_text(role))
     # A support duty mentioned in a different job must not force a support-first
     # summary. Legacy support composition is retained for actual support roles.
-    support = bool(normalized_tokens(role.splitlines()[0] if role.splitlines() else role) & {"support", "troubleshooting", "incident"})
+    support = bool(tailoring_level < 1 and normalized_tokens(
+        role.splitlines()[0] if role.splitlines() else role) & {"support", "troubleshooting", "incident"})
     if support:
         tokens |= {"support", "troubleshooting", "incident", "sql", "api", "automation", "english", "logs"}
     selected_ids: list[str] = []
@@ -210,7 +219,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                     if parts:
                         if label:
                             sentences.append(scoped(label, parts))
-                        elif support:
+                        elif support and compact:
                             # Support composition can include background,
                             # languages and projects as separate scope sentences.
                             # Keep its duty block compact rather than making a
@@ -220,8 +229,16 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                             # Current duties read as short sentences, not a list
                             # joined by semicolons with inconsistent capitalization.
                             sentences.extend(part + '.' for part in parts)
+            elif index == 2:
+                if compact or len(group) == 1:
+                    sentences.append(scoped('Project work: ', group))
+                else:
+                    sentences.append(scoped('Project work: ', group[:1]))
+                    extra = scoped('Project work: ', group[1:])
+                    sentences.append(extra.replace('Project work includes ', 'Project experience also includes ', 1)
+                                     .replace('Project work: ', 'Additional project evidence: ', 1))
             else:
-                sentences.append(scoped('Project work: ', group) if index == 2 else clauses(group) + '.')
+                sentences.append(clauses(group) + '.')
         return ' '.join(sentences)
 
     def add(index, entry, text=None, *, reuse=False):
@@ -250,7 +267,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         candidate = [list(g) for g in groups]
         candidate[index].append(clause)
         result = compose(candidate)
-        if len(result) <= (500 if compact else 700):
+        if len(result) <= (500 if compact else 1100) and len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", result)) <= 5:
             groups[index].append(clause)
             selected_ids.append(entry.source_id)
             used.add(entry.source_id)
@@ -293,7 +310,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         elif not compact:
             # The same duty at the current employer stays current, rather than
             # being dropped or relabelled as historical experience.
-            add(1, next((e for e in entries if e.kind == 'experience' and e.owner_index == 0
+            add(0, next((e for e in entries if e.kind == 'experience' and e.owner_index == 0
                          and e.source_id not in used and re.search(
                              r'\bL1\s*(?:and|/)\s*L2\s+(?:user\s+)?support', e.text, re.I)), None))
         add(1, first(r"(?:application.*network|network.*application).*troubleshoot|troubleshoot.*(?:application.*network|network.*application)"))
@@ -308,7 +325,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         if not compact:
             add(2, first(r"(?:automates|automated).*Python", kinds={"summary", "experience"}))
     else:
-        if tokens & {"degree", "education", "science", "bachelor", "master"}:
+        if role_family(role) == 'data_science' or tokens & {"degree", "education", "science", "bachelor", "master"}:
             education = next((e for e in catalog.prompt_entries if e.kind == "education"
                               and "computer science" in e.text.casefold() and ":fact:" not in e.source_id
                               and ":thesis:" not in e.source_id), None)
@@ -325,23 +342,31 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 add(0, fact, identity)
                 # Identity cites this owner, but has not displayed the duty.
                 used.discard(fact.source_id)
-        ranked = sorted(entries, key=lambda e: (bool(role_focus_score(e.text, role)),
-                                                role_focus_score(e.text, role),
-                                                (priorities or {}).get(e.source_id, 0),
-                                                e.kind == 'experience',
-                                                bool(role_family(role) == 'data_science' and e.kind == 'project' and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
-                                                len(normalized_tokens(e.text) & tokens),
-                                                -len(e.text)), reverse=True)
+        ranked = sorted(entries, key=lambda e: (
+            (1 - tailoring_level) * bool(role_focus_score(e.text, role)),
+            (1 - tailoring_level) * min(2, role_focus_score(e.text, role)),
+            (1 - tailoring_level) * bool(role_family(role) == 'data_science' and e.kind == 'project'
+                                        and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
+            (1 - tailoring_level) * (priorities or {}).get(e.source_id, 0),
+            (1 - tailoring_level) * (e.kind == 'experience'),
+            -(1 - tailoring_level) * (len(e.text) if e.kind == 'project' else 0),
+            (1 - tailoring_level) * len(normalized_tokens(e.text) & tokens)), reverse=True)
         used_priorities = set()
         details = 0
         focused = any(role_focus_score(e.text, role) for e in ranked)
         for entry in ranked:
             if entry.source_id in used:
                 continue
-            if focused and not role_focus_score(entry.text, role):
+            if tailoring_level < 1 and focused and not role_focus_score(entry.text, role):
                 continue
-            if details >= (2 if groups[0] else 3):
+            if details >= (2 if compact else 3):
                 break
+            if not compact and entry.kind == 'project' and len(selected_project_entries) >= 2:
+                continue
+            if (not compact and entry.kind == 'project' and catalog.profile.experience
+                    and any(old.owner_index == entry.owner_index for old in selected_project_entries)
+                    and not (priorities or {}).get(entry.source_id)):
+                continue
             priority = (priorities or {}).get(entry.source_id, 0)
             if priority and priority in used_priorities:
                 # Several sentences citing the same leading requirement should
@@ -352,12 +377,23 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 details += 1
                 if priority:
                     used_priorities.add(priority)
+        if not compact:
+            employment = sorted((e for e in entries if e.kind == 'experience' and e.source_id not in used),
+                                key=lambda e: (priorities or {}).get(e.source_id, 0)
+                                + len(normalized_tokens(e.text) & tokens), reverse=True)
+            if employment and normalized_tokens(employment[0].text) & tokens:
+                add(1, employment[0])
+    # Sparse pattern matching must not erase distinct, relevant employment
+    # evidence (e.g. engineering collaboration). No quotas on sparse profiles.
+    if support and not compact:
+        ranked = sorted(entries, key=lambda e: (1 - tailoring_level) * (
+            (priorities or {}).get(e.source_id, 0) + len(normalized_tokens(e.text) & tokens)), reverse=True)
+        for entry in ranked:
+            if entry.kind == 'experience' and entry.source_id not in used:
+                if normalized_tokens(entry.text) & tokens:
+                    add(1, entry)
+            if len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", compose(groups))) >= 4:
+                break
     text = compose(groups)
     text = deduplicate_summary(text, catalog)
-    if not compact and len(text) > 500:
-        # Prefer the existing source-bound compact composition over a catalogue
-        # of every support fact. Never slice a sentence or invent shorter prose.
-        shorter, shorter_ids = build_summary(catalog, role, compact=True, priorities=priorities)
-        if shorter and len(shorter) < len(text):
-            return shorter, shorter_ids
     return text, list(dict.fromkeys(selected_ids))

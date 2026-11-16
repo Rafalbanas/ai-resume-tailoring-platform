@@ -39,7 +39,7 @@ def test_layout_persistence_exports_content_isolation(monkeypatch,resume_payload
         assert client.post(f'/preview/{first}/layout',data={'template_name':'modern_sidebar'}).status_code==403
         assert client.post(f'/preview/{first}/layout',data={'csrf_token':token,'template_name':'unknown'}).status_code==422
         result=client.post(f'/preview/{first}/layout',data={'csrf_token':token,'template_name':'modern_sidebar'},follow_redirects=False)
-        assert result.status_code==303
+        assert result.status_code==303, result.text
         assert app.state.storage.load_application(first)[3]['template_name']=='modern_sidebar'
         assert app.state.storage.load_application(second)[3]['template_name']=='ats_classic'
         assert (folder/'resume.json').read_bytes()==before
@@ -137,7 +137,7 @@ def test_layout_choice_before_first_export(monkeypatch,resume_payload):
         assert client.post(f'/generate/{draft}',data=data,follow_redirects=False).status_code==422
         data['template_name']='modern_sidebar'
         result=client.post(f'/generate/{draft}',data=data,follow_redirects=False)
-        assert result.status_code==303
+        assert result.status_code==303, result.text
         slug=result.headers['location'].split('/')[-1]
         assert app.state.storage.load_application(slug)[3]['template_name']=='modern_sidebar'
         assert calls==[('pdf','modern_sidebar'),('docx','modern_sidebar')]
@@ -154,6 +154,6 @@ def test_new_modern_cv_keeps_existing_profile_photo(monkeypatch, resume_payload)
         draft = app.state.storage.save_draft(job(), response)
         result = client.post(f'/generate/{draft}', data={
             'csrf_token': client.cookies.get('csrf_token'), 'template_name': 'modern_sidebar'}, follow_redirects=False)
-        assert result.status_code == 303
+        assert result.status_code == 303, result.text
         slug = result.headers['location'].split('/')[-1]
         assert app.state.storage.load_application(slug)[3]['photo_enabled'] is True

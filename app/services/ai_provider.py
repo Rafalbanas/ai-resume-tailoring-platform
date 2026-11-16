@@ -69,7 +69,7 @@ CRITICAL RULES FOR REQUIREMENTS AND MATCHING:
 
 RESUME_TAILOR_SYSTEM_PROMPT = """Select and tailor a resume for the job. Use only exact source_id values supplied in source_catalog.
 Use the application-supplied tailoring_policy to balance job relevance and source wording. Its level never changes the evidence requirements below.
-Use the candidate’s actual current occupation as the safe headline default, not the advertised title. An optional short | suffix may contain at most two relevant eligible skill wordings separated by · exactly as supplied, including basic-level qualifiers. The profile-based alternatives below are also allowed. Never imply an unheld job title or advanced expertise.
+Generate a capability-focused headline for the target direction using exact eligible skill labels and, when helpful, the actual occupation. At level 0 lead with the most relevant verified capabilities, not automatically the last employment title. A composition such as 'Python & Machine Learning | Technical Support Engineer' is allowed only when every label is attested. At level 1 prefer the original occupation/profile. Preserve Basic/Junior qualifiers. Never copy an unheld advertised occupation or seniority; Experience titles must remain unchanged.
 Static routes, NAT, DHCP and VPN are not routing protocols. Name these directly as network configuration or services; do not group them under routing protocols. Do not infer OSPF, BGP or other dynamic-routing experience from static routes. Write 3–5 natural, coherent English summary sentences as one logically ordered paragraph, not a concatenation of source sentences. Introduce the actual role/experience and connect the strongest documented evidence for this offer to current work and projects. Use requirements_with_evidence priorities and cited facts, not a fixed support-first template. Paraphrase naturally without changing scope, level, negation, implementation status or results. Do not duplicate the first experience bullet. Avoid marketing phrases, invented results and a project-dominated summary. Every summary must reference its supplied source IDs. Natural languages belong in Languages, never core_skills. Do not prepend Hands-on to skills. Every experience bullet must reference experience source IDs. Select concrete source details (action, tools, environment, problem and documented result) and order bullets by relevance. When the offer values collaboration with engineering, retain documented support-to-engineering escalation work among up to four distinct relevant bullets; do not drop it merely to target three bullets. Do not invent metrics or results. Preserve employment chronology and all documented roles; less relevant jobs may use fewer bullets. Prefer concise, complete attested sentences or clauses for experience: the export boundary checks them against the supplied facts.
 Rank projects by documented evidence for the requirements, not project title or buzzwords. Avoid repeating equivalent sentences; combine overlapping information naturally while preserving different actions, results, tools, scope and limitations. Every project must use a supplied project name, reference project source IDs, and keep project identity in name. Describe relevant implemented functionality using the source facts; planned, experimental or non-working features cannot become completed deployments. A workflow file alone does not prove a working CI/CD pipeline. Select supported technologies in relevance order. Preserve provided project links.
 Project technologies may contain only supplied skill wording; never place a project name in technologies.
@@ -105,6 +105,21 @@ Keep current employment, previous roles and project work explicitly separate. Do
 When previous_cv is supplied, use its presentation and content selection as a starting point for
 the requested changes, but it is not factual evidence. Resolve all retained claims against the
 current master profile and verified source catalog, including when tailoring a saved CV to a job."""
+
+RESUME_TAILOR_SYSTEM_PROMPT += """
+Content completeness: use 3–5 specific summary sentences when sufficient distinct evidence exists,
+up to 1100 characters. Do not compress rich profiles into two generic sentences.
+For relevant employment select 2–4 distinct attested duties/results when available; less relevant
+roles may be shorter. For important projects cover the purpose, implementation, methods and
+documented evaluation/results and candidate role, not only technologies or a one-line description.
+Project length depends on relevance and available evidence, not a rigid bullet/sentence quota.
+Retain academic/personal scope and planned/failed/experimental qualifiers exactly.
+Choose section_order according to evidence for this offer: projects/education can precede
+employment for a project-backed ML transition, employment normally leads for support.
+The content_plan overrides reference-CV brevity preferences, which are style hints only.
+Prefer a readable, well-filled A4 page; two pages are allowed for useful verified content.
+Do not add repetitions, keyword stuffing or unsupported claims to fill space.
+"""
 
 CUSTOM_CV_SYSTEM_PROMPT = """Create a complete custom CV, not a job-match report.
 Interpret custom_instructions as the user's presentation preferences: target role/industry,
@@ -273,7 +288,7 @@ def build_compact_tailor_payload(
         job_text = f"{job.role}\n{job.relevance_text}".casefold()
         from app.services.skills_bank import GENERATED_CV_SKILL_TARGET
         suggested_ids = {s.id for s in skills_bank.select_for_job(
-            [], job_text, minimum=GENERATED_CV_SKILL_TARGET)}
+            [], job_text, minimum=GENERATED_CV_SKILL_TARGET, tailoring_level=job.tailoring_level)}
         for s in skills_bank.skills:
             if hasattr(skills_bank, "eligible") and skills_bank.eligible(s):
                 is_candidate = hasattr(skills_bank, "confirmed_profile_skill") and skills_bank.confirmed_profile_skill(s)
@@ -320,11 +335,22 @@ def build_compact_tailor_payload(
             "level": job.tailoring_level,
             "rewrite_budget": round(1 - job.tailoring_level, 3),
             "instructions": (
-                "The closer level is to 0, emphasize relevant retrieved facts and adapt wording to the job. "
+                "The closer level is to 0, maximize factual job fit: prioritize relevant facts, allocate more "
+                "detail to relevant projects/experience, lead with verified target capabilities in the headline, "
+                "adapt the summary, skill selection and section order to the offer. "
                 "The closer level is to 1, preserve source wording and source order. Interpolate between these endpoints. "
                 "This is presentation control, never factual permission. Every claim still needs a valid source ID. "
                 "Never add missing skills, inflate levels, invent tenure, or turn personal projects into employment."
             ),
+        },
+        "content_plan": {
+            "summary": {"target_sentences": "3–5 if distinct evidence supports them", "max_chars": 1100},
+            "experience": [{"owner_index": i, "available_facts": len([
+                e for e in retrieval.entries if e.kind == "experience" and e.owner_index == i]),
+                "guidance": "2–4 distinct details for relevant roles if available; shorter for unrelated roles"}
+                for i in range(len(profile.experience))],
+            "projects": "Use purpose, implementation, methods, evaluation/results and role when attested; allocate detail by relevance.",
+            "pagination": "Readable A4, normally one page; allow two pages rather than discard important evidence.",
         },
         "analysis_summary": {
             "strong_matches": analysis.strong_matches,

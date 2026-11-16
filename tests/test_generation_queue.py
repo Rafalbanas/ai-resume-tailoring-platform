@@ -51,7 +51,13 @@ async def test_parallel_exports_wait_and_save_each_documents_without_holding_upl
         from app.core import body_deadline
 
         monkeypatch.setattr(body_deadline, "FORM_BODY_SECONDS", 0.2)
-        summaries = [f"Supports Python automation for the {team} support team." for team in ("Alpha", "Bravo", "Charlie")]
+        # Queue isolation needs stable distinguishable content, not a sparse
+        # summary that the generation completeness policy intentionally expands.
+        summaries = [
+            f"Supports Python automation for the {team} support team. "
+            f"Documents incidents for the {team} support team. "
+            f"Escalates technical issues for the {team} support team."
+            for team in ("Alpha", "Bravo", "Charlie")]
         drafts = []
         for i, summary in enumerate(summaries):
             source_id = f"summary:{len(app.state.profile.summary_facts)}"
