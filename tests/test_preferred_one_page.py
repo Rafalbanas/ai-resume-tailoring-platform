@@ -98,6 +98,53 @@ def test_impossible_single_page_falls_back_without_partial_omissions():
     assert len(warnings) == 1 and 'important evidence' in warnings[0]
 
 
+def test_optional_probe_timeout_keeps_complete_cv_and_restores_deadline(monkeypatch, tmp_path):
+    import time
+
+    from app.services.pdf_generator import PDFGenerator
+    from app.services.processing import DEADLINE, ProcessingError
+
+    validator, resume = sample()
+    generator = PDFGenerator(Path("templates"), Path("static"), tmp_path)
+    outer = time.monotonic() + 58
+    token = DEADLINE.set(outer)
+    guide = {}
+
+    def fits(*args):
+        assert 0 < DEADLINE.get() - time.monotonic() <= 20
+        if guide.get("compact_spacing"):
+            raise ProcessingError("Synthetic probe timeout", code="timeout")
+        return False
+
+    monkeypatch.setattr(generator, "_fits_one_page", fits)
+    try:
+        fitted, warnings = generator.fit_resume(resume, validator.profile, guide, prefer_one_page=True,
+                                                fact_validator=validator)
+        assert DEADLINE.get() == outer
+    finally:
+        DEADLINE.reset(token)
+    assert fitted == resume
+    assert not guide
+    assert "full CV retained" in warnings[0]
+
+
+def test_layout_probe_skips_continuation_repair_but_counts_pages(monkeypatch, tmp_path):
+    from app.services.pdf_generator import PDFGenerator
+
+    validator, resume = sample()
+    generator = PDFGenerator(Path("templates"), Path("static"), tmp_path, isolated=False)
+    for project in resume.projects:
+        project.description += " " + " ".join(f"Documented project note {i}." for i in range(150))
+
+    def unexpected(*args):
+        raise AssertionError("Page fitting must not run full export pagination repair")
+
+    monkeypatch.setattr(generator, "_finish_document", unexpected)
+    metrics = generator._layout_metrics(resume, validator.profile, {}, template_name="ats_classic")
+    assert metrics["pages"] > 1
+    assert not metrics["main_fits"]
+
+
 def test_optional_skill_can_be_omitted_without_desynchronizing_ids():
     validator, resume = sample()
     resume.core_skills += ['Unrelated editorial tooling']

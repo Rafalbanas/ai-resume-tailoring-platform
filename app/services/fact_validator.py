@@ -64,6 +64,7 @@ class FactValidator:
         self.analysis = analysis
         self.review_key = review_key
         self.fact_priorities: dict[str, float] = {}
+        self._posting_cache: tuple[str, str, set[str]] | None = None
         if analysis:
             for position, requirement in enumerate([*analysis.requirements, *analysis.role_competencies]):
                 if requirement.status not in {'strong', 'partial'}:
@@ -203,8 +204,9 @@ class FactValidator:
                 source_order = list(dict.fromkeys(allowed_skills.values()))
                 target = sorted(source_order, key=lambda s: -len(normalized_tokens(s) &
                                 normalized_tokens(f"{job.role}\n{job.relevance_text}")))
-                draft.core_skills.sort(key=lambda s: (1 - job.tailoring_level) * target.index(s)
-                                       + job.tailoring_level * source_order.index(s))
+                weight = job.tailoring_level ** 2
+                draft.core_skills.sort(key=lambda s: (1 - weight) * target.index(s)
+                                       + weight * source_order.index(s))
 
         verified_headline = self._build_headline(job.role, draft.selected_skill_ids, draft.core_skills)
         occupation = verified_headline
@@ -665,9 +667,8 @@ class FactValidator:
         return ranked[:budget]
 
     def _entry_relevance(self, entry, job: JobRequest) -> tuple[float, float, float]:
-        from app.services.job_sections import relevance_text
         from app.services.role_focus import role_focus_score
-        terms = normalized_tokens(relevance_text(f'{job.role}\n{job.relevance_text}'))
+        terms = self._posting_terms(job)
         # The LLM's cited match evidence supplies the primary ordering; literal
         # overlap is only a fallback/tiebreaker, never proof of competence.
         overlap = normalized_tokens(entry.text) & terms
@@ -675,6 +676,14 @@ class FactValidator:
         level = job.tailoring_level
         return ((1 - level) * self.fact_priorities.get(entry.source_id, 0),
                 (1 - level) * role_focus_score(entry.text, job.role), (1 - level) * len(overlap))
+
+    def _posting_terms(self, job: JobRequest) -> set[str]:
+        from app.services.job_sections import relevance_text
+
+        role, text = job.role, job.relevance_text
+        if self._posting_cache is None or self._posting_cache[:2] != (role, text):
+            self._posting_cache = (role, text, normalized_tokens(relevance_text(f"{role}\n{text}")))
+        return self._posting_cache[2]
 
     def _direction_headline(self, occupation, skills, job):
         from app.services.role_focus import role_family, role_focus_score
@@ -717,7 +726,11 @@ class FactValidator:
             target = ['summary', 'skills', 'experience'] + [s for s in original
                                                          if s not in {'summary', 'skills', 'experience'}]
         level = job.tailoring_level
-        return sorted(original, key=lambda s: (1 - level) * target.index(s) + level * original.index(s))
+        # Keep offer-specific narrative visible at the midpoint. A raw 50/50
+        # positional average puts sidebar-only sections ahead of the strongest
+        # evidence and can reverse the intended Projects/Experience order.
+        weight = level ** 2
+        return sorted(original, key=lambda s: (1 - weight) * target.index(s) + weight * original.index(s))
 
     def _build_headline(self, role: str, selected_ids: list[str], core_skills: list[str]) -> str:
         # A target advertisement cannot confer a new occupation or seniority.
@@ -745,8 +758,7 @@ class FactValidator:
         return text if not text or text[-1] in ".!?" else f"{text}."
 
     def _project_relevance(self, project: ResumeProject, job: JobRequest) -> int:
-        from app.services.job_sections import relevance_text
-        job_tokens = normalized_tokens(relevance_text(f"{job.role}\n{job.relevance_text}"))
+        job_tokens = self._posting_terms(job)
         role_tokens = normalized_tokens(job.role)
         generic = {
             "built",
@@ -791,5 +803,6 @@ class FactValidator:
         ranked = sorted(projects, key=score, reverse=True)
         original = {p.name.casefold(): i for i, p in enumerate(self.profile.projects)}
         target = {p.name.casefold(): i for i, p in enumerate(ranked)}
-        return sorted(ranked, key=lambda p: (1 - job.tailoring_level) * target[p.name.casefold()]
-                      + job.tailoring_level * original.get(p.name.casefold(), len(original)))
+        weight = job.tailoring_level ** 2
+        return sorted(ranked, key=lambda p: (1 - weight) * target[p.name.casefold()]
+                      + weight * original.get(p.name.casefold(), len(original)))
