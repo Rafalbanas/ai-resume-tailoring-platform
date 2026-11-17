@@ -338,7 +338,9 @@ def build_compact_tailor_payload(
                 "The closer level is to 0, maximize factual job fit: prioritize relevant facts, allocate more "
                 "detail to relevant projects/experience, lead with verified target capabilities in the headline, "
                 "adapt the summary, skill selection and section order to the offer. "
-                "The closer level is to 1, preserve source wording and source order. Interpolate between these endpoints. "
+                "At 0.5, preserve the candidate's voice and factual scope but still put the strongest evidence "
+                "for this offer first in the summary, skills and relevant sections. "
+                "The closer level is to 1, preserve source wording and source order. "
                 "This is presentation control, never factual permission. Every claim still needs a valid source ID. "
                 "Never add missing skills, inflate levels, invent tenure, or turn personal projects into employment."
             ),

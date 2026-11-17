@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import re
+import time
 from contextlib import closing
 from copy import deepcopy
 from html import escape
@@ -18,6 +19,8 @@ from app.services.languages import profile_languages
 from app.services.professional_summary import deduplicate_summary
 from app.services.profile_photo import ProfilePhotoStore
 from app.services.resume_export import contacts, link_display, prepare_resume, validate_layout, validate_pdf_output
+
+OPTIONAL_FIT_SECONDS = 20
 
 
 class PDFGenerator:
@@ -257,7 +260,7 @@ class PDFGenerator:
     def _render_document(self, markup: str):
         return self._render_document_and_markup(markup)[0]
 
-    def _render_document_and_markup(self, markup: str):
+    def _render_document_and_markup(self, markup: str, *, fit_probe: bool = False):
         """Floats cannot fragment safely: move overflow sections into normal flow.
 
         WeasyPrint may silently omit a float's final child while reporting one
@@ -270,6 +273,8 @@ class PDFGenerator:
         soup = BeautifulSoup(markup, "html.parser")
         sidebar = soup.select_one("aside.resume-sidebar")
         if sidebar is None:
+            if fit_probe:
+                return document, markup
             return self._finish_document(markup, document)
         rendered = []
         for page in document.pages:
@@ -307,7 +312,9 @@ class PDFGenerator:
                 for spacing in ("layout-compact", "layout-tight-bullets"):
                     if spacing not in classes:
                         article["class"] = classes + [spacing]
-                        return self._render_document_and_markup(str(original))
+                        return self._render_document_and_markup(str(original), fit_probe=fit_probe)
+        if fit_probe:
+            return document, str(soup)
         # This verifies every expected section remains text, including pages
         # created by long skills/languages/interests. No silent clipping allowed.
         self._validate_rendered_sources(document)
@@ -375,7 +382,10 @@ class PDFGenerator:
         # dropping a final project or shrinking text. Content is unchanged.
         if len(document.pages) > 1 and metrics[-1]["height"] < metrics[-1]["available_height"] * .20:
             sections = soup.select("main .main-sections > section")
-            for section in reversed(sections):
+            # Re-rendering each section and then every entry can exhaust the
+            # worker's deadline even for a short CV. Try a few trailing breaks;
+            # a short but complete continuation is better than a failed export.
+            for section in reversed(sections[-3:]):
                 section["style"] = "break-before:page"
                 candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
                 tail = self.page_content_metrics(candidate)[-1]
@@ -397,7 +407,7 @@ class PDFGenerator:
                     # Many short entries can be redistributed without moving a
                     # whole experience section onto an otherwise empty page.
                     entries = soup.select("main .main-sections .entry")
-                    for entry in reversed(entries[-12:]):
+                    for entry in reversed(entries[-4:]):
                         entry["style"] = "break-before:page"
                         candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
                         tail = self.page_content_metrics(candidate)[-1]
@@ -407,7 +417,10 @@ class PDFGenerator:
                             break
                         del entry["style"]
                     else:
-                        raise ValueError("A nearly empty continuation page remains; review content before export.")
+                        widow_style.decompose()
+        if len(document.pages) == 1:
+            self._validate_rendered_sources(document)
+            return document, str(soup)
         # Reserve the margin on all pages but print consent once on the final one.
         style = soup.new_tag("style")
         style.string = f"@page modern {{ @bottom-center {{content:none}} }} @page ats {{ @bottom-center {{content:none}} }} @page modern:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }} @page ats:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }}"
@@ -430,6 +443,29 @@ class PDFGenerator:
         prefer_one_page: bool = False,
         fact_validator=None,
     ) -> tuple[TailoredResume, list[str]]:
+        if prefer_one_page and not one_page:
+            from app.services.processing import DEADLINE, ProcessingError
+
+            guide = layout_guide if layout_guide is not None else {}
+            # Fitting is optional: reserve a separate, bounded budget for
+            # layout probes, never the full budget needed to export the CV.
+            deadline = time.monotonic() + OPTIONAL_FIT_SECONDS
+            outer = DEADLINE.get()
+            token = DEADLINE.set(min(deadline, outer) if outer is not None else deadline)
+            try:
+                return self._fit_resume(resume, profile, guide, template_name=template_name,
+                                        job_text=job_text, prefer_one_page=True, fact_validator=fact_validator)
+            except ProcessingError:
+                for key in ("compact_spacing", "compact_bullets", "compact_headings"):
+                    guide.pop(key, None)
+                return deepcopy(resume), ["Optional one-page fitting unavailable; full CV retained."]
+            finally:
+                DEADLINE.reset(token)
+        return self._fit_resume(resume, profile, layout_guide, template_name=template_name,
+                                job_text=job_text, one_page=one_page, fact_validator=fact_validator)
+
+    def _fit_resume(self, resume, profile, layout_guide, *, template_name, job_text,
+                    one_page=False, prefer_one_page=False, fact_validator=None):
         fitted = deepcopy(resume)
         guide = layout_guide if layout_guide is not None else {}
         for key in ("compact_spacing", "compact_bullets", "compact_headings"):
@@ -497,7 +533,11 @@ class PDFGenerator:
         if self.isolated:
             from app.services.processing import process
             return process('metrics', self._processing_payload(resume, profile, guide, template_name=template_name))
-        document = self._render_document(self.render_html(resume, profile, guide, template_name=template_name))
+        # A probe only asks whether the content fits one page. Balancing an
+        # overflowing continuation and rendering again for consent cannot
+        # improve that answer. The actual export still verifies both.
+        document, _ = self._render_document_and_markup(
+            self.render_html(resume, profile, guide, template_name=template_name), fit_probe=True)
         if not document.pages:
             return {"pages": 0, "main_fits": False, "sidebar_fits": False, "utilization": 1.0, "used_vertical_ratio": 1.0}
         # Consent is in the reserved page margin, outside the content box.

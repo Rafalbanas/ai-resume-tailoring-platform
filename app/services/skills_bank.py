@@ -304,8 +304,11 @@ class SkillsBank:
         if tailoring_level and not requested_only:
             target_order = {s.id: i for i, s in enumerate(ranked)}
             source_order = {s.id: i for i, s in enumerate(eligible)}
-            ranked.sort(key=lambda s: (1 - tailoring_level) * target_order[s.id]
-                        + tailoring_level * source_order[s.id])
+            weight = tailoring_level ** 2
+            # Keep explicitly relevant skills visible at the midpoint even
+            # when the profile has a long skills bank in an unrelated order.
+            ranked.sort(key=lambda s: (tailoring_level <= .5 and role_relevance(s) == 0,
+                                      (1 - weight) * target_order[s.id] + weight * source_order[s.id]))
         chosen: list[VerifiedSkill] = []
         ai_dev_count = 0
         chosen_labels: set[str] = set()

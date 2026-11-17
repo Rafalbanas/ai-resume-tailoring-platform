@@ -48,11 +48,15 @@ Problemy nie sprowadzały się do prompta:
   jako **edukacja**, nie rzekome obowiązki zawodowe.
 - Kolejność sekcji, projekty, kompetencje i szczegółowość reagują na suwak.
   0 = oferta na podstawie faktów, 1 = profil i jego kolejność.
+  Przy 0,5 kolejność nadal eksponuje najmocniejsze dowody pod ofertę;
+  kolejność źródłowa zyskuje przewagę bliżej końca profilowego.
   Ranking i ochrona obowiązkowych dowodów rozwiązują również starsze aliasy
   źródeł; wybór modelu nie wyprzedza już zweryfikowanej relewancji umiejętności.
 - Generowane CV silnie preferuje jedną stronę, bez zmniejszania czytelności ani dopisywania faktów; druga strona dopuszczalna przy bogatym profilu. 90–95% to cel udziału CV jednostronicowych, NIE zapełnienie strony i NIE potwierdzona globalna statystyka.
 - Eksport najpierw sprawdza pełną treść i odstępy, następnie pomija pojedynczo najmniej istotne, niechronione szczegóły, mierząc dokument po każdej zmianie.
   Zachowuje całe summary, najważny istotny projekt, tożsamości zatrudnienia, edukację, status nauki i dowody obowiązkowych wymagań. Jeśli to nie wystarcza, wraca do pełnej wersji wielostronicowej, bez pozostawienia próbnych usunięć.
+  Pomiary mają osobny limit czasu. Po jego przekroczeniu aplikacja eksportuje
+  pełną wersję i nadal sprawdza kompletność oraz geometrię końcowego PDF.
 - Modern Sidebar ma stały tekst główny 10 pt. Istniejąca jawna, twarda funkcja `one_page=True` jest dostępna i testowana osobno; standardowy eksport używa `prefer_one_page=True`. Preferencja działa również dla ATS Classic. Nie jest automatycznie narzucana przy indywidualnych instrukcjach Custom CV.
 - Domyślny budżet CV Ollama: 6144 tokeny, nadal ograniczony konfiguracją
   `ollama_num_predict`. Jawne ustawienia użytkownika nie są nadpisywane.
