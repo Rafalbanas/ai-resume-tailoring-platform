@@ -31,8 +31,10 @@ working directory or an older deployed version.
   remain in place. Projects remain separate from employment.
 - Report likely generic duties, repetitive summaries, tool lists without
   activity, and omitted relevant scope/results as review hints, not export
-  blockers. Do not require numbers or a minimum amount of text for sparse
-  profiles.
+  blockers. The draft report displays them separately from Truth Lock
+  warnings. Do not require numbers or a minimum amount of text for sparse
+  profiles. For postings whose duties are too vague to narrow project
+  selection, retain the existing project slots and ranking.
 - Protect relevant scope/results in the normal one-page preference. If
   removing optional details is insufficient, keep the complete validated CV
   and paginate. There is no two-page hard limit for unusually long profiles.

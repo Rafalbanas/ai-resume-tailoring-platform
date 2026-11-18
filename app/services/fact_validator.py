@@ -1,6 +1,7 @@
 import re
+from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.models.candidate import CandidateProfile
 from app.models.job import JobAnalysis, JobRequest
@@ -54,6 +55,7 @@ def _profile_headline(value: str, occupation: str, skills: list[str]) -> str | N
 class ValidationResult:
     resume: TailoredResume
     warnings: list[str]
+    editorial_warnings: list[str] = field(default_factory=list, kw_only=True)
 
 
 class FactValidator:
@@ -231,11 +233,9 @@ class FactValidator:
         verified_headline = _headline_with_suffix(occupation, suffixes)
         # Both generated and manually retained headlines resolve whole labels
         # against the same current profile and eligible skill selection.
-        profile_headline = _profile_headline(draft.headline.strip(), occupation, draft.core_skills)
-        verified_headline = profile_headline or verified_headline
+        verified_headline = _profile_headline(draft.headline.strip(), occupation, draft.core_skills) or verified_headline
         if (not preserve_skills and job.workflow != 'custom' and job.tailoring_level < 0.75
-                and (draft.headline.strip() in {occupation, job.role.strip(), ''}
-                     or (not profile_headline and self._target(job).evidence_led))):
+                and draft.headline.strip() in {occupation, job.role.strip(), ''}):
             verified_headline = self._direction_headline(occupation, draft.core_skills, job)
         if draft.headline.strip() and draft.headline.strip() not in {job.role.strip(), verified_headline}:
             warnings.append("Unsupported or non-deterministic headline was replaced with verified role and skills")
@@ -463,15 +463,19 @@ class FactValidator:
                 )
         ranked_projects = self._rank_projects(clean_projects, job)
         if (not preserve_skills and job.workflow == 'job' and job.tailoring_level <= 0.5
-                and (focus := self._target(job)).duties and focus.evidence_led):
+                and (focus := self._target(job)).has_specific_duties):
             # A merely documented project isn't necessarily worth space in a
             # tightly tailored CV. Keep projects with contextual evidence, not
             # those sharing only a generic word such as "configuration".
             all_projects = {p.name: p for p in self.profile.projects}
+            permitted_facts = defaultdict(list)
+            for entry in self.catalog.prompt_entries:
+                if entry.kind == 'project':
+                    permitted_facts[entry.owner_name].append(entry)
             ranked_projects = [p for p in ranked_projects if any(
                 self.fact_priorities.get(e.source_id, 0)
                 or (focus.score(e.text) and focus.direct_terms(e.text))
-                for e in self.catalog.valid(p.source_fact_ids, kind='project'))
+                for e in permitted_facts[p.name])
                 or (p.name in all_projects and any(
                     focus.score(tech) and focus.direct_terms(tech) for tech in all_projects[p.name].technologies))]
         if len(ranked_projects) > 2 and self._project_relevance(ranked_projects[2], job) > 0:
@@ -590,15 +594,16 @@ class FactValidator:
         for experience in draft.experience:
             experience.bullets = deduplicate_bullets(experience.bullets)
         warnings.extend(quality_issues(draft, self.profile))
+        editorial_warnings = []
         if not preserve_skills and job.workflow == 'job':
             from app.services.content_quality import editorial_review_issues
             def relevant(entry):
                 priority, topical, overlap, _ = self._entry_relevance(entry, job)
                 return bool(priority or topical or overlap >= 2)
 
-            warnings.extend(dict.fromkeys(editorial_review_issues(
+            editorial_warnings = list(dict.fromkeys(editorial_review_issues(
                 draft, self.catalog, relevant=relevant)))
-        return ValidationResult(resume=draft, warnings=warnings)
+        return ValidationResult(resume=draft, warnings=warnings, editorial_warnings=editorial_warnings)
 
     @staticmethod
     def _experience_wording(text: str) -> str:

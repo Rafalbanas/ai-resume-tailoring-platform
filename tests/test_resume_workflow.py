@@ -453,6 +453,7 @@ def test_layout_adjustments_never_increase_truth_lock_warning_count(verified_pro
     clean_resume = generated_resume(verified_profile, platform_job)
     validation = FactValidator(verified_profile).validate(clean_resume, platform_job)
     assert len(validation.warnings) == 0
+    assert any("summary repeats" in warning for warning in validation.editorial_warnings)
 
     layout_adjustments = [
         "Adaptive layout tightened section spacing",

@@ -138,6 +138,10 @@ class TargetFocus:
     evidence_led: bool
     professional_required: bool
 
+    @property
+    def has_specific_duties(self):
+        return any(_facets(duty) for duty in self.duties)
+
     def direct_terms(self, text):
         return (normalized_tokens(text) & self.terms) - _CROSS_ROLE_TERMS
 

@@ -73,7 +73,9 @@ def test_tailoring_uses_canonical_documents_and_preserves_profile(role):
     assert 'production cluster' not in result.resume.model_dump_json()
     assert [(e.company, e.title) for e in result.resume.experience] == [(e.company, e.title) for e in candidate.experience]
     assert any('Unsupported AI bullet' in warning for warning in result.warnings)
-    assert validator.validate(result.resume, job).resume == result.resume
+    assert result.resume.headline == candidate.experience[0].title
+    verified = validator.validate(sparse_draft(candidate), job).resume
+    assert validator.validate(verified, job).resume == verified
 
 
 def test_allowed_project_cannot_replace_employment_and_keeps_scope():

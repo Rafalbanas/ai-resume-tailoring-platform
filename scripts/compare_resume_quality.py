@@ -149,7 +149,8 @@ async def benchmark(output, *, exports=False, model=None, only=None):
             'errors': evidence_errors(fitted, validator),
             'headline': fitted.headline, 'summary': fitted.professional_summary, 'experience': bullets,
             'recent_experience': [b.text for b in fitted.experience[0].bullets],
-            'skills': fitted.core_skills, 'warnings': result.warnings + warnings, 'pages': pages, 'extraction': extraction,
+            'skills': fitted.core_skills, 'warnings': result.warnings + getattr(result, 'editorial_warnings', []) + warnings,
+            'pages': pages, 'extraction': extraction,
         })
     report = {'model': model, 'mean_pairwise_bullet_jaccard': compare(outputs, 'experience'),
               'recent_job_jaccard': compare(outputs, 'recent_experience'), 'resumes': outputs}
