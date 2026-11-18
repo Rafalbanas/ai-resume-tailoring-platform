@@ -53,7 +53,7 @@
 @page modern:first {margin-top:0;@top-left{content:none}@top-right{content:none}}
 .resume-continuation{position:running(continuation);width:61mm;margin:0;padding:11mm 8mm 0;font:8pt/1.35 Arial,Helvetica,sans-serif;color:#e7eff5}
 .resume-continuation .continuation-label{color:#fff;text-transform:uppercase;font-size:9.2pt;letter-spacing:.035em;font-weight:bold;border-bottom:.3mm solid rgba(255,255,255,.45);padding-bottom:1.2mm;margin:0 0 2.5mm}
-.resume-continuation .contact-label{font-size:7pt;color:#b8ccdf;margin:0 0 .5mm}
+.resume-continuation .contact-label{display:block;font-size:7pt;color:#b8ccdf;margin:0 0 .5mm}
 .resume-continuation a{color:inherit;text-decoration:none;overflow-wrap:anywhere;word-break:break-all}
 body:has(>.modern-sidebar) .consent-footer,
 .modern-sidebar-consent{

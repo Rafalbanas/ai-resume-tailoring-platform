@@ -436,7 +436,20 @@ class PDFGenerator:
         # Reserve the margin on all pages but print consent once on the final one.
         style = soup.new_tag("style")
         style.string = f"@page modern {{ @bottom-center {{content:none}} }} @page ats {{ @bottom-center {{content:none}} }} @page modern:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }} @page ats:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }}"
-        if soup.select_one("article.modern-sidebar") is not None:
+        if (article := soup.select_one("article.modern-sidebar")) is not None:
+            # Reuse the already escaped, verified primary contact. Create the
+            # running element only for a genuinely continued CV; the source
+            # markup and a one-page export keep a single set of contact links.
+            continuation = soup.new_tag("aside", attrs={
+                "class": "resume-continuation", "aria-label": "Continuation contact"})
+            label = soup.new_tag("div", attrs={"class": "continuation-label"})
+            label.string = "Continued"
+            continuation.append(label)
+            if (email := article.select_one('a[href^="mailto:"]')) is not None:
+                if (contact_label := email.find_previous_sibling(class_="contact-label")) is not None:
+                    continuation.append(deepcopy(contact_label))
+                continuation.append(deepcopy(email))
+            soup.body.insert(0, continuation)
             # An exceptional long sidebar can itself fragment. Its real
             # content owns the left column before the small running contact.
             for index, page in enumerate(document.pages[1:], start=2):

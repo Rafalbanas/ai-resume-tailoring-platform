@@ -1,11 +1,4 @@
 <footer class="consent-footer {% if template_name == 'modern_sidebar' %}modern-sidebar-consent{% else %}ats-classic-consent{% endif %}">I consent to the processing of my personal data for recruitment purposes in accordance with applicable data protection law (GDPR).</footer>
-{% if template_name == 'modern_sidebar' %}
-{% set contact = contacts|selectattr('target')|first|default(none) %}
-<aside class="resume-continuation" aria-label="Continuation contact">
-  <div class="continuation-label">Continued</div>
-  {% if contact %}<div class="contact-label">{{ contact.label }}</div><a href="{{ contact.target }}">{{ contact.display }}</a>{% endif %}
-</aside>
-{% endif %}
 <article class="resume-document {{ template_name|replace('_', '-') }} {{ layout_classes }}">
   {% if template_name == 'modern_sidebar' %}
   <aside class="resume-sidebar">
