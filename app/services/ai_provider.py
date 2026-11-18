@@ -119,6 +119,11 @@ employment for a project-backed ML transition, employment normally leads for sup
 The content_plan overrides reference-CV brevity preferences, which are style hints only.
 Prefer a readable, well-filled A4 page; two pages are allowed for useful verified content.
 Do not add repetitions, keyword stuffing or unsupported claims to fill space.
+Follow the actual duties and mandatory requirements, even when the headline is ambiguous or the role mixes disciplines.
+For each important bullet, lead with the documented action and its object or problem, then retain the source's specific systems,
+operational scope and measured result if present. Scale (users, sites, workload) is not business impact.
+No number is needed for a concrete task. Prefer supported incident diagnosis, ownership or handoffs to generic duty labels.
+If the posting asks for commercial experience, lead with matching employment; present personal projects as separate evidence.
 """
 
 CUSTOM_CV_SYSTEM_PROMPT = """Create a complete custom CV, not a job-match report.

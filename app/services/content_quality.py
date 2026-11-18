@@ -158,6 +158,82 @@ def unfinished(value):
                                  or value.count('(') != value.count(')')))
 
 
+_GENERIC_DUTY = re.compile(
+    r'(?:(?:responsible for|assisted with|helped with|handled|supported|provided|worked on|performed|participated in)\s+)?'
+    r'(?:(?:day.to.day|daily|routine|general|various|assigned|technical|IT|operational|support|maintenance)\s+)*'
+    r'(?:tasks?|duties|operations|activities|work|support|issues?|requests?|systems?)\b[.!]?$', re.I)
+_SCALE = re.compile(
+    r'\b(?:\d+(?:[,.]\d+)*\s*\+?|one|two|three|four|five|six|seven|eight|nine|ten|hundreds? of|thousands? of)\s*'
+    r'(?:users?|locations?|sites?|endpoints?|servers?|workstations?|devices?|customers?|tenants?|'
+    r'tickets?|incidents?|deployments?|applications?|integrations?|requests?)\b', re.I)
+_OUTCOME = re.compile(
+    r'\b(?:reduced|decreased|increased|cut|saved|shortened|eliminated|restored|recovered|prevented|'
+    r'resolved|improved|lowered)\b.{0,70}'
+    r'(?:\b\d+(?:[.,]\d+)?\s*(?:%|minutes?\b|hours?\b|days?\b)|'
+    r'\b(?:service|access|availability|data)\b)', re.I)
+_RESPONSIBILITY = re.compile(
+    r'\b(?:administer\w*|configur\w*|monitor\w*|deploy\w*|troublesh\w*|investigat\w*|'
+    r'diagnos\w*|resolv\w*|triag\w*|escalat\w*|onboard\w*|implement\w*|maintain\w*|'
+    r'document\w*|automat\w*|develop\w*|validat\w*|test\w*|restor\w*|coordinat\w*|'
+    r'collaborat\w*|analy[sz]\w*|built|deployed|wrote)\b', re.I)
+
+
+def generic_duty(text):
+    """Recognize empty duty shells, not short, concrete bullets."""
+    return bool(_GENERIC_DUTY.fullmatch(text.strip()))
+
+
+def high_value_detail(text):
+    """Editorial signal, not evidence of business impact or proficiency."""
+    if re.search(r'\b(?:not|never|without|planned|aimed|estimated|projected|would|could)\b', text, re.I):
+        return False
+    return bool(_SCALE.search(text) or _OUTCOME.search(text))
+
+
+def evidence_specificity(text):
+    if generic_duty(text):
+        return -2
+    return 2 * high_value_detail(text) + bool(_RESPONSIBILITY.search(text))
+
+
+def editorial_review_issues(resume, catalog, *, relevant=None):
+    """Non-blocking signals. Never discard or approve a claim from these hints."""
+    from app.services.professional_summary import summary_contains_clause
+
+    summary = resume.professional_summary
+    if not summary.strip() and any(
+            e.kind in {'summary', 'experience', 'project'} for e in catalog.prompt_entries):
+        yield 'Editorial review: summary is empty despite available source material.'
+    elif re.search(r'\b(?:results.driven professional|dynamic professional|proven track record|'
+                   r'passionate team player|detail.oriented professional)\b', summary, re.I):
+        yield 'Editorial review: replace résumé clichés with a documented activity or outcome.'
+    facts = {}
+    for exp in resume.experience:
+        facts[exp.company, exp.title, exp.dates] = exp
+        if any(generic_duty(b.text) for b in exp.bullets):
+            yield f'Editorial review: generic duty in {exp.company}; consider a source-backed task or result.'
+        if len(exp.bullets) > 1 and sum(
+                summary_contains_clause(summary, b.text) for b in exp.bullets
+        ) / len(exp.bullets) > 0.5:
+            yield f'Editorial review: summary repeats most visible duties from {exp.company}.'
+        for bullet in exp.bullets:
+            if len(re.split(r'[,;|•]', bullet.text)) >= 6 and evidence_specificity(bullet.text) <= 0:
+                yield f'Editorial review: tool list in {exp.company} lacks activity context.'
+                break
+    if relevant:
+        relevant_experience = [e for e in catalog.prompt_entries if e.kind == 'experience' and relevant(e)]
+        for index, owner in enumerate(catalog.profile.experience):
+            shown = facts.get((owner.company, owner.title, ' – '.join(filter(None, [owner.start, owner.end]))))
+            if shown and len(shown.bullets) <= 1 and sum(
+                    e.owner_index == index and evidence_specificity(e.text) > 0 for e in relevant_experience) >= 3:
+                yield f'Editorial review: {owner.company} has additional relevant duties worth reviewing.'
+        visible = {i for exp in resume.experience for b in exp.bullets for i in b.source_fact_ids
+                   if (e := catalog.get(i)) and e.text.rstrip('.!?').casefold() in b.text.casefold()}
+        for entry in relevant_experience:
+            if entry.source_id not in visible and high_value_detail(entry.text):
+                yield f'Editorial review: verify that scope or results from {entry.owner_name} are visible in experience.'
+
+
 def _sql_query_subsumed(short, long):
     """Canonical aliases only for an explicitly shared SQL/T-SQL query activity."""
     def canonical(text):

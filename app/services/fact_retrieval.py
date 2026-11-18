@@ -8,7 +8,9 @@ from collections import Counter
 from dataclasses import dataclass
 
 from app.models.job import JobAnalysis, JobRequest
+from app.services.content_quality import evidence_specificity
 from app.services.fact_catalog import FactEntry, normalized_tokens
+from app.services.role_focus import target_focus
 
 logger = logging.getLogger(__name__)
 TOP_K = 24
@@ -83,9 +85,13 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
     # Requirements originate in the posting, not in candidate documents. Quoted
     # text remains data; source IDs suggested by a model do not control retrieval.
     requirements = [*analysis.requirements, *analysis.role_competencies]
+    focus = target_focus(job.role, job.relevance_text if job.workflow == 'job' else '', analysis)
     queries = [(r.name, 2.0 if r.priority == "mandatory" else 1.0) for r in requirements]
     if not queries:
         queries = [(job.relevance_text, 1.0)]
+    if job.workflow == 'job' and job.tailoring_level < 1 and focus.duties:
+        duties = sorted(focus.duties, key=focus.score, reverse=True)[:6]
+        queries.extend((duty, 3.0 / len(duties)) for duty in duties)
     queries.append((job.role, 0.5))
     mode = "ranked"
     hybrid_trace = {}
@@ -105,8 +111,19 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         if level:
             matched_ids = {e.source_id for e, _ in ranked}
             ranked.extend((e, 0.0) for e in documents if e.source_id not in matched_ids)
+
+        def editorial_bonus(entry, lexical):
+            if not lexical or not focus.evidence_led or entry.kind != 'experience' or job.workflow != 'job':
+                return 0
+            # Source scope/result is a bounded tiebreaker on actual hits. Keep
+            # full provenance; don't attach an unrelated colleague's outcomes.
+            relevance = focus.score(entry.text)
+            if not relevance and not (normalized_tokens(entry.text) & focus.terms):
+                return 0
+            return 0.08 * evidence_specificity(entry.text) + (0.15 if focus.professional_required else 0)
+
         ranking_scores = {
-            e.source_id: (1 - level) * score / maximum
+            e.source_id: (1 - level) * (score / maximum + editorial_bonus(e, score))
             + level * (1 - source_order[e.source_id] / max(1, len(documents)))
             for e, score in ranked
         }
@@ -165,6 +182,7 @@ def retrieve_facts(job: JobRequest, profile, analysis: JobAnalysis, bank=None,
         "method": hybrid_trace.get('method', 'local_bm25'), "mode": mode, "top_k": top_k,
         "hybrid": hybrid_trace,
         "tailoring_level": job.tailoring_level,
+        "target_families": list(focus.families),
         "ranking_policy": "blend_normalized_rrf_with_profile_order" if hybrid_trace.get('method') == 'local_bm25_dense_rrf' else "blend_normalized_bm25_with_profile_order",
         "index_revision": hashlib.sha256(json.dumps(
             [(e.source_id, e.kind, e.owner_name, e.text) for e in documents],
