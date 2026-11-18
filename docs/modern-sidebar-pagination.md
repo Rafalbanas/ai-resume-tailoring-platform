@@ -51,8 +51,11 @@ available page height, not the area covered by ink.
 
 PDF raster comparison: the short Modern example and all three ATS Classic
 examples are pixel-identical to the baseline on this host. Geometry and
-links are checked in rendered pages. The medium DOCX was also rendered and
-visually spot-checked in LibreOffice.
+links are checked in rendered pages. In LibreOffice, Modern DOCX paginated
+**2/2/3 → 1/2/3** pages for the short/medium/long cases, respectively.
+The medium DOCX's second page now opens with a complete dated role, not a
+trailing bullet from page one. Spacing was adjusted around headings, not
+by shrinking type.
 
 The five offer scenarios were separately exported in both themes, before
 and after. Their per-theme reports were identical across revisions:

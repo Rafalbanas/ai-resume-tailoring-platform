@@ -53,6 +53,13 @@ def _generate_docx_local(
     styles["Title"].font.size = Pt(24)
     styles["Heading 1"].font.size = Pt(12)
     styles["Heading 2"].font.size = Pt(10.5)
+    if template_name == "modern_sidebar":
+        # The inherited 24 pt gap above every section can create a page for
+        # just the final section/consent after keeping job blocks together.
+        # Tighten headings only; body type and bullet leading are unchanged.
+        styles["Title"].paragraph_format.space_after = Pt(8)
+        styles["Heading 1"].paragraph_format.space_before = Pt(10)
+        styles["Heading 2"].paragraph_format.space_before = Pt(7)
     section.page_width = Inches(8.2677)
     section.page_height = Inches(11.6929)
     if photo_enabled and template_name == "modern_sidebar" and photo_path and photo_path.is_file():
