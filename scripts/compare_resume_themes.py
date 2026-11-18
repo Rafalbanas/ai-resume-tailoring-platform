@@ -162,7 +162,9 @@ def main():
                     geometry['sidebar'] = page.locator('.resume-sidebar').first.bounding_box()
                     assert abs(geometry['sidebar']['width'] - 61 * 96 / 25.4) < 1
                     assert abs(geometry['main']['x'] - geometry['paper']['x'] - 61 * 96 / 25.4) < 1
-                assert page.get_by_role('link', name=str(profile.personal.email), exact=True).get_attribute('href') == 'mailto:' + str(profile.personal.email)
+                primary_links = page.locator('.resume-paper').first.get_by_role(
+                    'link', name=str(profile.personal.email), exact=True)
+                assert primary_links.get_attribute('href') == 'mailto:' + str(profile.personal.email)
                 browser_pdf = page.pdf(prefer_css_page_size=True, print_background=True, display_header_footer=False)
                 (folder / 'browser-print.pdf').write_bytes(browser_pdf)
                 # Both download variants must display exactly the same page.
