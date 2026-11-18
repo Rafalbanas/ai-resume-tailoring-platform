@@ -114,19 +114,28 @@ def test_preferred_one_page_does_not_remove_relevant_quantified_scope():
     assert 'multi-page' in warnings[0]
 
 
-def test_synthetic_benchmark_and_ats_exports(tmp_path):
-    report = asyncio.run(benchmark(tmp_path, exports=True))
-    assert report['mean_pairwise_bullet_jaccard'] < 0.60
+def test_synthetic_benchmark_all_templates(tmp_path):
+    report = asyncio.run(benchmark(tmp_path, exports=True, template='both'))
+    assert all(m['mean_pairwise_bullet_jaccard'] < .60 for m in report['by_template'].values())
+    assert {(r['role'], r['template']) for r in report['resumes']} == {
+        (role, template) for role in SCENARIOS for template in ('ats_classic', 'modern_sidebar')
+    }
     for result in report['resumes']:
         assert result['matched_before_fit'] == result['expected'], result
         assert result['matched_export'] == result['expected'], result
         assert not result['errors'], result
         assert result['generic_bullets'] == 0
         assert 1 <= result['pages'] <= 2
+        assert len(result['page_geometry']) == result['pages']
         assert all(e['found'] == e['required'] for e in result['extraction'].values()), result
         if result['expected_project']:
             assert result['projects'][0] == result['expected_project'], result
-    assert next(r for r in report['resumes'] if r['role'] == 'Technical Support Engineer')['scale_visible']
+        if result['role'] == 'Technical Support Engineer':
+            assert result['scale_visible']
+    for role in SCENARIOS:
+        classic, modern = [r for r in report['resumes'] if r['role'] == role]
+        assert modern['experience'] == classic['experience']
+        assert modern['projects'] == classic['projects']
 
 
 def test_layout_retains_scope_and_allows_two_pages_when_needed(tmp_path):

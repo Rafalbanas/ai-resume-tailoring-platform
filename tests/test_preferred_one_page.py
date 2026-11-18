@@ -110,7 +110,7 @@ def test_optional_probe_timeout_keeps_complete_cv_and_restores_deadline(monkeypa
     token = DEADLINE.set(outer)
     guide = {}
 
-    def fits(*args):
+    def fits(*args, **kwargs):
         assert 0 < DEADLINE.get() - time.monotonic() <= 20
         if guide.get("compact_spacing"):
             raise ProcessingError("Synthetic probe timeout", code="timeout")
@@ -119,7 +119,7 @@ def test_optional_probe_timeout_keeps_complete_cv_and_restores_deadline(monkeypa
     monkeypatch.setattr(generator, "_fits_one_page", fits)
     try:
         fitted, warnings = generator.fit_resume(resume, validator.profile, guide, prefer_one_page=True,
-                                                fact_validator=validator)
+                                                fact_validator=validator, template_name="ats_classic")
         assert DEADLINE.get() == outer
     finally:
         DEADLINE.reset(token)

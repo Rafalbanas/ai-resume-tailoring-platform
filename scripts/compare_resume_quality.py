@@ -107,7 +107,7 @@ def compare(outputs, key):
     return round(sum(pairs) / max(1, len(pairs)), 3)
 
 
-async def benchmark(output, *, exports=False, model=None, only=None):
+async def benchmark(output, *, exports=False, model=None, only=None, template='ats_classic'):
     output.mkdir(parents=True, exist_ok=True)
     candidate = profile()
     generator = PDFGenerator(Path('templates'), Path('static'), output, isolated=False)
@@ -122,6 +122,8 @@ async def benchmark(output, *, exports=False, model=None, only=None):
             ollama_connect_timeout_seconds=5, ollama_read_timeout_seconds=180,
             hybrid_retrieval_enabled=False, csrf_secret='synthetic-benchmark-key'))
     outputs = []
+    templates = ('ats_classic', 'modern_sidebar') if template == 'both' else (template,)
+    known_facts = {f for e in candidate.experience for f in e.facts}
     for role, spec in SCENARIOS.items():
         if only and role != only:
             continue
@@ -130,30 +132,43 @@ async def benchmark(output, *, exports=False, model=None, only=None):
         validator = FactValidator(candidate, analysis=analysis, review_key=provider.summary_review_key if provider else '')
         result = validator.validate(draft, job)
         prepared = prepare_resume(result.resume, candidate)
-        guide = {}
-        fitted, warnings = generator.fit_resume(prepared, candidate, guide, template_name='ats_classic',
-            job_text=f'{job.role}\n{job.relevance_text}', prefer_one_page=True, fact_validator=validator)
-        pages, extraction = (export_and_check(generator, output, re.sub(r'\W+', '-', role.lower()),
-                        fitted, candidate, guide, 'ats_classic') if exports else (None, {}))
-        bullets = bullet_texts(fitted)
-        required = spec['employment']
-        outputs.append({
-            'role': role, 'expected': len(required), 'matched_before_fit': coverage(prepared, required),
-            'matched_export': coverage(fitted, required), 'employment_before_fit': len(bullet_texts(prepared)),
-            'verified_source_facts': sum(b in {f for e in candidate.experience for f in e.facts} for b in bullets),
-            'generic_bullets': sum(b == owner.facts[0] for b in bullets for owner in candidate.experience),
-            'repeated_bullets_in_summary': sum(summary_contains_clause(fitted.professional_summary, b) for b in bullets),
-            'unique_bullet_concepts': len({tuple(sorted(concepts(b))) for b in bullets}),
-            'scale_visible': any('170 users' in b and 'five locations' in b for b in bullets),
-            'expected_project': spec['project'], 'projects': [p.name for p in fitted.projects],
-            'errors': evidence_errors(fitted, validator),
-            'headline': fitted.headline, 'summary': fitted.professional_summary, 'experience': bullets,
-            'recent_experience': [b.text for b in fitted.experience[0].bullets],
-            'skills': fitted.core_skills, 'warnings': result.warnings + getattr(result, 'editorial_warnings', []) + warnings,
-            'pages': pages, 'extraction': extraction,
-        })
-    report = {'model': model, 'mean_pairwise_bullet_jaccard': compare(outputs, 'experience'),
-              'recent_job_jaccard': compare(outputs, 'recent_experience'), 'resumes': outputs}
+        for t_name in templates:
+            guide = {}
+            current_output = output / t_name if template == 'both' else output
+            current_output.mkdir(parents=True, exist_ok=True)
+            fitted, warnings = generator.fit_resume(prepared, candidate, guide, template_name=t_name,
+                job_text=f'{job.role}\n{job.relevance_text}', prefer_one_page=True, fact_validator=validator)
+            pages, extraction = export_and_check(generator, current_output, re.sub(r'\W+', '-', role.lower()),
+                            fitted, candidate, guide, t_name) if exports else (None, {})
+            geometry = []
+            if exports:
+                document = generator._render_document(generator.render_html(fitted, candidate, guide, template_name=t_name))
+                geometry = [round(m['height'] / m['available_height'], 3) for m in generator.page_content_metrics(document)]
+            bullets = bullet_texts(fitted)
+            required = spec['employment']
+            outputs.append({
+                'template': t_name,
+                'role': role, 'expected': len(required), 'matched_before_fit': coverage(prepared, required),
+                'matched_export': coverage(fitted, required), 'employment_before_fit': len(bullet_texts(prepared)),
+                'verified_source_facts': sum(b in known_facts for b in bullets),
+                'generic_bullets': sum(b == owner.facts[0] for b in bullets for owner in candidate.experience),
+                'repeated_bullets_in_summary': sum(summary_contains_clause(fitted.professional_summary, b) for b in bullets),
+                'unique_bullet_concepts': len({tuple(sorted(concepts(b))) for b in bullets}),
+                'scale_visible': any('170 users' in b and 'five locations' in b for b in bullets),
+                'expected_project': spec['project'], 'projects': [p.name for p in fitted.projects],
+                'errors': evidence_errors(fitted, validator),
+                'headline': fitted.headline, 'summary': fitted.professional_summary, 'experience': bullets,
+                'recent_experience': [b.text for b in fitted.experience[0].bullets],
+                'skills': fitted.core_skills, 'warnings': result.warnings + getattr(result, 'editorial_warnings', []) + warnings,
+                'pages': pages, 'extraction': extraction,
+                'page_geometry': geometry,
+            })
+    by_template = {}
+    for name in templates:
+        rows = [row for row in outputs if row['template'] == name]
+        by_template[name] = {'mean_pairwise_bullet_jaccard': compare(rows, 'experience'),
+                             'recent_job_jaccard': compare(rows, 'recent_experience')}
+    report = {'model': model, **by_template[templates[0]], 'by_template': by_template, 'resumes': outputs}
     (output / 'results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return report
 
@@ -187,13 +202,15 @@ if __name__ == '__main__':
     parser.add_argument('--exports', action='store_true')
     parser.add_argument('--ollama-model', help='Opt-in, already installed on localhost.')
     parser.add_argument('--only', choices=SCENARIOS)
+    parser.add_argument('--template', choices=['ats_classic', 'modern_sidebar', 'both'], default='ats_classic')
     parser.add_argument('--rich-layout', action='store_true', help='Also compare both themes with a longer employment history.')
     args = parser.parse_args()
     if args.ollama_model and not args.only:
         parser.error('Choose one scenario with --only for the real-model smoke test.')
-    report = asyncio.run(benchmark(args.output, exports=args.exports, model=args.ollama_model, only=args.only))
+    report = asyncio.run(benchmark(args.output, exports=args.exports, model=args.ollama_model,
+                                   only=args.only, template=args.template))
     for row in report['resumes']:
-        print(f"{row['role']}: {row['matched_export']}/{row['expected']} target facts; "
+        print(f"{row['template']} / {row['role']}: {row['matched_export']}/{row['expected']} target facts; "
               f"{len(row['errors'])} evidence audit flags; {row['pages']} PDF pages")
     if args.rich_layout:
         print(json.dumps(benchmark_layout(args.output), indent=2))

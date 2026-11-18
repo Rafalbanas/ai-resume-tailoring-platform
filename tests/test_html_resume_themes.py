@@ -138,3 +138,5 @@ def test_large_floated_sidebar_remains_complete_in_html(renderer, profile, resum
     assert skills == resume.core_skills
     assert soup.body.get_text().count('Fact 0:') == len(resume.experience)
     assert len(soup.select('.consent-footer')) == 1
+    for page in soup.select('.resume-paper'):
+        assert not (page.select_one('.resume-sidebar') and page.select_one('.resume-continuation'))

@@ -46,10 +46,15 @@
 @page modern {
   size:A4;margin:10mm 0 16mm;
   background:linear-gradient(to right,#102b46 0,#102b46 61mm,#fff 61mm,#fff 100%);
+  @top-left{content:element(continuation);width:61mm;vertical-align:top}
   @top-right{content:string(candidate) " · CV · " counter(page);font:8pt Arial;color:#526174;padding-right:12mm}
   @bottom-center{content:element(consent);background:transparent;vertical-align:middle}
 }
-@page modern:first {margin-top:0;@top-right{content:none}}
+@page modern:first {margin-top:0;@top-left{content:none}@top-right{content:none}}
+.resume-continuation{position:running(continuation);width:61mm;margin:0;padding:11mm 8mm 0;font:8pt/1.35 Arial,Helvetica,sans-serif;color:#e7eff5}
+.resume-continuation .continuation-label{color:#fff;text-transform:uppercase;font-size:9.2pt;letter-spacing:.035em;font-weight:bold;border-bottom:.3mm solid rgba(255,255,255,.45);padding-bottom:1.2mm;margin:0 0 2.5mm}
+.resume-continuation .contact-label{font-size:7pt;color:#b8ccdf;margin:0 0 .5mm}
+.resume-continuation a{color:inherit;text-decoration:none;overflow-wrap:anywhere;word-break:break-all}
 body:has(>.modern-sidebar) .consent-footer,
 .modern-sidebar-consent{
   font-size:7pt;
@@ -71,6 +76,8 @@ body:has(>.modern-sidebar){margin:0}
 .modern-sidebar .resume-main section{margin-bottom:2mm}
 .modern-sidebar .resume-main section>h2{margin-bottom:2mm;padding-bottom:1mm;break-after:avoid}
 .modern-sidebar .entry{margin-bottom:1mm;break-inside:auto}
+.modern-sidebar .experience-entry{break-inside:avoid}
+.modern-sidebar .balanced-page-start{break-before:page}
 .modern-sidebar .entry-head{break-after:avoid}
 .modern-sidebar .entry-head h3{min-width:0;flex:1}
 .modern-sidebar .entry-head span{flex:0 1 auto;max-width:29%;white-space:normal;text-align:right}

@@ -108,8 +108,16 @@ def _generate_docx_local(
             document.add_heading(f"{item.title} — {item.company}", level=2)
             date_paragraph = document.add_paragraph(item.dates)
             date_paragraph.paragraph_format.keep_with_next = True
-            for bullet in item.bullets:
-                document.add_paragraph(bullet.text, style="List Bullet")
+            # Word flows independently of the PDF. Keep ordinary Modern job
+            # blocks intact without trapping an exceptionally long role on
+            # one page (or changing ATS Classic's flow).
+            keep_role = (template_name == "modern_sidebar" and len(item.bullets) <= 4
+                         and sum(len(b.text) for b in item.bullets) <= 720)
+            for index, bullet in enumerate(item.bullets):
+                paragraph = document.add_paragraph(bullet.text, style="List Bullet")
+                if keep_role:
+                    paragraph.paragraph_format.keep_together = True
+                    paragraph.paragraph_format.keep_with_next = index < len(item.bullets) - 1
     if resume.education:
         document.add_heading("Education", level=1)
         for item in resume.education:

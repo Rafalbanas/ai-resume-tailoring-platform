@@ -1,5 +1,10 @@
 # Evidence-based resume quality
 
+For the Modern Sidebar follow-up, see [pagination and cross-format visual
+validation](modern-sidebar-pagination.md). Modern now keeps the complete
+validated draft during standard export; the soft content-selection policy
+described here still applies to ATS Classic.
+
 ## Audit: baseline `32d28d6`
 
 The baseline already contains the richer generation and export fixes from

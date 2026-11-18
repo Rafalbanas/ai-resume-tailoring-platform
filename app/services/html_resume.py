@@ -113,6 +113,12 @@ def offline_assets(markup, template_name, document):
             node['style'] = _position(footer)
             paper.append(node)
         if index and template_name == 'modern_sidebar':
+            continuation = block('resume-continuation')
+            if continuation is not None:
+                node = BeautifulSoup(ElementTree.tostring(
+                    continuation.element, encoding='unicode', method='html'), 'html.parser').aside
+                node['style'] = _position(continuation)
+                paper.append(node)
             header = soup.new_tag('div', attrs={'class': 'resume-running-header'})
             # The original running-header text is page furniture, not a new fact.
             from weasyprint.formatting_structure.boxes import MarginBox
@@ -121,7 +127,7 @@ def offline_assets(markup, template_name, document):
                     header.string = ''.join(b.text for b in box.descendants() if type(b).__name__ == 'TextBox')
             paper.append(header)
         soup.body.append(paper)
-    for contact in soup.select('.contact-block, .ats-contact'):
+    for contact in soup.select('.contact-block, .ats-contact, .resume-continuation'):
         contact.insert_before(Comment('email_off'))
         contact.insert_after(Comment('/email_off'))
     css = '\n'.join(style.get_text() for style in soup.select('head style'))

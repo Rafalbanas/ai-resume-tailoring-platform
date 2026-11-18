@@ -267,15 +267,40 @@ class PDFGenerator:
         page. Detect actual rendered text and retain whole sections in the main
         flow; it can paginate without losing facts or reducing font size.
         """
+        document, soup = self._render_flow(markup)
+        # Use the spacious Modern layout for genuine multi-page CVs. Try one
+        # tighter version only if it could prevent a short spill onto a page.
+        if len(document.pages) > 1 and (article := soup.select_one("article.modern-sidebar")) is not None:
+            classes = article.get("class", [])
+            spacing = ["layout-compact", "layout-tight-bullets"]
+            tail = self.page_content_metrics(document)[-1]
+            if tail["height"] < tail["available_height"] * .33 and any(c not in classes for c in spacing):
+                compact = BeautifulSoup(markup, "html.parser")
+                original = compact.select_one("article.modern-sidebar")
+                original["class"] = list(dict.fromkeys([*classes, *spacing]))
+                tighter, tighter_markup = self._render_flow(str(compact))
+                if len(tighter.pages) < len(document.pages):
+                    # A false page-count win caused by an overflowing float
+                    # must never replace the complete default-spacing render.
+                    try:
+                        self._validate_rendered_sources(tighter)
+                    except ValueError:
+                        pass  # Keep the full-spacing source; final validation still runs.
+                    else:
+                        document, soup = tighter, tighter_markup
+        if fit_probe:
+            return document, str(soup)
+        return self._finish_document(str(soup), document)
+
+    def _render_flow(self, markup):
+        """Render once, repairing WeasyPrint's unfragmentable sidebar float."""
         from weasyprint import HTML
 
         document = HTML(string=markup, base_url=str(self.data_dir)).render()
         soup = BeautifulSoup(markup, "html.parser")
         sidebar = soup.select_one("aside.resume-sidebar")
         if sidebar is None:
-            if fit_probe:
-                return document, markup
-            return self._finish_document(markup, document)
+            return document, soup
         rendered = []
         for page in document.pages:
             for box in page._page_box.descendants():
@@ -302,23 +327,7 @@ class PDFGenerator:
                 moved = True
         if moved:
             document = HTML(string=str(soup), base_url=str(self.data_dir)).render()
-        if len(document.pages) > 1:
-            # Adapt spacing, never font size or facts. Both preview and export
-            # run this same path, including the float overflow repair above.
-            original = BeautifulSoup(markup, "html.parser")
-            article = original.select_one("article.modern-sidebar")
-            if article is not None:
-                classes = list(article.get("class", []))
-                for spacing in ("layout-compact", "layout-tight-bullets"):
-                    if spacing not in classes:
-                        article["class"] = classes + [spacing]
-                        return self._render_document_and_markup(str(original), fit_probe=fit_probe)
-        if fit_probe:
-            return document, str(soup)
-        # This verifies every expected section remains text, including pages
-        # created by long skills/languages/interests. No silent clipping allowed.
-        self._validate_rendered_sources(document)
-        return self._finish_document(str(soup), document)
+        return document, soup
 
     @staticmethod
     def _validate_rendered_sources(document):
@@ -378,9 +387,12 @@ class PDFGenerator:
 
         soup = BeautifulSoup(markup, "html.parser")
         metrics = self.page_content_metrics(document)
+        original = document
+        if len(document.pages) > 1 and soup.select_one("article.modern-sidebar") is not None:
+            document = self._balance_modern_tail(soup, document, metrics)
         # A small trailing fragment is repaired by moving whole sections, never
         # dropping a final project or shrinking text. Content is unchanged.
-        if len(document.pages) > 1 and metrics[-1]["height"] < metrics[-1]["available_height"] * .20:
+        if document is original and len(document.pages) > 1 and metrics[-1]["height"] < metrics[-1]["available_height"] * .20:
             sections = soup.select("main .main-sections > section")
             # Re-rendering each section and then every entry can exhaust the
             # worker's deadline even for a short CV. Try a few trailing breaks;
@@ -424,12 +436,50 @@ class PDFGenerator:
         # Reserve the margin on all pages but print consent once on the final one.
         style = soup.new_tag("style")
         style.string = f"@page modern {{ @bottom-center {{content:none}} }} @page ats {{ @bottom-center {{content:none}} }} @page modern:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }} @page ats:nth({len(document.pages)}) {{ @bottom-center {{content:element(consent)}} }}"
+        if soup.select_one("article.modern-sidebar") is not None:
+            # An exceptional long sidebar can itself fragment. Its real
+            # content owns the left column before the small running contact.
+            for index, page in enumerate(document.pages[1:], start=2):
+                if any(type(box).__name__ == "BlockBox" and box.element is not None
+                       and "resume-sidebar" in box.element.get("class", "").split()
+                       for box in page._page_box.descendants()):
+                    style.string += f" @page modern:nth({index}) {{ @top-left {{content:none}} }}"
         soup.head.append(style)
         final = HTML(string=str(soup), base_url=str(self.data_dir)).render()
         if len(final.pages) != len(document.pages):
             raise ValueError("Consent changed pagination unexpectedly; export stopped.")
         self._validate_rendered_sources(final)
         return final, str(soup)
+
+    def _balance_modern_tail(self, soup, document, metrics):
+        """Move an intact trailing block, not a whole job section or a few words."""
+        from weasyprint import HTML
+
+        coverage = [m["height"] / m["available_height"] for m in metrics[-2:]]
+        if coverage[1] >= .42 or coverage[0] <= .60:
+            return document
+        left = document.pages[-2]._page_box
+        y = left.content_box_y()
+        target = sum(coverage) / 2
+        ranks = {}
+        for box in left.descendants():
+            if type(box).__name__ != "BlockBox" or box.element is None:
+                continue
+            key = box.element.get("data-resume-start")
+            relative = (box.border_box_y() - y) / left.height
+            if key and .52 <= relative <= .88:
+                ranks.setdefault(key, abs(relative - target))
+        for key in sorted(ranks, key=ranks.get)[:3]:
+            block = soup.select_one(f'[data-resume-start="{key}"]')
+            block["class"] = [*block.get("class", []), "balanced-page-start"]
+            candidate = HTML(string=str(soup), base_url=str(self.data_dir)).render()
+            if len(candidate.pages) == len(document.pages):
+                measurements = self.page_content_metrics(candidate)
+                penultimate, last = [m["height"] / m["available_height"] for m in measurements[-2:]]
+                if penultimate >= .50 and last >= coverage[1] + .08 and min(penultimate, last) >= min(coverage) + .05:
+                    return candidate
+            block["class"].remove("balanced-page-start")
+        return document
 
     def fit_resume(
         self,
@@ -443,7 +493,7 @@ class PDFGenerator:
         prefer_one_page: bool = False,
         fact_validator=None,
     ) -> tuple[TailoredResume, list[str]]:
-        if prefer_one_page and not one_page:
+        if prefer_one_page and not one_page and template_name != "modern_sidebar":
             from app.services.processing import DEADLINE, ProcessingError
 
             guide = layout_guide if layout_guide is not None else {}
@@ -470,6 +520,11 @@ class PDFGenerator:
         guide = layout_guide if layout_guide is not None else {}
         for key in ("compact_spacing", "compact_bullets", "compact_headings"):
             guide.pop(key, None)
+        if template_name == "modern_sidebar" and not one_page:
+            # Unlike the explicit legacy hard fit, standard Modern exports
+            # retain the validated CV. The shared renderer may adjust spacing
+            # or paginate, but cannot cut facts to meet a page target.
+            return fitted, []
         if template_name == "ats_classic" and not prefer_one_page:
             return fitted, []
         def content_fits(candidate):
@@ -497,15 +552,10 @@ class PDFGenerator:
         # Existing/manual CVs retain their chosen content.
         if content_fits(fitted):
             return fitted, []
-        if prefer_one_page and template_name == "modern_sidebar":
-            # _render_document has already tried both spacing classes on modern
-            # overflow. Do not render the same overflowing CV three more times.
-            guide.update(compact_spacing=True, compact_bullets=True)
-        else:
-            for key in ("compact_spacing", "compact_bullets"):
-                guide[key] = True
-                if content_fits(fitted):
-                    return fitted, self._layout_warnings(resume, fitted, guide)
+        for key in ("compact_spacing", "compact_bullets"):
+            guide[key] = True
+            if content_fits(fitted):
+                return fitted, self._layout_warnings(resume, fitted, guide)
         if prefer_one_page and fact_validator is not None:
             from app.services.one_page_resume import prefer_one_page as select_preferred_page
 
