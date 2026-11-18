@@ -1,8 +1,9 @@
 """Select concise, cited content for new CVs; never rewrite manual edits."""
 from copy import deepcopy
 
-from app.services.content_quality import deduplicate_bullets
+from app.services.content_quality import deduplicate_bullets, evidence_specificity, high_value_detail
 from app.services.fact_catalog import normalized_tokens
+from app.services.role_focus import target_focus
 
 
 def prefer_one_page(resume, validator, job_text, fits, *, known_overflow=False):
@@ -30,12 +31,19 @@ def prefer_one_page(resume, validator, job_text, fits, *, known_overflow=False):
                                 if validator.skills_bank.evidence_supports(skill, evidence):
                                     resolved = validator.catalog.get(evidence.source_id)
                                     protected.add(resolved.source_id if resolved else evidence.source_id)
-    terms = normalized_tokens(job_text)
-    from app.services.role_focus import role_focus_score
+    title, _, description = job_text.partition('\n')
+    focus = target_focus(title, description, validator.analysis)
+    terms = focus.terms if focus.evidence_led else normalized_tokens(job_text)
+
+    def priority(ids):
+        return max((validator.fact_priorities.get(i, 0) for i in ids), default=0)
+
+    def role_relevant(text):
+        return bool(focus.score(text) or normalized_tokens(text) & terms)
 
     def utility(text, ids):
-        return (max((validator.fact_priorities.get(i, 0) for i in ids), default=0),
-                role_focus_score(text, job_text), len(normalized_tokens(text) & terms))
+        return (priority(ids), focus.score(text), min(len(normalized_tokens(text) & terms), 4),
+                evidence_specificity(text))
 
     if not known_overflow and fits(draft):
         return draft, actions
@@ -43,14 +51,21 @@ def prefer_one_page(resume, validator, job_text, fits, *, known_overflow=False):
         options = []
         for i, experience in enumerate(draft.experience):
             if len(experience.bullets) > 1:
+                lead = max(experience.bullets, key=lambda b: utility(b.text, b.source_fact_ids))
                 for j, bullet in enumerate(experience.bullets):
-                    if not protected.intersection(bullet.source_fact_ids):
+                    # Keep relevant scope and supported results even if the
+                    # requirement analyzer didn't specifically cite this line.
+                    important = high_value_detail(bullet.text) and (
+                        priority(bullet.source_fact_ids) or role_relevant(bullet.text))
+                    if focus.duties and focus.professional_required and bullet is lead and role_relevant(bullet.text):
+                        important = True
+                    if not important and not protected.intersection(bullet.source_fact_ids):
                         options.append((utility(bullet.text, bullet.source_fact_ids), -i, 'bullet', i, j))
         # Keep the strongest relevant project intact; it may be the only
         # evidence for a career transition. An unrelated first project is not
         # more important than relevant commercial duties merely by being first.
         first_utility = (utility(draft.projects[0].description, draft.projects[0].source_fact_ids)
-                         if draft.projects else (0, 0, 0))
+                         if draft.projects else (0, 0, 0, 0))
         keep_first = first_utility[0] > 0 or first_utility[1] > 0 or first_utility[2] >= 2
         start = 1 if keep_first else 0
         for i, project in enumerate(draft.projects[start:], start=start):
@@ -69,7 +84,7 @@ def prefer_one_page(resume, validator, job_text, fits, *, known_overflow=False):
                 if not direct and not protected.intersection(ids):
                     options.append((utility(wording, ids), -i, 'skill', i, 0))
         if draft.interests:
-            options.append(((-1, -1, -1), 0, 'interests', 0, 0))
+            options.append(((-1, -1, -1, -1), 0, 'interests', 0, 0))
         if not options:
             break
         _, _, kind, i, j = min(options)

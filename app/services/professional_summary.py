@@ -20,6 +20,11 @@ _ACTIVITY_VERBS = {
     'troubleshoots': 'troubleshooting', 'troubleshot': 'troubleshooting',
     'investigates': 'investigating', 'investigated': 'investigating',
     'resolves': 'resolving', 'resolved': 'resolving',
+    'triages': 'triaging', 'triaged': 'triaging',
+    'diagnoses': 'diagnosing', 'diagnosed': 'diagnosing',
+    'documents': 'documenting', 'documented': 'documenting',
+    'onboards': 'onboarding', 'onboarded': 'onboarding',
+    'delivers': 'delivering', 'delivered': 'delivering',
 }
 _FINITE_COORDINATION = {
     'was', 'were', 'is', 'are', 'has', 'have', 'had', 'did', 'does', 'can', 'could',
@@ -154,7 +159,7 @@ def deduplicate_summary(value: str, catalog: FactCatalog) -> str:
 
 
 def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, priorities: dict[str, float] | None = None,
-                  tailoring_level: float = 0) -> tuple[str, list[str]]:
+                  tailoring_level: float = 0, focus=None) -> tuple[str, list[str]]:
     """Build concise, provenance-scoped sentences from attested clauses.
 
     Only punctuation/capitalization and provenance labels are composed. The one L1/L2 historical clause
@@ -162,22 +167,25 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
     Projects can supply integration evidence, but cannot become job experience.
     """
     from app.services.role_focus import role_family, role_focus_score
+    tailored = bool(focus and focus.evidence_led and tailoring_level < 1)
+    family = focus.family if tailored else role_family(role)
+    score = focus.score if tailored else lambda text: role_focus_score(text, role)
     entries = [e for e in catalog.prompt_entries
                if e.kind == "summary" or (e.kind in {"experience", "project"} and ":fact:" in e.source_id)
-               or (e.kind == 'project' and ':description:' in e.source_id and role_focus_score(e.text, role))]
+               or (e.kind == 'project' and ':description:' in e.source_id and score(e.text))]
     entries = [e for e in entries if not re.search(r"\byears?\b|\blat\b", e.text, re.I)]
     entries = [e for e in entries if not re.search(r"^\s*(?:plans?|planned|intends?|aims?|will)\b", e.text, re.I)
                or (priorities or {}).get(e.source_id)]
-    from app.services.content_quality import _sql_query_subsumed
+    from app.services.content_quality import _sql_query_subsumed, evidence_specificity, generic_duty
     entries = [e for e in entries if not any(
         other is not e and other.kind == e.kind and other.owner_index == e.owner_index
         and _sql_query_subsumed(e.text, other.text) and not _sql_query_subsumed(other.text, e.text)
         for other in entries)]
     from app.services.job_sections import relevance_text
-    tokens = normalized_tokens(relevance_text(role))
+    tokens = focus.terms if tailored else normalized_tokens(relevance_text(role))
     # A support duty mentioned in a different job must not force a support-first
     # summary. Legacy support composition is retained for actual support roles.
-    support = bool(tailoring_level < 1 and normalized_tokens(
+    support = bool(not tailored and tailoring_level < 1 and normalized_tokens(
         role.splitlines()[0] if role.splitlines() else role) & {"support", "troubleshooting", "incident"})
     if support:
         tokens |= {"support", "troubleshooting", "incident", "sql", "api", "automation", "english", "logs"}
@@ -325,7 +333,7 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
         if not compact:
             add(2, first(r"(?:automates|automated).*Python", kinds={"summary", "experience"}))
     else:
-        if role_family(role) == 'data_science' or tokens & {"degree", "education", "science", "bachelor", "master"}:
+        if family == 'data_science' or tokens & {"degree", "education", "science", "bachelor", "master"}:
             education = next((e for e in catalog.prompt_entries if e.kind == "education"
                               and "computer science" in e.text.casefold() and ":fact:" not in e.source_id
                               and ":thesis:" not in e.source_id), None)
@@ -342,24 +350,46 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
                 add(0, fact, identity)
                 # Identity cites this owner, but has not displayed the duty.
                 used.discard(fact.source_id)
-        ranked = sorted(entries, key=lambda e: (
-            (1 - tailoring_level) * bool(role_focus_score(e.text, role)),
-            (1 - tailoring_level) * min(2, role_focus_score(e.text, role)),
-            (1 - tailoring_level) * bool(role_family(role) == 'data_science' and e.kind == 'project'
-                                        and re.search(r'\b(?:MSc|master.?s?) thesis\b', e.text, re.I)),
-            (1 - tailoring_level) * (priorities or {}).get(e.source_id, 0),
-            (1 - tailoring_level) * (e.kind == 'experience'),
-            -(1 - tailoring_level) * (len(e.text) if e.kind == 'project' else 0),
-            (1 - tailoring_level) * len(normalized_tokens(e.text) & tokens)), reverse=True)
+        def summary_rank(entry):
+            topical = score(entry.text)
+            overlap = len(normalized_tokens(entry.text) & tokens)
+            priority = (priorities or {}).get(entry.source_id, 0)
+            thesis = bool(family == 'data_science' and entry.kind == 'project'
+                          and re.search(r'\b(?:MSc|master.?s?) thesis\b', entry.text, re.I))
+            if tailored:
+                employment = entry.kind == 'experience'
+                return (not generic_duty(entry.text),
+                        employment and focus.professional_required and bool(topical or overlap or priority),
+                        topical > 0, priority, min(overlap, 4), topical, thesis, employment,
+                        evidence_specificity(entry.text))
+            weight = 1 - tailoring_level
+            return (weight * bool(topical), weight * min(2, topical), weight * thesis,
+                    weight * priority, weight * (entry.kind == 'experience'),
+                    -weight * (len(entry.text) if entry.kind == 'project' else 0), weight * overlap)
+
+        ranked = sorted(entries, key=summary_rank, reverse=True)
         used_priorities = set()
+        detail_owners = set()
         details = 0
-        focused = any(role_focus_score(e.text, role) for e in ranked)
+        focused = any(score(e.text) for e in ranked)
         for entry in ranked:
             if entry.source_id in used:
                 continue
-            if tailoring_level < 1 and focused and not role_focus_score(entry.text, role):
+            if tailored and generic_duty(entry.text):
                 continue
-            if details >= (2 if compact else 3):
+            if tailored and not ((priorities or {}).get(entry.source_id) or focus.direct_terms(entry.text)):
+                continue
+            owner = (entry.kind, entry.owner_index)
+            if tailored and focus.duties and entry.kind == 'experience' and owner in detail_owners:
+                # Keep one representative statement per employer in the
+                # fallback overview; the work-history section has the details.
+                continue
+            if (tailoring_level < 1 and focused and not score(entry.text)
+                    and not (tailored and ((priorities or {}).get(entry.source_id) or normalized_tokens(entry.text) & tokens))):
+                continue
+            # The structured target serves as an overview, not a second list
+            # of employment bullets. Leave implementation detail to the CV body.
+            if details >= (2 if compact or tailored else 3):
                 break
             if not compact and entry.kind == 'project' and len(selected_project_entries) >= 2:
                 continue
@@ -375,9 +405,10 @@ def build_summary(catalog: FactCatalog, role: str, *, compact: bool = False, pri
             add(min(details + 1, 2), entry)
             if entry.source_id in used:
                 details += 1
+                detail_owners.add(owner)
                 if priority:
                     used_priorities.add(priority)
-        if not compact:
+        if not compact and not tailored:
             employment = sorted((e for e in entries if e.kind == 'experience' and e.source_id not in used),
                                 key=lambda e: (priorities or {}).get(e.source_id, 0)
                                 + len(normalized_tokens(e.text) & tokens), reverse=True)

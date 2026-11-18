@@ -66,7 +66,8 @@ async def export_draft(state, draft_id, *, template_name='ats_classic', summary_
         staged_storage = copy(state.storage)
         staged_storage.generated_dir = staged / 'applications'
         staged_storage.generated_dir.mkdir()
-        slug, folder = staged_storage.save_application(job, response.analysis, fitted, result.warnings, guide, draft_id,
+        slug, folder = staged_storage.save_application(job, response.analysis, fitted,
+            result.warnings + result.editorial_warnings, guide, draft_id,
             template_name=template_name, photo_enabled=photo_enabled, truth_lock_warnings=result.warnings,
             layout_warnings=layout_warnings, pre_fit_resume=result.resume,
             provider_used=getattr(response, 'provider_used', 'unknown'), model_used=getattr(response, 'model_used', 'unknown'),

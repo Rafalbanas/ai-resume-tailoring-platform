@@ -564,6 +564,7 @@ async def analysis_view(request: Request, draft_id: str):
             draft_id=draft_id,
             summary_review=review,
             tailoring_resume=checked,
+            editorial_warnings=validation.editorial_warnings,
             provider_used=getattr(response, "provider_used", "unknown"),
             model_used=getattr(response, "model_used", "unknown"),
             fallback_used=getattr(response, "fallback_used", False),

@@ -144,7 +144,7 @@ def validate_layout(document) -> None:
     def boxes(box, column=None):
         element = getattr(box, "element", None)
         classes = element.get("class", "").split() if element is not None else []
-        if type(box).__name__ == "BlockBox" and "resume-sidebar" in classes:
+        if type(box).__name__ == "BlockBox" and {"resume-sidebar", "resume-continuation"} & set(classes):
             column = (box.content_box_x(), box.content_box_x() + box.width)
         elif type(box).__name__ == "BlockBox" and "resume-main" in classes:
             column = (box.content_box_x(), box.content_box_x() + box.width)

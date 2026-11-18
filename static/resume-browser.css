@@ -9,6 +9,8 @@
 }
 .offline-resume .resume-document { page: auto; }
 .offline-resume .consent-footer { transform: none; }
+.offline-resume .resume-continuation { position: absolute; }
+.offline-resume .balanced-page-start { break-before: auto; }
 .offline-resume .resume-running-header {
   position: absolute; top: 2mm; right: 12mm; font: 8pt Arial, sans-serif; color: #526174;
 }

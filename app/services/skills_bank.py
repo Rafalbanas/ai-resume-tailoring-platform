@@ -205,6 +205,12 @@ class SkillsBank:
         minimum = min(max(0, minimum), maximum)
         requested = {value for value in requested_ids}
         eligible = [skill for skill in self.skills if self.eligible(skill) and not is_language_skill(skill.name, self.profile)]
+        from app.services.job_sections import relevance_text
+        from app.services.role_focus import target_focus
+        title, _, description = job_text.partition('\n')
+        focus = target_focus(title, description)
+        if focus.evidence_led and not requested_only:
+            job_text = relevance_text(job_text)
         normalized_job = _normal(job_text)
         category_terms = {
             "Windows / Microsoft": ("windows", "microsoft", "active directory", "desktop", "workstation"),
@@ -295,11 +301,16 @@ class SkillsBank:
             return 2 if direct or operational or ("crm" in normalized_job and "salesforce" in aliases) or (semantic and _normal(skill.name) in {"ms sql", "sql server", "microsoft sql server", "t sql", "httpx", "json"}) else 1 if semantic else 0
 
         requested_order = {skill_id: index for index, skill_id in enumerate(dict.fromkeys(requested_ids))}
-        from app.services.role_focus import role_family, role_focus_score
-        focused_role = role_family(job_text) in {'ai', 'software', 'automation', 'data_engineering', 'data_science',
-                                               'devops', 'system_administration'}
+        focused_role = focus.evidence_led or focus.family in {'ai', 'software', 'automation', 'data_engineering',
+                                                               'data_science', 'devops', 'system_administration'}
+
+        def focus_relevance(skill):
+            aliases = ' '.join(self.aliases_for(skill))
+            return focus.score(aliases) if focused_role and not requested_only else 0
+
         ranked = sorted(eligible, key=lambda skill: (
-            role_focus_score(' '.join(self.aliases_for(skill)), job_text) if focused_role and not requested_only else 0,
+            role_relevance(skill) if focus.evidence_led else 0,
+            focus_relevance(skill),
             role_relevance(skill), score(skill)[0], skill.id in requested_order), reverse=True)
         if tailoring_level and not requested_only:
             target_order = {s.id: i for i, s in enumerate(ranked)}
@@ -327,13 +338,12 @@ class SkillsBank:
             if family in families or label in chosen_labels:
                 continue
             relevant = (role_relevance(skill) > 0 or (requested_only and skill.id in requested)
-                        or (focused_role and role_focus_score(' '.join(self.aliases_for(skill)), job_text) > 0))
+                        or focus_relevance(skill) > 0)
             # Do not pad practical strengths with unrelated introductory tools.
             # Relevant Basic skills and explicit manual choices remain intact.
             if (not requested_only and tailoring_level < 1 and not relevant and skill.level == 'basic'
                     and any(s.level in {'hands_on', 'intermediate', 'advanced'}
-                            and (role_relevance(s) > 0 or (focused_role and role_focus_score(
-                                ' '.join(self.aliases_for(s)), job_text) > 0)) for s in chosen)):
+                            and (role_relevance(s) > 0 or focus_relevance(s) > 0) for s in chosen)):
                 continue
             # Relevant skills rank first. Fill a sparse generated CV from the
             # remaining verified bank without weakening eligibility or deduplication.

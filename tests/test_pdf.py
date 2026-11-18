@@ -38,7 +38,9 @@ def test_long_cv_preserves_content_and_allows_multiple_pages(tmp_path, profile, 
     output = tmp_path / "fitted.pdf"
     generator.generate(fitted, profile, output)
 
-    assert any("Full employment, education and projects retained" in w for w in warnings)
+    # Standard Modern fitting never removes content or guesses page count.
+    # The actual PDF below verifies that full content can paginate.
+    assert not warnings
     original = TailoredResume.model_validate(payload)
     assert fitted.experience == original.experience
     assert fitted.education == original.education and fitted.projects == original.projects
