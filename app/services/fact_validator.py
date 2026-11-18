@@ -12,7 +12,7 @@ from app.models.resume import (
     ResumeProject,
     TailoredResume,
 )
-from app.services.content_quality import evidence_specificity, generic_duty, high_value_detail
+from app.services.content_quality import evidence_specificity, generic_duty, high_value_detail, scope_mentions
 from app.services.fact_catalog import FactCatalog, normalized_tokens
 from app.services.languages import is_language_skill
 from app.services.professional_summary import build_summary, deduplicate_summary
@@ -735,6 +735,7 @@ class FactValidator:
                 and any(self._entry_relevance(entry, job)[:3]) and high_value_detail(entry.text)
                 and any(entry.source_id in b.source_fact_ids for b in bullets)
                 and not any(entry.source_id in b.source_fact_ids and high_value_detail(b.text)
+                            and scope_mentions(entry.text) <= scope_mentions(b.text)
                             and set(re.findall(r'\d+(?:[.,]\d+)?', entry.text))
                             <= set(re.findall(r'\d+(?:[.,]\d+)?', b.text))
                             for b in bullets))

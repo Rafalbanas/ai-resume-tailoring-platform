@@ -85,12 +85,13 @@ def test_allowed_project_cannot_replace_employment_and_keeps_scope():
     assert not any('calendar' in b.text.casefold() for owner in resume.experience for b in owner.bullets)
 
 
-def test_reviewed_bullet_does_not_hide_available_operational_scope():
+@pytest.mark.parametrize('short_scope', ['', ' for about 170 users'])
+def test_reviewed_bullet_does_not_hide_available_operational_scope(short_scope):
     candidate = profile()
     job, analysis = scenario('Technical Support Engineer', candidate)
     validator = FactValidator(candidate, analysis=analysis, review_key='synthetic-review-key')
     draft = sparse_draft(candidate)
-    bullet = ResumeBullet(text='Delivered L1/L2 user support, troubleshooting VPN and workstation incidents.',
+    bullet = ResumeBullet(text=f'Delivered L1/L2 user support{short_scope}, troubleshooting VPN and workstation incidents.',
                           source_fact_ids=[validator.catalog.get('experience:0:fact:1').source_id])
     draft.experience[0].bullets = [bullet]
     draft._bullet_attestations = [sign_bullet(bullet, candidate, validator.review_key)]

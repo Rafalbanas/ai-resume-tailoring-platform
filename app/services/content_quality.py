@@ -190,6 +190,11 @@ def high_value_detail(text):
     return bool(_SCALE.search(text) or _OUTCOME.search(text))
 
 
+def scope_mentions(text):
+    """Complete quantity/unit pairs, so a user count cannot replace a site count."""
+    return {' '.join(match[0].casefold().split()) for match in _SCALE.finditer(text)}
+
+
 def evidence_specificity(text):
     if generic_duty(text):
         return -2
